@@ -1,0 +1,45 @@
+{
+  "name": "architecture-block-studio",
+  "version": "0.1.0",
+  "description": "Architecture block and protocol design workbench",
+  "license": "MIT",
+  "keywords": [
+    "architecture",
+    "architecture-block",
+    "block-design",
+    "diagram",
+    "json",
+    "react-flow"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "packageManager": "pnpm@10.7.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "test": "playwright test",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc -b --pretty false",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tisoap/react-flow-smart-edge": "^4.13.1",
+    "@xyflow/react": "12.9.3",
+    "dockview-react": "^8.1.0",
+    "elkjs": "0.9.3",
+    "lucide-react": "0.545.0",
+    "react": "19.2.1",
+    "react-dom": "19.2.1",
+    "zod": "3.22.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "5.1.1",
+    "typescript": "5.9.3",
+    "vite": "7.2.2"
+  }
+}

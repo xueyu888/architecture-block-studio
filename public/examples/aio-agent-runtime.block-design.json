@@ -1,0 +1,1004 @@
+{
+  "schemaVersion": "2.0",
+  "id": "aio.agent-runtime.v1",
+  "title": "AIO Agent Runtime",
+  "summary": "AIO Session 公开协议由 Rust Agent Core 提供；Tool System 拥有 Tool 定义、最小快照、统一执行和 Workflow Tool 实现。",
+  "entryLevelId": "system",
+  "sourceRef": {
+    "label": "docs/agent-runtime/README.md",
+    "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/README.md"
+  },
+  "interfaceDefinitions": {
+    "session.command": {
+      "kind": "rpc",
+      "title": "Session Command RPC",
+      "protocol": "AIO Session Protocol v1",
+      "owner": "Rust Agent Core",
+      "purpose": "Agent UI 主动调用初始化、Thread lifecycle、Turn 提交、中断和 tool/list。",
+      "boundary": "UI 不构造 Submission/Event，不访问 Tool System、Project 或 Knowledge 内部对象。",
+      "failure": "版本不兼容关闭连接；revision、权限或 Tool prepare 失败时不产生部分 Turn/Item。",
+      "sourceRef": {
+        "label": "session-protocol.md",
+        "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/session-protocol.md"
+      },
+      "codeLanguage": "jsonc",
+      "code": "// Agent UI -> Rust Agent Core\n{\n  \"method\": \"turn/start\",\n  \"id\": 20,\n  \"params\": {\n    \"threadId\": \"thr_123\",\n    \"clientUserMessageId\": \"client_msg_001\",\n    \"input\": [{ \"type\": \"text\", \"text\": \"梳理风险\" }],\n    \"expectedThreadRevision\": 7,\n    \"turnToolSelections\": [],\n    \"idempotencyKey\": \"turn-start:req_003\"\n  }\n}\n\n// queued 表示事实已持久化；不是执行已开始\n{\n  \"id\": 20,\n  \"result\": {\n    \"turn\": { \"id\": \"turn_456\", \"status\": \"queued\", \"items\": [] }\n  }\n}"
+    },
+    "session.notification": {
+      "kind": "dto",
+      "title": "Session Notification DTO",
+      "protocol": "AIO Session Protocol v1",
+      "owner": "Rust Agent Core",
+      "purpose": "把已提交的 Thread、Turn、Item 和执行证据投影给 Agent UI。",
+      "boundary": "Notification 没有 request id，不要求 UI 返回 response；它不是 Core raw event。",
+      "failure": "断线后按 streamCursor 续传；cursor 过期时通过 thread/resume 回到持久基线。",
+      "sourceRef": {
+        "label": "session-protocol.md",
+        "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/session-protocol.md"
+      },
+      "codeLanguage": "jsonc",
+      "code": "// Rust Agent Core -> Agent UI；单向通知，不是反向 RPC\n{\n  \"method\": \"item/completed\",\n  \"params\": {\n    \"notificationId\": \"notif_006\",\n    \"streamCursor\": \"stream_000006\",\n    \"emittedAt\": \"2026-08-14T09:04:02Z\",\n    \"threadId\": \"thr_123\",\n    \"turnId\": \"turn_456\",\n    \"evidenceSequence\": 20,\n    \"item\": {}\n  }\n}"
+    },
+    "session.integration": {
+      "kind": "integration",
+      "title": "Session Integration Lifecycle RPC",
+      "protocol": "AIO Session Integration Protocol v1",
+      "owner": "Rust Agent Core",
+      "purpose": "Project 或 Knowledge 在自身业务生命周期确有需要时，显式归档、恢复归档或删除 Thread。",
+      "boundary": "不开放 turn/start、thread/fork、interrupt 或 metadata；Core 不解释调用方业务原因。",
+      "failure": "revision 冲突、无权或非法状态转换整体拒绝；调用方拥有自己的补偿记录。",
+      "sourceRef": {
+        "label": "session-protocol.md",
+        "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/session-protocol.md"
+      },
+      "codeLanguage": "jsonc",
+      "code": "// Project / Knowledge -> Rust Agent Core\n{\n  \"jsonrpc\": \"2.0\",\n  \"id\": \"integration:req_123\",\n  \"method\": \"thread/archive\",\n  \"params\": {\n    \"protocolVersion\": 1,\n    \"actorSnapshot\": {\n      \"actorId\": \"user_42\",\n      \"tenantId\": \"tenant_7\"\n    },\n    \"threadId\": \"thr_123\",\n    \"expectedThreadRevision\": 8\n  }\n}"
+    },
+    "tool.catalog.request": {
+      "kind": "port",
+      "title": "Tool Card / Prepare / Snapshot Port",
+      "protocol": "AIO Tool Protocol v1",
+      "owner": "Tool System",
+      "purpose": "Core 查询会话卡片、准备用户选择，并请求冻结本 Turn 的最小 ToolRegistrySnapshot。",
+      "boundary": "Tool System 不创建 Turn；Core 不接收 dynamicTools，也不把全 Catalog 暴露给模型。",
+      "failure": "Tool 不存在、越权、exposure 不匹配或 Schema 错误时，turn/start 整体失败。",
+      "sourceRef": {
+        "label": "tool-protocol.md",
+        "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/tool-protocol.md"
+      },
+      "codeLanguage": "jsonc",
+      "code": "// Rust Agent Core -> Tool System\n{\n  \"port\": \"ToolCatalogQueryPort\",\n  \"method\": \"snapshot\",\n  \"input\": {\n    \"turnId\": \"turn_456\",\n    \"actorSnapshot\": {},\n    \"authorizedResourceScope\": {},\n    \"requestedToolNames\": [\"knowledge.search\"],\n    \"preparedSessionTools\": []\n  }\n}"
+    },
+    "tool.snapshot": {
+      "kind": "dto",
+      "title": "ToolRegistrySnapshot DTO",
+      "protocol": "AIO Tool Protocol v1",
+      "owner": "Tool System 生成；Rust Agent Core 关联到 Turn",
+      "purpose": "返回经版本、exposure、授权和资源范围过滤后的本 Turn 最小 Tool 集合。",
+      "boundary": "Snapshot 是不可变执行依据，不是第二份 ToolDefinition 或全量 ToolCatalog。",
+      "failure": "请求集合中任一 Tool 不合法时不返回部分 Snapshot。",
+      "sourceRef": {
+        "label": "tool-protocol.md",
+        "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/tool-protocol.md"
+      },
+      "codeLanguage": "jsonc",
+      "code": "// Tool System -> Rust Agent Core\n{\n  \"id\": \"tool_snapshot_001\",\n  \"turnId\": \"turn_456\",\n  \"catalogRevision\": 41,\n  \"entries\": [\n    {\n      \"name\": \"knowledge.search\",\n      \"version\": \"1.0.0\",\n      \"providerRef\": \"plugin:knowledge-engine/search\",\n      \"inputSchemaDigest\": \"sha256:...\"\n    }\n  ]\n}"
+    },
+    "tool.invoke": {
+      "kind": "port",
+      "title": "ToolExecutionPort.invoke",
+      "protocol": "AIO Tool Protocol v1",
+      "owner": "Tool System",
+      "purpose": "Rust Core 把模型 ToolCall 规范化为 ToolInvocation，交给 Tool System 执行一次。",
+      "boundary": "Tool System 不决定下一次模型采样；Core 拥有 ToolCallItem 和执行循环。",
+      "failure": "不存在、版本不符、无权、超时、取消或输入 Schema 错误返回结构化失败。",
+      "sourceRef": {
+        "label": "tool-protocol.md",
+        "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/tool-protocol.md"
+      },
+      "codeLanguage": "jsonc",
+      "code": "// Rust Agent Core -> Tool System\n{\n  \"id\": \"invoke_001\",\n  \"threadId\": \"thr_123\",\n  \"turnId\": \"turn_456\",\n  \"toolCallItemId\": \"item_tool_001\",\n  \"toolRegistrySnapshotId\": \"tool_snapshot_001\",\n  \"toolName\": \"knowledge.search\",\n  \"toolVersion\": \"1.0.0\",\n  \"providerRef\": \"plugin:knowledge-engine/search\",\n  \"actorContext\": {},\n  \"authorizedResourceScope\": {},\n  \"input\": { \"query\": \"合同违约风险\" },\n  \"idempotencyKey\": \"tool:turn_456:item_tool_001\"\n}"
+    },
+    "tool.outcome": {
+      "kind": "dto",
+      "title": "ToolOutcome DTO",
+      "protocol": "AIO Tool Protocol v1",
+      "owner": "Tool System 产生；Rust Agent Core 持久化结果",
+      "purpose": "返回一次 ToolInvocation 的成功结果、安全失败、取消或超时结果。",
+      "boundary": "Outcome 只描述这一次 Tool 调用，不改变 Turn 状态，也不触发下一次模型采样。",
+      "failure": "传输断开属于 Adapter 故障；可交付模型或 UI 的失败使用 ToolSafeError。",
+      "sourceRef": {
+        "label": "tool-protocol.md",
+        "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/tool-protocol.md"
+      },
+      "codeLanguage": "jsonc",
+      "code": "// Tool System -> Rust Agent Core\n{\n  \"invocationId\": \"invoke_001\",\n  \"outcome\": \"succeeded\",\n  \"output\": { \"matches\": [] },\n  \"modelContentItems\": [\n    { \"type\": \"inputText\", \"text\": \"{\\\"summary\\\":\\\"未找到匹配条目\\\"}\" }\n  ],\n  \"safeError\": null,\n  \"retryable\": false,\n  \"sourceRefs\": [],\n  \"artifactRefs\": [],\n  \"workflowRunId\": null\n}"
+    },
+    "tool.registration": {
+      "kind": "integration",
+      "title": "ToolRegistrationPort.register",
+      "protocol": "AIO Tool Protocol v1",
+      "owner": "Tool System",
+      "purpose": "Plugin 或 Platform Provider 提交唯一 ToolDefinition，进入 ToolCatalog。",
+      "boundary": "注册终点不是 Rust Core；Workflow 不是独立协议，只是 implementationKind。",
+      "failure": "任一 ToolDefinition 不合规时，对应 Plugin Artifact 或注册事务不激活。",
+      "sourceRef": {
+        "label": "tool-protocol.md",
+        "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/tool-protocol.md"
+      },
+      "codeLanguage": "jsonc",
+      "code": "// Plugin / Platform Provider -> Tool System\n{\n  \"name\": \"audit.document.candidate.create\",\n  \"version\": \"1.0.0\",\n  \"providerKind\": \"plugin\",\n  \"implementationKind\": \"workflow\",\n  \"exposure\": {\n    \"model\": true,\n    \"sessionCard\": true,\n    \"workflowStep\": false,\n    \"system\": false\n  },\n  \"inputSchema\": { \"type\": \"object\", \"additionalProperties\": false },\n  \"outputSchema\": { \"type\": \"object\", \"additionalProperties\": false },\n  \"providerRef\": \"plugin:audit/workflow/candidate-create\"\n}"
+    },
+    "core.command.dispatch": {
+      "kind": "internal",
+      "title": "Session Command Dispatch",
+      "protocol": "Core internal",
+      "owner": "Rust Agent Core",
+      "purpose": "公开 Session API 校验协议和身份后，把具名 command 交给 ThreadManager。",
+      "boundary": "Adapter 不拥有 Thread 状态，不在传输层编排 SessionTask。",
+      "failure": "协议、身份和输入校验失败时，命令不会进入 ThreadManager。",
+      "sourceRef": {
+        "label": "core-wire-protocol.md",
+        "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/core-wire-protocol.md"
+      },
+      "codeLanguage": "rust",
+      "code": "SessionCommand::TurnStart {\n    thread_id,\n    expected_thread_revision,\n    input,\n    requested_tool_names,\n    idempotency_key,\n}"
+    },
+    "core.ledger.lifecycle": {
+      "kind": "internal",
+      "title": "Thread Ledger Transaction",
+      "protocol": "Core internal",
+      "owner": "Rust Agent Core Thread Ledger",
+      "purpose": "在一个事务中持久 UserMessageItem、queued Turn、TurnAttempt 和 Snapshot 引用。",
+      "boundary": "Ack 或内存任务不能替代业务持久状态；持久成功前不得提交执行。",
+      "failure": "revision、权限、fence 或事务失败时不留下部分状态。",
+      "sourceRef": {
+        "label": "session-protocol.md",
+        "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/session-protocol.md"
+      },
+      "codeLanguage": "rust",
+      "code": "persist_atomically(\n    UserMessageItem,\n    Turn { status: queued },\n    TurnAttempt,\n    ToolRegistrySnapshotRef,\n)\n// commit 成功后才允许 SessionIo.submit(...)"
+    },
+    "core.submission": {
+      "kind": "internal",
+      "title": "SessionIo.submit(Submission)",
+      "protocol": "Core internal",
+      "owner": "Rust Agent Core",
+      "purpose": "ThreadManager 在持久化成功后，把本 Turn 的执行命令送入 Core Session。",
+      "boundary": "SessionIo 是 Core 内部命令/事件端点，不是跨进程 JSON-RPC。",
+      "failure": "Channel 关闭或 Session 不可用时，Core 持久化可恢复的失败证据。",
+      "sourceRef": {
+        "label": "core-wire-protocol.md",
+        "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/core-wire-protocol.md"
+      },
+      "codeLanguage": "rust",
+      "code": "Submission {\n    id: \"submission_001\",\n    op: UserInputOp {\n        thread_id: \"thr_123\",\n        turn_id: \"turn_456\",\n        input_item_ids: [\"item_user_001\"],\n    },\n}"
+    },
+    "core.task.dispatch": {
+      "kind": "internal",
+      "title": "submission_loop Task Dispatch",
+      "protocol": "Core internal",
+      "owner": "Rust Agent Core",
+      "purpose": "Submission loop 根据 Op 创建 ActiveTurn、RunningTask 和 SessionTask::RegularTask。",
+      "boundary": "调度器不重写 Thread 事实；Turn 进入运行态必须来自已持久执行证据。",
+      "failure": "取消、重复或失去执行权时，通过 fence 拒绝陈旧任务。",
+      "sourceRef": {
+        "label": "core-wire-protocol.md",
+        "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/core-wire-protocol.md"
+      },
+      "codeLanguage": "text",
+      "code": "Submission\n  -> submission_loop\n  -> ActiveTurn\n  -> RunningTask\n  -> SessionTask::RegularTask\n  -> run_turn"
+    },
+    "core.context.request": {
+      "kind": "internal",
+      "title": "Context Build Request",
+      "protocol": "Core internal",
+      "owner": "Rust Agent Core",
+      "purpose": "SessionTask 请求 ContextManager 为当前 Step 构造上下文。",
+      "boundary": "请求只携带 Core 内部标识和选择规则，不携带外部 Session 快照。",
+      "failure": "缺少持久上下文时不开始模型采样。",
+      "codeLanguage": "rust",
+      "code": "ContextBuildRequest { thread_id, turn_id, through_item_id }"
+    },
+    "core.context.snapshot": {
+      "kind": "dto",
+      "title": "ThreadContextSnapshot",
+      "protocol": "Core internal",
+      "owner": "Rust Agent Core",
+      "purpose": "ContextManager 从持久 Thread、Turn、Item 和 compaction 生成本次采样上下文。",
+      "boundary": "它是内部派生投影，不是外部 Session 传入的 CoreThreadSnapshot。",
+      "failure": "只使用完整持久证据；丢弃未完成 delta，不覆盖原始 Item。",
+      "sourceRef": {
+        "label": "core-wire-protocol.md",
+        "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/core-wire-protocol.md"
+      },
+      "codeLanguage": "rust",
+      "code": "ThreadContextSnapshot {\n    thread_id,\n    through_turn_id,\n    items,\n    compaction_ref,\n    history_digest,\n}"
+    },
+    "core.context.history": {
+      "kind": "internal",
+      "title": "Persistent Context Read",
+      "protocol": "Core internal",
+      "owner": "Rust Agent Core Thread Ledger",
+      "purpose": "向 ContextManager 提供已提交 Thread、Turn、Item 和 compaction 事实。",
+      "boundary": "ContextManager 只读取，不反向修改 Ledger。",
+      "failure": "读取失败时上下文构造整体失败。",
+      "codeLanguage": "rust",
+      "code": "ThreadLedger.read_context(thread_id, through_turn_id)"
+    },
+    "core.tool.route": {
+      "kind": "internal",
+      "title": "ToolRouter / ToolCallRuntime",
+      "protocol": "Core internal",
+      "owner": "Rust Agent Core",
+      "purpose": "把模型返回的 ToolCall 映射为快照内允许执行的 ToolInvocation。",
+      "boundary": "模型只能给 toolName 和 arguments；不能提供权限、providerRef、版本或 fence。",
+      "failure": "快照中不存在或参数不合法时，Core 生成具名 ToolCall 失败证据。",
+      "sourceRef": {
+        "label": "core-wire-protocol.md",
+        "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/core-wire-protocol.md"
+      },
+      "codeLanguage": "text",
+      "code": "ResponseItem::ToolCall { name, arguments }\n  -> ToolRouter.build_tool_call(...)\n  -> ToolCallRuntime\n  -> RemoteToolRuntime"
+    },
+    "core.event": {
+      "kind": "event",
+      "title": "Core Event Persistence",
+      "protocol": "Core internal",
+      "owner": "Rust Agent Core Thread Ledger",
+      "purpose": "SessionTask 产生执行 Event，先写入 Thread Ledger，再生成外部投影。",
+      "boundary": "Raw Event 不直接暴露给 UI；UI DTO 不能反向定义 Core Event。",
+      "failure": "持久化失败时不发送已完成 notification，也不伪造 Turn 终态。",
+      "sourceRef": {
+        "label": "core-wire-protocol.md",
+        "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/core-wire-protocol.md"
+      },
+      "codeLanguage": "rust",
+      "code": "Event {\n    thread_id: \"thr_123\",\n    turn_id: \"turn_456\",\n    sequence: 20,\n    msg: EventMsg::ItemCompleted { item_id: \"item_agent_003\" },\n}"
+    },
+    "core.committed.event": {
+      "kind": "event",
+      "title": "Committed Event Projection",
+      "protocol": "Core internal",
+      "owner": "Rust Agent Core",
+      "purpose": "从已经提交的 Ledger 事实生成可续传 Session Notification。",
+      "boundary": "Notification 是派生投影，不是 Thread/Turn/Item 的第二事实源。",
+      "failure": "投影失败可重建；不得回写或改变 Ledger 中的业务事实。",
+      "sourceRef": {
+        "label": "session-protocol.md",
+        "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/session-protocol.md"
+      },
+      "codeLanguage": "text",
+      "code": "Committed Event\n  -> NotificationProjection\n  -> { notificationId, streamCursor, evidenceSequence, ... }"
+    },
+    "tool.card.query": {
+      "kind": "internal",
+      "title": "Session Tool Card Query",
+      "protocol": "Tool System internal",
+      "owner": "Tool System",
+      "purpose": "根据 actor 和 Plugin 状态，从 sessionCard ToolDefinition 投影可展示工具卡片。",
+      "boundary": "卡片是声明式投影；Tool System 不注入 Plugin 前端代码。",
+      "failure": "无权、禁用或不可用 Tool 不进入结果。",
+      "codeLanguage": "typescript",
+      "code": "SessionToolCardQueryPort.list({\n  actorSnapshot,\n  cursor: null,\n  limit: 50\n}) -> { data: SessionToolCard[], nextCursor: null }"
+    },
+    "tool.catalog.resolve": {
+      "kind": "internal",
+      "title": "ToolCatalog Query",
+      "protocol": "Tool System internal",
+      "owner": "Tool System",
+      "purpose": "按名称和版本从唯一 ToolCatalog 读取 ToolDefinition。",
+      "boundary": "调用方不能获得可变 Catalog 或 Provider 实例。",
+      "failure": "不存在、禁用、版本冲突或 exposure 不匹配时返回具名拒绝。",
+      "codeLanguage": "typescript",
+      "code": "ToolCatalog.resolve({\n  requestedToolNames,\n  actorSnapshot,\n  authorizedResourceScope\n}) -> ResolvedToolDefinition[]"
+    },
+    "tool.snapshot.build": {
+      "kind": "internal",
+      "title": "Minimal Snapshot Build",
+      "protocol": "Tool System internal",
+      "owner": "Tool System",
+      "purpose": "将准备结果和 Catalog 定义冻结为本 Turn 最小 ToolRegistrySnapshot。",
+      "boundary": "只冻结 requestedToolNames，不提前暴露未来可能使用的 Tool。",
+      "failure": "任一条目不能完整冻结时，整个 Snapshot 构造失败。",
+      "codeLanguage": "typescript",
+      "code": "snapshot(\n  requestedToolNames,\n  preparedSessionTools,\n  actorSnapshot,\n  authorizedResourceScope\n) -> ToolRegistrySnapshot"
+    },
+    "tool.invoke.validated": {
+      "kind": "internal",
+      "title": "Validated Tool Invocation",
+      "protocol": "Tool System internal",
+      "owner": "Tool System",
+      "purpose": "ToolExecutionPort 校验 Snapshot、权限、版本、fence 和输入后交给 ToolInvoker。",
+      "boundary": "Invoker 不能绕过公开执行口，也不能持有 Core 的可变状态。",
+      "failure": "验证失败直接返回 ToolOutcome，不调用 Provider。",
+      "codeLanguage": "typescript",
+      "code": "ToolExecutionPort.invoke(invocation)\n  -> validate snapshot entry\n  -> recheck authorization and fence\n  -> validate input schema\n  -> ToolInvoker.invoke(validatedInvocation)"
+    },
+    "tool.provider.route": {
+      "kind": "internal",
+      "title": "Provider Route",
+      "protocol": "Tool System internal",
+      "owner": "Tool System",
+      "purpose": "按 providerRef 和 implementationKind 把已校验调用路由给具体 Provider。",
+      "boundary": "Provider 不反向调用 Core，也不决定下一次模型采样。",
+      "failure": "Provider 不存在、不可用、超时或输出不合规时归一化为 ToolOutcome。",
+      "codeLanguage": "text",
+      "code": "ToolInvoker\n  -> ProviderRouter.resolve(providerRef)\n  -> ToolProviderPort.invoke(...)\n  -> validate output schema\n  -> ToolOutcome"
+    },
+    "tool.workflow.route": {
+      "kind": "internal",
+      "title": "Workflow Tool Route",
+      "protocol": "Tool System internal",
+      "owner": "Tool System",
+      "purpose": "implementationKind=workflow 时进入 Tool System 内部 Workflow Runtime。",
+      "boundary": "Workflow 不是独立模块，不面对 UI，也不建立第二套 Agent loop。",
+      "failure": "步骤失败、超时或中断最终映射为当前 ToolInvocation 的 ToolOutcome。",
+      "codeLanguage": "text",
+      "code": "ToolDefinition { implementationKind: \"workflow\" }\n  -> WorkflowRuntime.run(definition, input)\n  -> ToolOutcome"
+    },
+    "tool.workflow.child": {
+      "kind": "internal",
+      "title": "Workflow Child Tool Invocation",
+      "protocol": "Tool System internal",
+      "owner": "Tool System",
+      "purpose": "Workflow 子步骤需要 Tool 时，重新进入同一个 ToolExecutionPort。",
+      "boundary": "不得绕过授权、幂等、超时、输入输出校验和 Provider 路由。",
+      "failure": "子 ToolOutcome 映射为 Step 成功或失败，再汇总为父 ToolOutcome。",
+      "codeLanguage": "text",
+      "code": "WorkflowRuntime step\n  -> ToolExecutionPort.invoke(childInvocation)\n  -> child ToolOutcome\n  -> WorkflowStepResult"
+    },
+    "tool.registration.ingress": {
+      "kind": "internal",
+      "title": "Tool Definition Registration",
+      "protocol": "Tool System internal",
+      "owner": "Tool System",
+      "purpose": "ToolRegistrationPort 校验 ToolDefinition 后写入唯一 ToolCatalog。",
+      "boundary": "注册路径不进入 Rust Core，也不形成动态 thread/start tools。",
+      "failure": "Schema、版本、Provider 或 exposure 不合法时拒绝登记。",
+      "codeLanguage": "typescript",
+      "code": "ToolRegistrationPort.register(definition)\n  -> validate definition\n  -> validate providerRef\n  -> ToolCatalog.upsert(versionedDefinition)"
+    },
+    "tool.outcome.return": {
+      "kind": "dto",
+      "title": "Validated ToolOutcome Return",
+      "protocol": "Tool System internal",
+      "owner": "Tool System",
+      "purpose": "将 Provider 或 Workflow 结果校验并归一化后返回 Rust Agent Core。",
+      "boundary": "只返回一次调用结果；Turn/Item 的持久化和终态仍由 Core 决定。",
+      "failure": "不安全的内部错误被映射为稳定 safeError，不泄漏 Provider 内部实现。",
+      "codeLanguage": "typescript",
+      "code": "ToolOutcome {\n  invocationId,\n  status,\n  output,\n  safeError,\n  sourceRefs,\n  tokenUsage\n}"
+    }
+  },
+  "levels": [
+    {
+      "id": "system",
+      "title": "System Overview",
+      "description": "进程与模块之间只通过具名 RPC、Port 和 DTO 连接。双击 Rust Agent Core 或 Tool System 进入内部层级。",
+      "layout": { "direction": "RIGHT", "spacing": 72, "layerSpacing": 140 },
+      "nodes": [
+        {
+          "id": "agent-ui",
+          "title": "Agent UI",
+          "kind": "client",
+          "tone": "ui",
+          "process": "Browser",
+          "summary": "Session Protocol Client / 临时展示状态",
+          "owner": "交互与展示",
+          "ports": [
+            { "id": "session-command", "label": "session.command", "side": "right", "direction": "output", "dataType": "JSON-RPC" },
+            { "id": "session-notification", "label": "session.notification", "side": "right", "direction": "input", "dataType": "DTO stream" }
+          ],
+          "inspector": {
+            "principle": "交互与展示",
+            "purpose": "呈现 Thread、Turn、Item 和工具卡片，并发起用户命令。",
+            "boundary": "不拥有会话事实，不运行 Agent loop，不直连 Tool Provider。",
+            "failure": "断线后从 Core 持久基线恢复；临时 UI 状态不得覆盖业务事实。"
+          },
+          "layout": { "position": { "x": 60, "y": 270 }, "width": 250, "height": 175, "pinned": true }
+        },
+        {
+          "id": "rust-agent-core",
+          "title": "Rust Agent Core",
+          "kind": "runtime",
+          "tone": "core",
+          "process": "Rust Process",
+          "summary": "Session API / Thread Ledger / SessionIo / run_turn / ToolRouter",
+          "owner": "会话与执行事实 Owner",
+          "hierarchy": {
+            "childLevelId": "core",
+            "portBindings": [
+              { "parentPortId": "session-command", "childEndpoint": { "nodeId": "session-api", "portId": "external-command" } },
+              { "parentPortId": "session-notification", "childEndpoint": { "nodeId": "agent-ui-boundary", "portId": "notification" } },
+              { "parentPortId": "project-lifecycle", "childEndpoint": { "nodeId": "session-api", "portId": "external-command" } },
+              { "parentPortId": "knowledge-lifecycle", "childEndpoint": { "nodeId": "session-api", "portId": "external-command" } },
+              { "parentPortId": "tool-catalog", "childEndpoint": { "nodeId": "tool-system-boundary", "portId": "snapshot-request" } },
+              { "parentPortId": "tool-snapshot", "childEndpoint": { "nodeId": "tool-system-boundary", "portId": "snapshot" } },
+              { "parentPortId": "tool-invoke", "childEndpoint": { "nodeId": "tool-system-boundary", "portId": "tool-invocation" } },
+              { "parentPortId": "tool-outcome", "childEndpoint": { "nodeId": "tool-system-boundary", "portId": "tool-outcome" } }
+            ]
+          },
+          "ports": [
+            { "id": "session-command", "label": "session.command", "side": "left", "direction": "input", "dataType": "JSON-RPC", "order": 0 },
+            { "id": "session-notification", "label": "session.notification", "side": "left", "direction": "output", "dataType": "DTO stream", "order": 1 },
+            { "id": "project-lifecycle", "label": "project.lifecycle", "side": "bottom", "direction": "input", "dataType": "Integration RPC", "order": 0 },
+            { "id": "knowledge-lifecycle", "label": "knowledge.lifecycle", "side": "bottom", "direction": "input", "dataType": "Integration RPC", "order": 1 },
+            { "id": "tool-catalog", "label": "tool.catalog", "side": "right", "direction": "output", "dataType": "Port", "order": 0 },
+            { "id": "tool-snapshot", "label": "tool.snapshot", "side": "right", "direction": "input", "dataType": "DTO", "order": 1 },
+            { "id": "tool-invoke", "label": "tool.invoke", "side": "right", "direction": "output", "dataType": "Port", "order": 2 },
+            { "id": "tool-outcome", "label": "tool.outcome", "side": "right", "direction": "input", "dataType": "DTO", "order": 3 }
+          ],
+          "inspector": {
+            "principle": "会话事实与在线执行循环的唯一 Owner",
+            "purpose": "拥有 Thread、Turn、Item、Ledger、Core Session 和模型/Tool 循环。",
+            "boundary": "不拥有 ToolCatalog、Provider 实现或 Project/Knowledge 业务事实。",
+            "failure": "所有状态转换以持久证据和 execution fence 为准。"
+          },
+          "layout": { "position": { "x": 450, "y": 205 }, "width": 340, "height": 285, "pinned": true }
+        },
+        {
+          "id": "tool-system",
+          "title": "Tool System",
+          "kind": "tool-runtime",
+          "tone": "tool",
+          "process": "Service / Module",
+          "summary": "Catalog / Snapshot / Invoker / Provider / Workflow Runtime",
+          "owner": "Tool 定义与执行 Owner",
+          "hierarchy": {
+            "childLevelId": "tool",
+            "portBindings": [
+              { "parentPortId": "tool-catalog", "childEndpoint": { "nodeId": "core-card-boundary", "portId": "snapshot-request" } },
+              { "parentPortId": "tool-snapshot", "childEndpoint": { "nodeId": "core-snapshot-boundary", "portId": "snapshot" } },
+              { "parentPortId": "tool-invoke", "childEndpoint": { "nodeId": "core-invoke-boundary", "portId": "invocation" } },
+              { "parentPortId": "tool-outcome", "childEndpoint": { "nodeId": "core-outcome-boundary", "portId": "outcome" } },
+              { "parentPortId": "plugin-registration", "childEndpoint": { "nodeId": "registration-source", "portId": "tool-definition" } },
+              { "parentPortId": "platform-registration", "childEndpoint": { "nodeId": "registration-source", "portId": "tool-definition" } }
+            ]
+          },
+          "ports": [
+            { "id": "tool-catalog", "label": "tool.catalog", "side": "left", "direction": "input", "dataType": "Port", "order": 0 },
+            { "id": "tool-snapshot", "label": "tool.snapshot", "side": "left", "direction": "output", "dataType": "DTO", "order": 1 },
+            { "id": "tool-invoke", "label": "tool.invoke", "side": "left", "direction": "input", "dataType": "Port", "order": 2 },
+            { "id": "tool-outcome", "label": "tool.outcome", "side": "left", "direction": "output", "dataType": "DTO", "order": 3 },
+            { "id": "plugin-registration", "label": "plugin.registration", "side": "bottom", "direction": "input", "dataType": "ToolDefinition", "order": 0 },
+            { "id": "platform-registration", "label": "platform.registration", "side": "bottom", "direction": "input", "dataType": "ToolDefinition", "order": 1 }
+          ],
+          "inspector": {
+            "principle": "Tool 定义和一次执行的唯一 Owner",
+            "purpose": "拥有 ToolDefinition、Catalog、Snapshot、执行入口、Provider 路由和 Workflow Runtime。",
+            "boundary": "不拥有 Thread 状态机，不决定模型采样，不直接修改 Core Ledger。",
+            "failure": "注册、授权、执行和输出失败统一落入具名 Tool 协议结果。"
+          },
+          "layout": { "position": { "x": 1010, "y": 205 }, "width": 340, "height": 285, "pinned": true }
+        },
+        {
+          "id": "project",
+          "title": "Project",
+          "kind": "business-module",
+          "tone": "platform",
+          "process": "Python Platform",
+          "summary": "项目业务事实 / Lifecycle caller",
+          "owner": "Project Owner",
+          "ports": [
+            { "id": "session-lifecycle", "label": "session.lifecycle", "side": "top", "direction": "output", "dataType": "Integration RPC" }
+          ],
+          "inspector": {
+            "principle": "项目业务事实 Owner",
+            "purpose": "拥有项目事实；必要时显式调用通用 Thread lifecycle。",
+            "boundary": "不创建 Turn，不写 Thread metadata，不进入 Core 内部对象。",
+            "failure": "调用失败由 Project 记录和补偿，不修改 Core 状态。"
+          },
+          "layout": { "position": { "x": 370, "y": 650 }, "width": 220, "height": 145, "pinned": true }
+        },
+        {
+          "id": "knowledge",
+          "title": "Knowledge",
+          "kind": "business-module",
+          "tone": "platform",
+          "process": "Python Platform",
+          "summary": "知识库业务事实 / Lifecycle caller",
+          "owner": "Knowledge Owner",
+          "ports": [
+            { "id": "session-lifecycle", "label": "session.lifecycle", "side": "top", "direction": "output", "dataType": "Integration RPC" }
+          ],
+          "inspector": {
+            "principle": "知识库业务事实 Owner",
+            "purpose": "拥有知识库事实；必要时显式调用通用 Thread lifecycle。",
+            "boundary": "不创建 Turn，不让 Core 解释知识库业务生命周期。",
+            "failure": "调用失败由 Knowledge 记录和补偿，不修改 Core 状态。"
+          },
+          "layout": { "position": { "x": 650, "y": 650 }, "width": 220, "height": 145, "pinned": true }
+        },
+        {
+          "id": "plugin",
+          "title": "Plugin",
+          "kind": "provider-source",
+          "tone": "plugin",
+          "process": "Artifact",
+          "summary": "ToolDefinition / Provider implementation",
+          "owner": "Plugin Artifact",
+          "ports": [
+            { "id": "tool-registration", "label": "tool.registration", "side": "top", "direction": "output", "dataType": "ToolDefinition" }
+          ],
+          "inspector": {
+            "principle": "Plugin 能力来源",
+            "purpose": "提供版本化 ToolDefinition 和 Provider 实现。",
+            "boundary": "不向 Core 注册 dynamicTools，不访问 Thread/Turn 内部状态。",
+            "failure": "定义不合规时 Artifact 不激活。"
+          },
+          "layout": { "position": { "x": 980, "y": 650 }, "width": 220, "height": 145, "pinned": true }
+        },
+        {
+          "id": "platform-provider",
+          "title": "Platform Provider",
+          "kind": "provider-source",
+          "tone": "platform",
+          "process": "Python Platform",
+          "summary": "内置业务能力 / Provider implementation",
+          "owner": "Platform Module",
+          "ports": [
+            { "id": "tool-registration", "label": "tool.registration", "side": "top", "direction": "output", "dataType": "ToolDefinition" }
+          ],
+          "inspector": {
+            "principle": "Platform 能力适配",
+            "purpose": "把 Project、Knowledge 等公开能力适配为 Tool Provider。",
+            "boundary": "只使用业务模块公开 Port，不跨模块读取 ORM 或 Repository。",
+            "failure": "能力不可用时返回 Provider 失败，不改变业务模块事实。"
+          },
+          "layout": { "position": { "x": 1240, "y": 650 }, "width": 240, "height": 145, "pinned": true }
+        }
+      ],
+      "connections": [
+        { "id": "ui-session-command", "interfaceId": "session.command", "source": { "nodeId": "agent-ui", "portId": "session-command" }, "target": { "nodeId": "rust-agent-core", "portId": "session-command" } },
+        { "id": "core-ui-notification", "interfaceId": "session.notification", "source": { "nodeId": "rust-agent-core", "portId": "session-notification" }, "target": { "nodeId": "agent-ui", "portId": "session-notification" } },
+        { "id": "project-core-lifecycle", "interfaceId": "session.integration", "label": "Project Lifecycle RPC", "source": { "nodeId": "project", "portId": "session-lifecycle" }, "target": { "nodeId": "rust-agent-core", "portId": "project-lifecycle" } },
+        { "id": "knowledge-core-lifecycle", "interfaceId": "session.integration", "label": "Knowledge Lifecycle RPC", "source": { "nodeId": "knowledge", "portId": "session-lifecycle" }, "target": { "nodeId": "rust-agent-core", "portId": "knowledge-lifecycle" } },
+        { "id": "core-tool-catalog", "interfaceId": "tool.catalog.request", "source": { "nodeId": "rust-agent-core", "portId": "tool-catalog" }, "target": { "nodeId": "tool-system", "portId": "tool-catalog" } },
+        { "id": "tool-core-snapshot", "interfaceId": "tool.snapshot", "source": { "nodeId": "tool-system", "portId": "tool-snapshot" }, "target": { "nodeId": "rust-agent-core", "portId": "tool-snapshot" } },
+        { "id": "core-tool-invoke", "interfaceId": "tool.invoke", "source": { "nodeId": "rust-agent-core", "portId": "tool-invoke" }, "target": { "nodeId": "tool-system", "portId": "tool-invoke" } },
+        { "id": "tool-core-outcome", "interfaceId": "tool.outcome", "source": { "nodeId": "tool-system", "portId": "tool-outcome" }, "target": { "nodeId": "rust-agent-core", "portId": "tool-outcome" } },
+        { "id": "plugin-tool-registration", "interfaceId": "tool.registration", "label": "Plugin Registration", "source": { "nodeId": "plugin", "portId": "tool-registration" }, "target": { "nodeId": "tool-system", "portId": "plugin-registration" } },
+        { "id": "platform-tool-registration", "interfaceId": "tool.registration", "label": "Platform Registration", "source": { "nodeId": "platform-provider", "portId": "tool-registration" }, "target": { "nodeId": "tool-system", "portId": "platform-registration" } }
+      ]
+    },
+    {
+      "id": "core",
+      "title": "Rust Agent Core",
+      "description": "持久 Session 事实与在线执行循环位于同一个 Rust Core 边界内。",
+      "parentLevelId": "system",
+      "layout": { "direction": "RIGHT", "spacing": 64, "layerSpacing": 100 },
+      "nodes": [
+        {
+          "id": "session-api",
+          "title": "Session API",
+          "kind": "adapter",
+          "tone": "ui",
+          "process": "Public Adapter",
+          "summary": "RPC / WebSocket / 协议与身份校验",
+          "owner": "公开入口",
+          "ports": [
+            { "id": "external-command", "label": "session.command", "side": "left", "direction": "input", "dataType": "JSON-RPC" },
+            { "id": "command", "label": "SessionCommand", "side": "right", "direction": "output", "dataType": "Command" }
+          ],
+          "inspector": { "principle": "公开协议适配", "purpose": "承接 UI 和 Integration 的公开 Session Protocol。", "boundary": "只适配传输，不拥有业务状态。", "failure": "协议或身份失败时不进入 Core 命令链。" },
+          "layout": { "position": { "x": 40, "y": 90 }, "width": 240, "height": 155, "pinned": true }
+        },
+        {
+          "id": "thread-manager",
+          "title": "ThreadManager",
+          "kind": "domain-service",
+          "tone": "core",
+          "process": "Core Domain",
+          "summary": "Thread lifecycle / Turn command coordination",
+          "owner": "会话命令协调",
+          "ports": [
+            { "id": "command", "label": "command", "side": "left", "direction": "input", "dataType": "SessionCommand" },
+            { "id": "lifecycle-write", "label": "lifecycle.write", "side": "bottom", "direction": "output", "dataType": "LedgerCommand" },
+            { "id": "submission", "label": "submission", "side": "right", "direction": "output", "dataType": "Submission", "order": 0 },
+            { "id": "snapshot-request", "label": "snapshot.request", "side": "right", "direction": "output", "dataType": "ToolSnapshotRequest", "order": 1 },
+            { "id": "snapshot", "label": "snapshot", "side": "right", "direction": "input", "dataType": "ToolRegistrySnapshot", "order": 2 }
+          ],
+          "inspector": { "principle": "会话命令协调", "purpose": "协调公开命令、Ledger 事务和内部 Submission。", "boundary": "不替 Ledger 持久事实，不替 SessionTask 执行模型循环。", "failure": "冲突和持久化失败时不提交执行。" },
+          "layout": { "position": { "x": 350, "y": 90 }, "width": 270, "height": 220, "pinned": true }
+        },
+        {
+          "id": "session-io",
+          "title": "SessionIo",
+          "kind": "channel",
+          "tone": "core",
+          "process": "Core Channel",
+          "summary": "Submission input / Event output",
+          "owner": "内部命令/事件端点",
+          "ports": [
+            { "id": "submission-in", "label": "submission.in", "side": "left", "direction": "input", "dataType": "Submission" },
+            { "id": "submission-out", "label": "submission.out", "side": "right", "direction": "output", "dataType": "Submission" }
+          ],
+          "inspector": { "principle": "Core 内部命令/事件端点", "purpose": "连接 ThreadManager 和 Core submission loop。", "boundary": "不是跨进程协议，不持久化业务状态。", "failure": "Channel 关闭时明确报告 Session 不可用。" },
+          "layout": { "position": { "x": 680, "y": 90 }, "width": 230, "height": 155, "pinned": true }
+        },
+        {
+          "id": "submission-loop",
+          "title": "submission_loop",
+          "kind": "scheduler",
+          "tone": "core",
+          "process": "Core Scheduler",
+          "summary": "ActiveTurn / RunningTask / fence",
+          "owner": "在线任务调度",
+          "ports": [
+            { "id": "submission", "label": "submission", "side": "left", "direction": "input", "dataType": "Submission" },
+            { "id": "running-task", "label": "running.task", "side": "right", "direction": "output", "dataType": "RunningTask" }
+          ],
+          "inspector": { "principle": "在线任务调度", "purpose": "消费 Submission 并构造受 fence 约束的运行任务。", "boundary": "不把内存任务当成业务状态。", "failure": "取消、陈旧 fence 或重复提交被拒绝。" },
+          "layout": { "position": { "x": 990, "y": 90 }, "width": 250, "height": 155, "pinned": true }
+        },
+        {
+          "id": "session-task",
+          "title": "SessionTask / run_turn",
+          "kind": "execution-loop",
+          "tone": "core",
+          "process": "Core Execution",
+          "summary": "StepContext / model / tool loop",
+          "owner": "在线执行循环",
+          "ports": [
+            { "id": "running-task", "label": "running.task", "side": "left", "direction": "input", "dataType": "RunningTask" },
+            { "id": "context-request", "label": "context.request", "side": "bottom", "direction": "output", "dataType": "ContextBuildRequest", "order": 0 },
+            { "id": "context-snapshot", "label": "context.snapshot", "side": "bottom", "direction": "input", "dataType": "ThreadContextSnapshot", "order": 1 },
+            { "id": "tool-call", "label": "tool.call", "side": "right", "direction": "output", "dataType": "ToolCall" },
+            { "id": "event", "label": "event", "side": "bottom", "direction": "output", "dataType": "Event", "order": 2 }
+          ],
+          "inspector": { "principle": "在线模型与 Tool 循环", "purpose": "执行一次 Turn 的模型采样、Tool 调用和结果回灌循环。", "boundary": "不拥有 ToolCatalog，不绕过 Ledger 发布事实。", "failure": "失败、取消和中断产生可恢复执行证据。" },
+          "layout": { "position": { "x": 1320, "y": 70 }, "width": 290, "height": 210, "pinned": true }
+        },
+        {
+          "id": "context-manager",
+          "title": "ContextManager",
+          "kind": "context-projection",
+          "tone": "neutral",
+          "process": "Core Context",
+          "summary": "ThreadContextSnapshot / compaction projection",
+          "owner": "上下文派生",
+          "ports": [
+            { "id": "request", "label": "request", "side": "top", "direction": "input", "dataType": "ContextBuildRequest", "order": 0 },
+            { "id": "snapshot", "label": "snapshot", "side": "top", "direction": "output", "dataType": "ThreadContextSnapshot", "order": 1 },
+            { "id": "history", "label": "history", "side": "bottom", "direction": "input", "dataType": "PersistedItems" }
+          ],
+          "inspector": { "principle": "上下文派生", "purpose": "从 Core 持久事实构造模型上下文。", "boundary": "不成为历史事实源，不接受外部 CoreThreadSnapshot。", "failure": "只使用完整持久证据。" },
+          "layout": { "position": { "x": 1000, "y": 410 }, "width": 270, "height": 180, "pinned": true }
+        },
+        {
+          "id": "tool-router",
+          "title": "ToolRouter",
+          "kind": "tool-route",
+          "tone": "core",
+          "process": "Core Tool Route",
+          "summary": "model-visible specs / ToolCallRuntime",
+          "owner": "Core Tool 选择与调度",
+          "ports": [
+            { "id": "tool-call", "label": "tool.call", "side": "top", "direction": "input", "dataType": "ToolCall" },
+            { "id": "tool-invocation", "label": "tool.invoke", "side": "right", "direction": "output", "dataType": "ToolInvocation", "order": 0 },
+            { "id": "tool-outcome", "label": "tool.outcome", "side": "right", "direction": "input", "dataType": "ToolOutcome", "order": 1 }
+          ],
+          "inspector": { "principle": "Core Tool 选择与调度", "purpose": "将模型 ToolCall 约束到本 Turn 的 Snapshot。", "boundary": "不拥有 ToolDefinition 和 Provider。", "failure": "快照外调用和非法参数产生具名失败。" },
+          "layout": { "position": { "x": 1330, "y": 410 }, "width": 260, "height": 180, "pinned": true }
+        },
+        {
+          "id": "tool-system-boundary",
+          "title": "Tool System Port",
+          "kind": "boundary",
+          "tone": "tool",
+          "process": "Boundary",
+          "summary": "Snapshot request/result / ToolInvocation / ToolOutcome",
+          "owner": "Core-to-Tool 边界",
+          "ports": [
+            { "id": "snapshot-request", "label": "snapshot.request", "side": "left", "direction": "input", "dataType": "ToolSnapshotRequest", "order": 0 },
+            { "id": "snapshot", "label": "snapshot", "side": "left", "direction": "output", "dataType": "ToolRegistrySnapshot", "order": 1 },
+            { "id": "tool-invocation", "label": "tool.invoke", "side": "left", "direction": "input", "dataType": "ToolInvocation", "order": 2 },
+            { "id": "tool-outcome", "label": "tool.outcome", "side": "left", "direction": "output", "dataType": "ToolOutcome", "order": 3 }
+          ],
+          "inspector": { "principle": "Core-to-Tool 协议边界", "purpose": "把 Core Tool 调用交给 Tool System。", "boundary": "只交换协议 DTO，不暴露双方内部对象。", "failure": "传输失败与 Tool 安全失败分开。" },
+          "layout": { "position": { "x": 1680, "y": 390 }, "width": 250, "height": 220, "pinned": true }
+        },
+        {
+          "id": "thread-ledger",
+          "title": "Thread Ledger",
+          "kind": "fact-store",
+          "tone": "core",
+          "process": "Core Fact Store",
+          "summary": "Thread / Turn / Item / Event / Attempt / Fence",
+          "owner": "唯一持久事实源",
+          "ports": [
+            { "id": "lifecycle-write", "label": "lifecycle.write", "side": "top", "direction": "input", "dataType": "LedgerCommand", "order": 0 },
+            { "id": "event", "label": "event", "side": "top", "direction": "input", "dataType": "Event", "order": 1 },
+            { "id": "history", "label": "history", "side": "top", "direction": "output", "dataType": "PersistedItems", "order": 2 },
+            { "id": "committed-event", "label": "committed.event", "side": "left", "direction": "output", "dataType": "CommittedEvent" }
+          ],
+          "inspector": { "principle": "Thread/Turn/Item 唯一事实源", "purpose": "持久化 Thread、Turn、Item、Attempt 和执行证据。", "boundary": "Tool System 和 UI 不能直接写入内部 Store。", "failure": "原子事务失败不留下部分业务状态。" },
+          "layout": { "position": { "x": 820, "y": 760 }, "width": 300, "height": 205, "pinned": true }
+        },
+        {
+          "id": "notification-projection",
+          "title": "Notification Projection",
+          "kind": "projection",
+          "tone": "ui",
+          "process": "Core Projection",
+          "summary": "streamCursor / resume / replay",
+          "owner": "可重建投影",
+          "ports": [
+            { "id": "committed-event", "label": "committed.event", "side": "right", "direction": "input", "dataType": "CommittedEvent" },
+            { "id": "notification", "label": "notification", "side": "left", "direction": "output", "dataType": "Notification DTO" }
+          ],
+          "inspector": { "principle": "持久事实的可重建投影", "purpose": "从已提交 Ledger 事实投影 UI Notification。", "boundary": "不是第二事实源，不接收 UI 回写。", "failure": "投影可从 Ledger 重建。" },
+          "layout": { "position": { "x": 440, "y": 780 }, "width": 280, "height": 165, "pinned": true }
+        },
+        {
+          "id": "agent-ui-boundary",
+          "title": "Agent UI Port",
+          "kind": "boundary",
+          "tone": "ui",
+          "process": "Boundary",
+          "summary": "Notification DTO / WebSocket stream",
+          "owner": "Core 输出边界",
+          "ports": [
+            { "id": "notification", "label": "notification", "side": "right", "direction": "input", "dataType": "Notification DTO" }
+          ],
+          "inspector": { "principle": "Core-to-UI 输出边界", "purpose": "向 UI 输出可续传 Notification DTO。", "boundary": "不输出 Core raw events。", "failure": "断线后通过 cursor/resume 恢复。" },
+          "layout": { "position": { "x": 80, "y": 790 }, "width": 240, "height": 145, "pinned": true }
+        }
+      ],
+      "connections": [
+        { "id": "api-manager-command", "interfaceId": "core.command.dispatch", "source": { "nodeId": "session-api", "portId": "command" }, "target": { "nodeId": "thread-manager", "portId": "command" } },
+        { "id": "manager-snapshot-request", "interfaceId": "tool.catalog.request", "source": { "nodeId": "thread-manager", "portId": "snapshot-request" }, "target": { "nodeId": "tool-system-boundary", "portId": "snapshot-request" } },
+        { "id": "boundary-manager-snapshot", "interfaceId": "tool.snapshot", "source": { "nodeId": "tool-system-boundary", "portId": "snapshot" }, "target": { "nodeId": "thread-manager", "portId": "snapshot" } },
+        { "id": "manager-ledger-lifecycle", "interfaceId": "core.ledger.lifecycle", "source": { "nodeId": "thread-manager", "portId": "lifecycle-write" }, "target": { "nodeId": "thread-ledger", "portId": "lifecycle-write" } },
+        { "id": "manager-session-submission", "interfaceId": "core.submission", "source": { "nodeId": "thread-manager", "portId": "submission" }, "target": { "nodeId": "session-io", "portId": "submission-in" } },
+        { "id": "session-loop-submission", "interfaceId": "core.submission", "label": "Submission Queue", "source": { "nodeId": "session-io", "portId": "submission-out" }, "target": { "nodeId": "submission-loop", "portId": "submission" } },
+        { "id": "loop-task-dispatch", "interfaceId": "core.task.dispatch", "source": { "nodeId": "submission-loop", "portId": "running-task" }, "target": { "nodeId": "session-task", "portId": "running-task" } },
+        { "id": "task-context-request", "interfaceId": "core.context.request", "source": { "nodeId": "session-task", "portId": "context-request" }, "target": { "nodeId": "context-manager", "portId": "request" } },
+        { "id": "context-task-snapshot", "interfaceId": "core.context.snapshot", "source": { "nodeId": "context-manager", "portId": "snapshot" }, "target": { "nodeId": "session-task", "portId": "context-snapshot" } },
+        { "id": "ledger-context-history", "interfaceId": "core.context.history", "source": { "nodeId": "thread-ledger", "portId": "history" }, "target": { "nodeId": "context-manager", "portId": "history" } },
+        { "id": "task-tool-route", "interfaceId": "core.tool.route", "source": { "nodeId": "session-task", "portId": "tool-call" }, "target": { "nodeId": "tool-router", "portId": "tool-call" } },
+        { "id": "router-tool-invoke", "interfaceId": "tool.invoke", "source": { "nodeId": "tool-router", "portId": "tool-invocation" }, "target": { "nodeId": "tool-system-boundary", "portId": "tool-invocation" } },
+        { "id": "tool-router-outcome", "interfaceId": "tool.outcome", "source": { "nodeId": "tool-system-boundary", "portId": "tool-outcome" }, "target": { "nodeId": "tool-router", "portId": "tool-outcome" } },
+        { "id": "task-ledger-event", "interfaceId": "core.event", "source": { "nodeId": "session-task", "portId": "event" }, "target": { "nodeId": "thread-ledger", "portId": "event" } },
+        { "id": "ledger-notification-event", "interfaceId": "core.committed.event", "source": { "nodeId": "thread-ledger", "portId": "committed-event" }, "target": { "nodeId": "notification-projection", "portId": "committed-event" } },
+        { "id": "notification-ui-dto", "interfaceId": "session.notification", "source": { "nodeId": "notification-projection", "portId": "notification" }, "target": { "nodeId": "agent-ui-boundary", "portId": "notification" } }
+      ]
+    },
+    {
+      "id": "tool",
+      "title": "Tool System",
+      "description": "Tool 定义、最小快照、统一执行、Provider 路由和 Workflow 实现位于同一边界。",
+      "parentLevelId": "system",
+      "layout": { "direction": "RIGHT", "spacing": 64, "layerSpacing": 100 },
+      "nodes": [
+        {
+          "id": "core-card-boundary",
+          "title": "Core Card Port",
+          "kind": "boundary",
+          "tone": "core",
+          "process": "Boundary",
+          "summary": "list / prepare / snapshot request",
+          "owner": "Core 输入",
+          "ports": [
+            { "id": "card-query", "label": "card.query", "side": "right", "direction": "output", "dataType": "CardQuery", "order": 0 },
+            { "id": "snapshot-request", "label": "snapshot.request", "side": "right", "direction": "output", "dataType": "ToolSnapshotRequest", "order": 1 }
+          ],
+          "inspector": { "principle": "Core-to-Tool 卡片边界", "purpose": "接收 Core 的卡片、准备和 Snapshot 请求。", "boundary": "只接收协议 DTO。", "failure": "非法输入不进入 Catalog。" },
+          "layout": { "position": { "x": 40, "y": 80 }, "width": 250, "height": 175, "pinned": true }
+        },
+        {
+          "id": "card-prepare",
+          "title": "Card / Prepare",
+          "kind": "projection",
+          "tone": "tool",
+          "process": "Tool Projection",
+          "summary": "SessionToolCard / PreparedSessionTool",
+          "owner": "展示与选择校验",
+          "ports": [
+            { "id": "card-query", "label": "card.query", "side": "left", "direction": "input", "dataType": "CardQuery" },
+            { "id": "catalog-query", "label": "catalog.query", "side": "right", "direction": "output", "dataType": "CatalogQuery" }
+          ],
+          "inspector": { "principle": "声明式工具卡片投影", "purpose": "投影工具卡片并准备用户选择。", "boundary": "不创建 Turn，不持久化 UI 临时状态。", "failure": "禁用、越权和不匹配 Tool 不进入结果。" },
+          "layout": { "position": { "x": 350, "y": 80 }, "width": 250, "height": 165, "pinned": true }
+        },
+        {
+          "id": "tool-catalog",
+          "title": "ToolCatalog",
+          "kind": "fact-store",
+          "tone": "tool",
+          "process": "Tool Fact Store",
+          "summary": "ToolDefinition / version / status",
+          "owner": "Tool 定义唯一事实源",
+          "ports": [
+            { "id": "catalog-query", "label": "catalog.query", "side": "left", "direction": "input", "dataType": "CatalogQuery" },
+            { "id": "snapshot-request", "label": "snapshot.request", "side": "left", "direction": "input", "dataType": "ToolSnapshotRequest" },
+            { "id": "resolved-definitions", "label": "resolved.defs", "side": "right", "direction": "output", "dataType": "ResolvedToolDefinition[]" },
+            { "id": "definition-write", "label": "definition.write", "side": "bottom", "direction": "input", "dataType": "ToolDefinition" }
+          ],
+          "inspector": { "principle": "Tool 定义唯一事实源", "purpose": "拥有所有已登记、带版本的 ToolDefinition。", "boundary": "不持有 Core ToolRouter 或 Turn 状态。", "failure": "非法定义不能进入 Catalog。" },
+          "layout": { "position": { "x": 680, "y": 70 }, "width": 270, "height": 185, "pinned": true }
+        },
+        {
+          "id": "snapshot-builder",
+          "title": "Snapshot Builder",
+          "kind": "policy",
+          "tone": "tool",
+          "process": "Tool Policy",
+          "summary": "minimal authorized set / immutable entries",
+          "owner": "快照生成",
+          "ports": [
+            { "id": "resolved-definitions", "label": "resolved.defs", "side": "left", "direction": "input", "dataType": "ResolvedToolDefinition[]" },
+            { "id": "snapshot", "label": "snapshot", "side": "right", "direction": "output", "dataType": "ToolRegistrySnapshot" }
+          ],
+          "inspector": { "principle": "本 Turn 最小快照", "purpose": "冻结本 Turn 最小 ToolRegistrySnapshot。", "boundary": "不冻结未请求 Tool，不成为第二 Catalog。", "failure": "不能完整冻结时整体失败。" },
+          "layout": { "position": { "x": 1030, "y": 80 }, "width": 270, "height": 165, "pinned": true }
+        },
+        {
+          "id": "core-snapshot-boundary",
+          "title": "Core Snapshot Port",
+          "kind": "boundary",
+          "tone": "core",
+          "process": "Boundary",
+          "summary": "ToolRegistrySnapshot / immutable DTO",
+          "owner": "Tool 输出",
+          "ports": [
+            { "id": "snapshot", "label": "snapshot", "side": "left", "direction": "input", "dataType": "ToolRegistrySnapshot" }
+          ],
+          "inspector": { "principle": "Tool-to-Core 快照边界", "purpose": "向 Core 返回最小不可变 Snapshot。", "boundary": "不返回可变 Catalog 或 Provider。", "failure": "失败时不返回部分集合。" },
+          "layout": { "position": { "x": 1390, "y": 80 }, "width": 250, "height": 155, "pinned": true }
+        },
+        {
+          "id": "core-invoke-boundary",
+          "title": "Core Invoke Port",
+          "kind": "boundary",
+          "tone": "core",
+          "process": "Boundary",
+          "summary": "ToolInvocation / fence / idempotency",
+          "owner": "Core 输入",
+          "ports": [
+            { "id": "invocation", "label": "invocation", "side": "right", "direction": "output", "dataType": "ToolInvocation" }
+          ],
+          "inspector": { "principle": "Core-to-Tool 执行边界", "purpose": "接收 Core 规范化后的 ToolInvocation。", "boundary": "模型不能直接调用此 Port。", "failure": "Wire 失败与 Tool 失败分离。" },
+          "layout": { "position": { "x": 40, "y": 420 }, "width": 240, "height": 155, "pinned": true }
+        },
+        {
+          "id": "execution-port",
+          "title": "ToolExecutionPort",
+          "kind": "public-port",
+          "tone": "tool",
+          "process": "Tool Public Port",
+          "summary": "authorization / schema / fence checks",
+          "owner": "唯一执行入口",
+          "ports": [
+            { "id": "invocation", "label": "invocation", "side": "left", "direction": "input", "dataType": "ToolInvocation", "order": 0 },
+            { "id": "child-invocation", "label": "child.invoke", "side": "bottom", "direction": "input", "dataType": "ToolInvocation" },
+            { "id": "validated-invocation", "label": "validated", "side": "right", "direction": "output", "dataType": "ValidatedInvocation" },
+            { "id": "outcome", "label": "outcome", "side": "left", "direction": "output", "dataType": "ToolOutcome", "order": 1 }
+          ],
+          "inspector": { "principle": "唯一 Tool 执行入口", "purpose": "完成每次 Tool 调用的统一前置校验。", "boundary": "任何 Provider 和 Workflow 子调用都不能绕过。", "failure": "校验失败直接返回结构化 Outcome。" },
+          "layout": { "position": { "x": 350, "y": 390 }, "width": 270, "height": 215, "pinned": true }
+        },
+        {
+          "id": "tool-invoker",
+          "title": "ToolInvoker",
+          "kind": "execution-service",
+          "tone": "tool",
+          "process": "Tool Execution",
+          "summary": "timeout / cancel / output validation",
+          "owner": "单次调用协调",
+          "ports": [
+            { "id": "validated-invocation", "label": "validated", "side": "left", "direction": "input", "dataType": "ValidatedInvocation" },
+            { "id": "provider-route", "label": "provider.route", "side": "right", "direction": "output", "dataType": "ProviderInvocation" }
+          ],
+          "inspector": { "principle": "单次 Tool 调用协调", "purpose": "协调一次 Provider 调用和结果校验。", "boundary": "不决定模型继续采样。", "failure": "超时、取消和输出错误归一化为 Outcome。" },
+          "layout": { "position": { "x": 700, "y": 420 }, "width": 250, "height": 165, "pinned": true }
+        },
+        {
+          "id": "provider-router",
+          "title": "ProviderRouter",
+          "kind": "route",
+          "tone": "tool",
+          "process": "Tool Route",
+          "summary": "providerRef / implementationKind",
+          "owner": "Provider 路由",
+          "ports": [
+            { "id": "provider-route", "label": "provider.route", "side": "left", "direction": "input", "dataType": "ProviderInvocation" },
+            { "id": "provider-invocation", "label": "provider.invoke", "side": "right", "direction": "output", "dataType": "ProviderInvocation" },
+            { "id": "workflow-route", "label": "workflow.route", "side": "bottom", "direction": "output", "dataType": "WorkflowInvocation" }
+          ],
+          "inspector": { "principle": "Provider 路由", "purpose": "解析具体 Provider 或 Workflow 实现。", "boundary": "Provider 不能反向取得 Core。", "failure": "Provider 不可用时返回具名失败。" },
+          "layout": { "position": { "x": 1030, "y": 410 }, "width": 260, "height": 185, "pinned": true }
+        },
+        {
+          "id": "provider-boundary",
+          "title": "Provider Port",
+          "kind": "boundary",
+          "tone": "platform",
+          "process": "Boundary",
+          "summary": "Plugin / Platform / ToolProviderPort",
+          "owner": "实现边界",
+          "ports": [
+            { "id": "provider-invocation", "label": "provider.invoke", "side": "left", "direction": "input", "dataType": "ProviderInvocation" }
+          ],
+          "inspector": { "principle": "Tool-to-Provider 实现边界", "purpose": "调用 Plugin 或 Platform 的具体 Tool 实现。", "boundary": "只传递公开 DTO，不暴露 Tool System 内部 Registry。", "failure": "Provider 错误被归一化。" },
+          "layout": { "position": { "x": 1390, "y": 420 }, "width": 250, "height": 155, "pinned": true }
+        },
+        {
+          "id": "workflow-runtime",
+          "title": "Workflow Runtime",
+          "kind": "tool-implementation",
+          "tone": "plugin",
+          "process": "Tool Implementation",
+          "summary": "WorkflowDefinition / linear step schedule",
+          "owner": "Workflow Tool 实现",
+          "ports": [
+            { "id": "workflow-route", "label": "workflow.route", "side": "top", "direction": "input", "dataType": "WorkflowInvocation" },
+            { "id": "child-invocation", "label": "child.invoke", "side": "left", "direction": "output", "dataType": "ToolInvocation" }
+          ],
+          "inspector": { "principle": "Workflow 是 Tool 实现", "purpose": "执行 implementationKind=workflow 的 Tool。", "boundary": "不是独立模块，不建立第二套 Agent loop。", "failure": "Step 结果汇总成父 ToolOutcome。" },
+          "layout": { "position": { "x": 1030, "y": 760 }, "width": 280, "height": 175, "pinned": true }
+        },
+        {
+          "id": "registration-source",
+          "title": "Plugin / Platform",
+          "kind": "boundary",
+          "tone": "platform",
+          "process": "Boundary",
+          "summary": "ToolDefinition source / Provider implementation",
+          "owner": "外部定义来源",
+          "ports": [
+            { "id": "tool-definition", "label": "tool.definition", "side": "right", "direction": "output", "dataType": "ToolDefinition" }
+          ],
+          "inspector": { "principle": "Tool 定义来源", "purpose": "提供 ToolDefinition 和 Provider 实现。", "boundary": "不直接写 Catalog，不直连 Core。", "failure": "注册失败不激活能力。" },
+          "layout": { "position": { "x": 350, "y": 760 }, "width": 260, "height": 165, "pinned": true }
+        },
+        {
+          "id": "registration-port",
+          "title": "Registration Port",
+          "kind": "public-port",
+          "tone": "tool",
+          "process": "Tool Public Port",
+          "summary": "ToolDefinition / artifact activation",
+          "owner": "定义写入口",
+          "ports": [
+            { "id": "tool-definition", "label": "tool.definition", "side": "left", "direction": "input", "dataType": "ToolDefinition" },
+            { "id": "definition-write", "label": "definition.write", "side": "top", "direction": "output", "dataType": "ToolDefinition" }
+          ],
+          "inspector": { "principle": "Tool 定义唯一写入口", "purpose": "校验并登记 Plugin/Platform ToolDefinition。", "boundary": "不向 Core 动态注册 Tool。", "failure": "定义不完整时拒绝激活。" },
+          "layout": { "position": { "x": 700, "y": 760 }, "width": 260, "height": 175, "pinned": true }
+        },
+        {
+          "id": "core-outcome-boundary",
+          "title": "Core Outcome Port",
+          "kind": "boundary",
+          "tone": "core",
+          "process": "Boundary",
+          "summary": "ToolOutcome / safeError / sourceRefs",
+          "owner": "Tool 输出",
+          "ports": [
+            { "id": "outcome", "label": "outcome", "side": "right", "direction": "input", "dataType": "ToolOutcome" }
+          ],
+          "inspector": { "principle": "Tool-to-Core 结果边界", "purpose": "把验证后的 ToolOutcome 返回 Core。", "boundary": "不改变 Turn 状态。", "failure": "内部错误不泄漏到稳定协议。" },
+          "layout": { "position": { "x": 40, "y": 780 }, "width": 240, "height": 145, "pinned": true }
+        }
+      ],
+      "connections": [
+        { "id": "core-card-query", "interfaceId": "tool.card.query", "source": { "nodeId": "core-card-boundary", "portId": "card-query" }, "target": { "nodeId": "card-prepare", "portId": "card-query" } },
+        { "id": "core-snapshot-request", "interfaceId": "tool.catalog.request", "source": { "nodeId": "core-card-boundary", "portId": "snapshot-request" }, "target": { "nodeId": "tool-catalog", "portId": "snapshot-request" } },
+        { "id": "card-catalog-query", "interfaceId": "tool.catalog.resolve", "source": { "nodeId": "card-prepare", "portId": "catalog-query" }, "target": { "nodeId": "tool-catalog", "portId": "catalog-query" } },
+        { "id": "catalog-snapshot-build", "interfaceId": "tool.snapshot.build", "source": { "nodeId": "tool-catalog", "portId": "resolved-definitions" }, "target": { "nodeId": "snapshot-builder", "portId": "resolved-definitions" } },
+        { "id": "snapshot-core-return", "interfaceId": "tool.snapshot", "source": { "nodeId": "snapshot-builder", "portId": "snapshot" }, "target": { "nodeId": "core-snapshot-boundary", "portId": "snapshot" } },
+        { "id": "core-execution-invoke", "interfaceId": "tool.invoke", "source": { "nodeId": "core-invoke-boundary", "portId": "invocation" }, "target": { "nodeId": "execution-port", "portId": "invocation" } },
+        { "id": "execution-invoker", "interfaceId": "tool.invoke.validated", "source": { "nodeId": "execution-port", "portId": "validated-invocation" }, "target": { "nodeId": "tool-invoker", "portId": "validated-invocation" } },
+        { "id": "invoker-provider-route", "interfaceId": "tool.provider.route", "source": { "nodeId": "tool-invoker", "portId": "provider-route" }, "target": { "nodeId": "provider-router", "portId": "provider-route" } },
+        { "id": "router-provider-port", "interfaceId": "tool.provider.route", "label": "ToolProviderPort", "source": { "nodeId": "provider-router", "portId": "provider-invocation" }, "target": { "nodeId": "provider-boundary", "portId": "provider-invocation" } },
+        { "id": "router-workflow", "interfaceId": "tool.workflow.route", "source": { "nodeId": "provider-router", "portId": "workflow-route" }, "target": { "nodeId": "workflow-runtime", "portId": "workflow-route" } },
+        { "id": "workflow-child-call", "interfaceId": "tool.workflow.child", "source": { "nodeId": "workflow-runtime", "portId": "child-invocation" }, "target": { "nodeId": "execution-port", "portId": "child-invocation" } },
+        { "id": "source-registration", "interfaceId": "tool.registration", "source": { "nodeId": "registration-source", "portId": "tool-definition" }, "target": { "nodeId": "registration-port", "portId": "tool-definition" } },
+        { "id": "registration-catalog", "interfaceId": "tool.registration.ingress", "source": { "nodeId": "registration-port", "portId": "definition-write" }, "target": { "nodeId": "tool-catalog", "portId": "definition-write" } },
+        { "id": "outcome-core-return", "interfaceId": "tool.outcome.return", "source": { "nodeId": "execution-port", "portId": "outcome" }, "target": { "nodeId": "core-outcome-boundary", "portId": "outcome" } }
+      ]
+    }
+  ]
+}
