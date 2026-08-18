@@ -7,11 +7,12 @@ import {
   MiniMap,
   Panel,
   ReactFlow,
-  useNodesInitialized,
   useNodesState,
   useReactFlow,
   useStoreApi,
   type EdgeMouseHandler,
+  type Connection,
+  type OnNodeDrag,
   type NodeMouseHandler,
 } from "@xyflow/react";
 import type { BlockDesignDocument, BlockPort } from "../model";
@@ -21,6 +22,7 @@ import { InterfaceEdgeComponent } from "./InterfaceEdge";
 
 const nodeTypes = { block: BlockNodeComponent };
 const edgeTypes = { interface: InterfaceEdgeComponent };
+const FIT_PADDING = 0.28;
 
 const toneColors: Record<string, string> = {
   ui: "#2878a9",
@@ -31,6 +33,10 @@ const toneColors: Record<string, string> = {
   neutral: "#65716a",
 };
 
+function fitDuration(): number {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 280;
+}
+
 function CanvasInner({
   document,
   layout,
@@ -39,6 +45,8 @@ function CanvasInner({
   routeRevision,
   onSelect,
   onToggleHierarchy,
+  onMoveNode,
+  onCreateConnection,
 }: {
   document: BlockDesignDocument;
   layout: LayoutResult;
@@ -47,10 +55,15 @@ function CanvasInner({
   routeRevision: number;
   onSelect: (selection: SelectionRef) => void;
   onToggleHierarchy: (levelId: string) => void;
+  onMoveNode: (levelId: string, nodeId: string, position: { x: number; y: number }) => void;
+  onCreateConnection: (connection: {
+    levelId: string;
+    source: { nodeId: string; portId: string; label: string };
+    target: { nodeId: string; portId: string; label: string };
+  }) => void;
 }) {
   const { fitView } = useReactFlow();
   const store = useStoreApi();
-  const nodesInitialized = useNodesInitialized();
   const baseNodes = useMemo(
     () =>
       layout.nodes.map((node) => ({
@@ -73,6 +86,7 @@ function CanvasInner({
           ...edge,
           data: {
             ...data,
+            laneSeparation: layout.edges.length > 8,
             inspect: () =>
               onSelect({ kind: "connection", levelId: data.levelId, connectionId: data.connection.id }),
           },
@@ -114,14 +128,6 @@ function CanvasInner({
   }, [baseNodes, store]);
 
   useEffect(() => {
-    if (!nodesInitialized || baseNodes.length === 0) return;
-    const frame = window.requestAnimationFrame(() => {
-      fitView({ padding: 0.18, duration: 280 });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [baseNodes, fitView, nodesInitialized]);
-
-  useEffect(() => {
     setNodes((current) => current.map((node) => ({
       ...node,
       selected:
@@ -132,7 +138,9 @@ function CanvasInner({
   }, [selection, setNodes]);
 
   useEffect(() => {
-    if (fitRequest > 0) fitView({ padding: 0.18, duration: 280 });
+    if (fitRequest <= 0) return;
+    const timer = window.setTimeout(() => fitView({ padding: FIT_PADDING, duration: fitDuration() }), 60);
+    return () => window.clearTimeout(timer);
   }, [fitRequest, fitView]);
 
   const onNodeClick: NodeMouseHandler<StudioFlowNode> = (_, node) => {
@@ -146,6 +154,44 @@ function CanvasInner({
     onSelect({ kind: "connection", levelId: edge.data.levelId, connectionId: edge.data.connection.id });
   };
 
+  const resolveEndpoint = (flowNodeId: string | null, handleId: string | null | undefined) => {
+    if (!flowNodeId || !handleId) return undefined;
+    const flowNode = baseNodes.find((node) => node.id === flowNodeId);
+    const port = flowNode?.data.block.ports.find((candidate) => candidate.id === handleId);
+    if (!flowNode || !port) return undefined;
+    return {
+      levelId: flowNode.data.levelId,
+      nodeId: flowNode.data.block.id,
+      portId: port.id,
+      label: port.label,
+      direction: port.direction,
+    };
+  };
+
+  const normalizedConnection = (connection: Connection | StudioFlowEdge) => {
+    const first = resolveEndpoint(connection.source, connection.sourceHandle);
+    const second = resolveEndpoint(connection.target, connection.targetHandle);
+    if (!first || !second || first.levelId !== second.levelId) return undefined;
+    if (first.nodeId === second.nodeId && first.portId === second.portId) return undefined;
+    if (first.direction !== "input" && second.direction !== "output") {
+      return { levelId: first.levelId, source: first, target: second };
+    }
+    if (second.direction !== "input" && first.direction !== "output") {
+      return { levelId: first.levelId, source: second, target: first };
+    }
+    return undefined;
+  };
+
+  const onNodeDragStop: OnNodeDrag<StudioFlowNode> = (_, node) => {
+    if (!node.data.positionEditable) return;
+    const original = baseNodes.find((candidate) => candidate.id === node.id);
+    if (!original) return;
+    onMoveNode(node.data.levelId, node.data.block.id, {
+      x: Math.round(node.data.designPosition.x + node.position.x - original.position.x),
+      y: Math.round(node.data.designPosition.y + node.position.y - original.position.y),
+    });
+  };
+
   const entryLevel = document.levels.find((level) => level.id === document.entryLevelId)!;
 
   return (
@@ -155,13 +201,19 @@ function CanvasInner({
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
       onNodesChange={onNodesChange}
+      onNodeDragStop={onNodeDragStop}
       onNodeClick={onNodeClick}
       onNodeDoubleClick={onNodeDoubleClick}
       onEdgeClick={onEdgeClick}
+      onConnect={(connection) => {
+        const normalized = normalizedConnection(connection);
+        if (normalized) onCreateConnection(normalized);
+      }}
+      isValidConnection={(connection) => Boolean(normalizedConnection(connection))}
       onError={(code, message) => console.warn(`[React Flow ${code}] ${message}`)}
       onPaneClick={() => onSelect({ kind: "level", levelId: document.entryLevelId })}
       connectionMode={ConnectionMode.Loose}
-      nodesConnectable={false}
+      nodesConnectable
       edgesReconnectable={false}
       snapToGrid
       snapGrid={[16, 16]}
@@ -170,7 +222,7 @@ function CanvasInner({
       panOnScroll
       selectionOnDrag
       fitView
-      fitViewOptions={{ padding: 0.18 }}
+      fitViewOptions={{ padding: FIT_PADDING }}
       proOptions={{ hideAttribution: true }}
       deleteKeyCode={null}
       className="bd-react-flow"

@@ -1,6 +1,6 @@
 # Architecture Block Studio
 
-Architecture Block Studio is a reusable, read-only architecture workbench for hierarchical software and protocol diagrams. It presents modules as blocks, public interfaces as boundary ports, and concrete protocol DTOs as selectable connections. Hierarchies expand in place: the parent diagram remains visible while child modules and cross-boundary connections are exposed inside the expanded block.
+Architecture Block Studio is a reusable, local-first architecture editor for hierarchical software and protocol diagrams. It presents modules as blocks, public interfaces as boundary ports, and concrete protocol DTOs as typed connections. Authors create and move modules, define ports and contracts, connect boundaries, expand child designs, validate the result, and save a portable `BlockDesignDocument` JSON file.
 
 The first bundled design is the AIO Agent Runtime architecture. The studio itself has no AIO runtime dependency and can load any document that satisfies the public `BlockDesignDocument` schema.
 
@@ -9,31 +9,35 @@ The first bundled design is the AIO Agent Runtime architecture. The studio itsel
 | Module | Principle | Public contract | Boundary and failure behavior |
 | --- | --- | --- | --- |
 | `model` | Own the document shape and semantic design rules | `parseBlockDesignDocument`, `validateBlockDesignDocument` | Does not render or lay out. Invalid structure is rejected; semantic issues remain explicit DRC messages. |
+| `editor` | Own atomic document transformations, undo/redo history and dirty state | `DesignOperation`, `applyDesignOperation`, `useDesignEditor` | Does not render, route or persist. A structurally invalid operation is rejected without partially changing the installed document. |
 | `layout` | Compose expanded hierarchy, place compound blocks, and produce render nodes | `layoutBlockDesign` | Does not interpret business meaning or mutate the source document. Placement failure is surfaced to the studio. |
 | `routing` | Derive one obstacle-avoiding orthogonal route from visible nodes and ports | `absoluteRoutingObstacles`, `routeOrthogonalInterface` | Does not reposition blocks or rewrite connections. Endpoints are excluded from obstacles; every unrelated visible block remains an obstacle. |
-| `studio` | Own selection, expanded levels, dock layout and viewport state | `BlockDesignStudio` | Does not redefine module or interface facts. Load and validation failures are shown without partially installing a document. |
-| content provider | Supply one `BlockDesignDocument` | JSON URL, local JSON file, or JavaScript object | Does not import studio internals. References to missing levels, nodes, ports or interfaces fail validation. |
+| `io` | Translate between local/remote JSON and one validated document, and serialize downloads | `loadDesignFromFile`, `loadDesignFromUrl`, `downloadDesign` | Does not own architecture facts or editor history. Load failures retain the current document; export does not clear dirty state. |
+| `studio` | Compose editor, IO, canvas, Inspector, selection, expanded levels and workspace state | `BlockDesignStudio` | Does not implement document mutations inside UI components. Command failures remain visible and do not install partial state. |
 
 ```text
-BlockDesignDocument
-        |
-        v
-  model parse + DRC ----------------------> Messages panel
-        |
-        v
-  expanded hierarchy projection
-        |
-        v
-  compound placement
-        |
-        v
-  obstacle-aware orthogonal routing
-        |
-        v
-  React Flow canvas <----> docked sources / inspector / messages
+Canvas gestures / Inspector forms / toolbar commands
+                         |
+                         v
+               named DesignOperation
+                         |
+                         v
+          editor history + atomic validation
+                         |
+                         v
+               BlockDesignDocument
+                  /             \
+                 v               v
+      model DRC + projections   IO serialize/download
+                 |
+                 v
+       layout -> routing -> React Flow
+                 |
+                 v
+    sources / inspector / messages panels
 ```
 
-The document is the only design-content source. React nodes, edges, hierarchy entries, inspector JSON and DRC messages are all derived from it. Dock width, collapsed panels, expanded hierarchy, selection, zoom and generated route geometry are workspace state; they are never written back as protocol or architecture facts.
+The document is the only design-content source. React nodes, edges, hierarchy entries, Inspector JSON and DRC messages are all derived from it. An authored module move writes `node.layout.position` through one editor operation. Dock width, collapsed panels, expanded hierarchy, selection, zoom, automatic placement and generated route geometry are workspace state; they are never written back as protocol or architecture facts.
 
 ### Geometry invariants
 
@@ -41,9 +45,13 @@ The document is the only design-content source. React nodes, edges, hierarchy en
 - A route never enters the bounding box of a non-endpoint block or an unrelated hierarchy container.
 - A cross-hierarchy route passes through the parent port declared by `hierarchy.portBindings`; names and interface ids are never used to guess containment.
 - Regenerate Layout may change block placement and routing. Optimize Routing preserves block placement and changes only derived routes.
-- Connection labels are derived from the routed path. Documents cannot carry manual label offsets.
+- Connections do not render a label on the route. Endpoint port labels identify the visible path; selecting any route reveals its connection name and complete interface contract in the Inspector.
 
 ## Screenshots
+
+| Local editor and selected interface | Expanded hierarchy routing |
+| --- | --- |
+| ![Local editor without route labels](docs/screenshots/editor-polished-workbench.png) | ![Connection crossing an expanded hierarchy boundary](docs/screenshots/editor-routing-validation.png) |
 
 | System overview | Clickable Core interface |
 | --- | --- |
@@ -150,6 +158,19 @@ Hierarchical nodes use `hierarchy.childLevelId` and must bind every parent port 
 
 The executable schema is [`src/model/design.ts`](src/model/design.ts). Structural parsing is strict about required protocol objects and supplies documented defaults for optional visual fields. Semantic DRC rules live separately in [`src/model/validation.ts`](src/model/validation.ts).
 
+## Editing Designs
+
+- Create a blank design with **File → New Design**.
+- Add modules to the selected hierarchy level, then move them on the authored canvas.
+- Add input, output or bidirectional ports to the selected module.
+- Drag from one compatible port to another and define the connection id, interface id, interface kind and Owner before the connection is committed.
+- Create a child design for a module, add its internal modules and ports, then bind every parent port to one explicit child endpoint in the parent module Inspector.
+- Edit document, level, module, port and interface properties in the Inspector. Module and interface contracts expose Principle, Purpose, Boundary and Failure behavior.
+- Delete selected modules, ports or connections with an explicit confirmation. Cascaded changes remain recoverable through Undo.
+- Use **Undo/Redo** or `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z` and `Ctrl/Cmd+Y`. Use `Ctrl/Cmd+S` to save and `Ctrl/Cmd+Shift+S` for Save As.
+
+Every authoring action is one named editor operation. Undo and redo replace the complete validated document snapshot; they never reconstruct facts from React Flow state. Semantic incompleteness, such as an unbound hierarchy port or an unfinished contract, remains visible in DRC while the document is being authored.
+
 ## Loading Designs
 
 - Start with the bundled AIO example.
@@ -157,6 +178,8 @@ The executable schema is [`src/model/design.ts`](src/model/design.ts). Structura
 - Load an HTTP(S) JSON document from the toolbar.
 - Add `?design=<encoded-url>` to deep-link a remote or same-origin document.
 - Embed `BlockDesignStudio` and provide an already parsed JavaScript object.
+
+**Save** downloads the current local document using its active file name and marks that exact snapshot as saved. **Save As** asks for a new file name before downloading and updates the active name. **Export JSON** downloads a copy without changing dirty state. Opening or creating another document while dirty requires explicit discard confirmation.
 
 Loading is transactional: the current design remains installed until the new document passes structural parsing. Semantic DRC errors are displayed and cross-probe to the affected block or connection.
 

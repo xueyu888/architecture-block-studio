@@ -11,6 +11,13 @@ const positionBySide: Record<PortSide, Position> = {
   bottom: Position.Bottom,
 };
 
+const inwardPositionBySide: Record<PortSide, Position> = {
+  left: Position.Right,
+  right: Position.Left,
+  top: Position.Bottom,
+  bottom: Position.Top,
+};
+
 function handleType(port: BlockPort): "source" | "target" {
   return port.direction === "input" ? "target" : "source";
 }
@@ -59,8 +66,8 @@ function Port({
         <Handle
           id={innerPortId(port.id)}
           type={handleType(port) === "source" ? "target" : "source"}
-          position={positionBySide[port.side]}
-          className={`bd-port-handle bd-port-handle-inner bd-port-handle-${port.direction}`}
+          position={inwardPositionBySide[port.side]}
+          className={`bd-port-handle bd-port-handle-inner bd-port-handle-anchor-${port.side} bd-port-handle-${port.direction}`}
         />
       )}
       <button

@@ -18,10 +18,10 @@ export const sourceRefSchema = z.object({
 });
 
 export const inspectorSchema = z.object({
-  principle: z.string().min(1).optional(),
-  purpose: z.string().min(1),
-  boundary: z.string().min(1),
-  failure: z.string().min(1),
+  principle: z.string().default(""),
+  purpose: z.string().default(""),
+  boundary: z.string().default(""),
+  failure: z.string().default(""),
   sourceRef: sourceRefSchema.optional(),
   code: z.string().optional(),
   codeLanguage: z.string().min(1).default("jsonc"),
@@ -50,7 +50,7 @@ export const hierarchyPortBindingSchema = z.object({
 
 export const hierarchySchema = z.object({
   childLevelId: z.string().min(1),
-  portBindings: z.array(hierarchyPortBindingSchema).min(1),
+  portBindings: z.array(hierarchyPortBindingSchema).default([]),
 });
 
 export const nodeSchema = z.object({
@@ -103,10 +103,10 @@ export const interfaceDefinitionSchema = z.object({
   title: z.string().min(1),
   protocol: z.string().min(1).optional(),
   owner: z.string().min(1),
-  principle: z.string().min(1).optional(),
-  purpose: z.string().min(1),
-  boundary: z.string().min(1),
-  failure: z.string().min(1),
+  principle: z.string().default(""),
+  purpose: z.string().default(""),
+  boundary: z.string().default(""),
+  failure: z.string().default(""),
   sourceRef: sourceRefSchema.optional(),
   code: z.string().default(""),
   codeLanguage: z.string().min(1).default("jsonc"),

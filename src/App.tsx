@@ -1,12 +1,10 @@
 import { requestedDesignUrl } from "./io/loadDesign";
-import aioAgentRuntimeDesign from "../public/examples/aio-agent-runtime.block-design.json";
 import { BlockDesignStudio } from "./studio";
 
 export default function App() {
   return (
     <BlockDesignStudio
-      initialDocument={aioAgentRuntimeDesign}
-      initialDesignUrl={requestedDesignUrl()}
+      initialDesignUrl={requestedDesignUrl() ?? "/examples/aio-agent-runtime.block-design.json"}
       initialSourceLabel="examples/aio-agent-runtime.block-design.json"
     />
   );
