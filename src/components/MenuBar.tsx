@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  Box,
+  Cable,
+  Download,
   ExternalLink,
+  FilePlus2,
   FolderOpen,
+  GitBranchPlus,
   LayoutDashboard,
   Maximize2,
   PanelBottom,
@@ -9,17 +14,22 @@ import {
   PanelRight,
   RotateCcw,
   Route,
+  Save,
   Scan,
   ShieldCheck,
+  Trash2,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import type { SourceRef } from "../model";
 
-type MenuId = "file" | "design" | "view";
+type MenuId = "file" | "edit" | "design" | "view";
 
 interface MenuCommand {
   label: string;
   icon: ReactNode;
   run: () => void;
+  disabled?: boolean;
 }
 
 function Menu({
@@ -56,6 +66,7 @@ function Menu({
               key={command.label}
               type="button"
               role="menuitem"
+              disabled={command.disabled}
               onClick={() => {
                 command.run();
                 onClose();
@@ -73,7 +84,22 @@ function Menu({
 
 export function MenuBar({
   sourceRef,
+  onNew,
   onOpen,
+  onSave,
+  onSaveAs,
+  onExport,
+  onUndo,
+  onRedo,
+  onDelete,
+  canUndo,
+  canRedo,
+  canDelete,
+  onAddBlock,
+  onAddPort,
+  onAddChildDesign,
+  canAddPort,
+  canAddChildDesign,
   onLayout,
   onOptimizeRouting,
   onFit,
@@ -85,7 +111,22 @@ export function MenuBar({
   onResetWorkspace,
 }: {
   sourceRef?: SourceRef;
+  onNew: () => void;
   onOpen: () => void;
+  onSave: () => void;
+  onSaveAs: () => void;
+  onExport: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  onDelete: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  canDelete: boolean;
+  onAddBlock: () => void;
+  onAddPort: () => void;
+  onAddChildDesign: () => void;
+  canAddPort: boolean;
+  canAddChildDesign: boolean;
   onLayout: () => void;
   onOptimizeRouting: () => void;
   onFit: () => void;
@@ -126,13 +167,32 @@ export function MenuBar({
         {...menuProps}
         id="file"
         label="File"
-        commands={[{ label: "Open Design...", icon: <FolderOpen size={14} />, run: onOpen }]}
+        commands={[
+          { label: "New Design...", icon: <FilePlus2 size={14} />, run: onNew },
+          { label: "Open Design...", icon: <FolderOpen size={14} />, run: onOpen },
+          { label: "Save", icon: <Save size={14} />, run: onSave },
+          { label: "Save As...", icon: <Save size={14} />, run: onSaveAs },
+          { label: "Export JSON", icon: <Download size={14} />, run: onExport },
+        ]}
+      />
+      <Menu
+        {...menuProps}
+        id="edit"
+        label="Edit"
+        commands={[
+          { label: "Undo", icon: <Undo2 size={14} />, run: onUndo, disabled: !canUndo },
+          { label: "Redo", icon: <Redo2 size={14} />, run: onRedo, disabled: !canRedo },
+          { label: "Delete Selection", icon: <Trash2 size={14} />, run: onDelete, disabled: !canDelete },
+        ]}
       />
       <Menu
         {...menuProps}
         id="design"
         label="Design"
         commands={[
+          { label: "Add Module...", icon: <Box size={14} />, run: onAddBlock },
+          { label: "Add Port...", icon: <Cable size={14} />, run: onAddPort, disabled: !canAddPort },
+          { label: "Create Child Design...", icon: <GitBranchPlus size={14} />, run: onAddChildDesign, disabled: !canAddChildDesign },
           { label: "Regenerate Layout", icon: <LayoutDashboard size={14} />, run: onLayout },
           { label: "Optimize Routing", icon: <Route size={14} />, run: onOptimizeRouting },
           { label: "Validate Design", icon: <ShieldCheck size={14} />, run: onValidate },

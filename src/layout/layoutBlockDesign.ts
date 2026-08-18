@@ -129,18 +129,65 @@ function boundsOf(nodes: PositionedNode[]): Bounds {
   return { minX, minY, width: maxX - minX, height: maxY - minY };
 }
 
+function fallbackNodeOrder(level: DesignLevel): BlockNode[] {
+  const originalOrder = new Map(level.nodes.map((node, index) => [node.id, index] as const));
+  const nodesById = new Map(level.nodes.map((node) => [node.id, node] as const));
+  const incoming = new Map<string, number>(level.nodes.map((node) => [node.id, 0]));
+  const outgoing = new Map(level.nodes.map((node) => [node.id, [] as string[]] as const));
+  level.connections.forEach((connection) => {
+    if (!validConnection(level, connection) || connection.source.nodeId === connection.target.nodeId) return;
+    outgoing.get(connection.source.nodeId)?.push(connection.target.nodeId);
+    incoming.set(connection.target.nodeId, (incoming.get(connection.target.nodeId) ?? 0) + 1);
+  });
+  const queue = level.nodes
+    .filter((node) => incoming.get(node.id) === 0)
+    .sort((left, right) => (originalOrder.get(left.id) ?? 0) - (originalOrder.get(right.id) ?? 0));
+  const ordered: BlockNode[] = [];
+  const visited = new Set<string>();
+  while (queue.length > 0) {
+    const node = queue.shift()!;
+    if (visited.has(node.id)) continue;
+    visited.add(node.id);
+    ordered.push(node);
+    outgoing.get(node.id)?.forEach((targetId) => {
+      incoming.set(targetId, (incoming.get(targetId) ?? 1) - 1);
+      if (incoming.get(targetId) === 0) {
+        const target = nodesById.get(targetId);
+        if (target) queue.push(target);
+      }
+    });
+    queue.sort((left, right) => (originalOrder.get(left.id) ?? 0) - (originalOrder.get(right.id) ?? 0));
+  }
+  level.nodes.forEach((node) => {
+    if (!visited.has(node.id)) ordered.push(node);
+  });
+  return level.layout.direction === "LEFT" || level.layout.direction === "UP"
+    ? ordered.reverse()
+    : ordered;
+}
+
 function authoredPositions(level: DesignLevel, dimensions: Map<string, Dimensions>): Map<string, { x: number; y: number }> {
   const positions = new Map<string, { x: number; y: number }>();
   let fallbackIndex = 0;
-  level.nodes.forEach((node) => {
+  fallbackNodeOrder(level).forEach((node) => {
     if (node.layout.position) {
       positions.set(node.id, node.layout.position);
       return;
     }
     const dimension = dimensions.get(node.id) ?? baseNodeDimensions(node);
+    const horizontalStep = dimension.width + (
+      level.layout.direction === "RIGHT" || level.layout.direction === "LEFT"
+        ? level.layout.layerSpacing
+        : level.layout.spacing
+    );
+    const verticalStep = dimension.height + (
+      level.layout.direction === "DOWN" || level.layout.direction === "UP"
+        ? level.layout.layerSpacing
+        : level.layout.spacing
+    );
     positions.set(node.id, {
-      x: (fallbackIndex % 4) * (dimension.width + level.layout.spacing),
-      y: Math.floor(fallbackIndex / 4) * (dimension.height + level.layout.spacing),
+      x: (fallbackIndex % 4) * horizontalStep,
+      y: Math.floor(fallbackIndex / 4) * verticalStep,
     });
     fallbackIndex += 1;
   });
@@ -208,7 +255,6 @@ function actualEdge(
   instancePath: string,
   connection: BlockConnection,
   directNodeIds: Map<string, string>,
-  showLabel: boolean,
 ): StudioFlowEdge | undefined {
   const definition = document.interfaceDefinitions[connection.interfaceId];
   const source = directNodeIds.get(connection.source.nodeId);
@@ -227,8 +273,6 @@ function actualEdge(
       levelId: level.id,
       definition,
       kind: definition.kind,
-      label: connection.label ?? definition.title,
-      showLabel,
       boundaryContinuation: false,
       inspect: () => undefined,
     },
@@ -285,9 +329,8 @@ function bindingEdges(
           levelId: level.id,
           definition,
           kind: definition.kind,
-          label: connection.label ?? definition.title,
-          showLabel: false,
           boundaryContinuation: true,
+          boundaryNodeId: parentFlowId,
           inspect: () => undefined,
         },
         selectable: true,
@@ -384,9 +427,11 @@ async function composeLevel(
         levelId: level.id,
         expanded: item.expanded,
         hierarchyDepth,
+        designPosition: { x: item.x, y: item.y },
+        positionEditable: !useAutomaticPlacement,
       },
       selectable: true,
-      draggable: true,
+      draggable: !useAutomaticPlacement,
     });
 
     if (!item.child) return;
@@ -411,7 +456,6 @@ async function composeLevel(
       instancePath,
       connection,
       directNodeIds,
-      hierarchyDepth === 0 && options.expandedLevelIds.size === 0,
     );
     if (edge) edges.push(edge);
   });

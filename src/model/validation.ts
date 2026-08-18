@@ -269,6 +269,24 @@ function validateHierarchy(
   });
 }
 
+function validateContractText(
+  issues: DesignIssue[],
+  contract: { principle?: string; purpose: string; boundary: string; failure: string },
+  target: Omit<DesignIssue, "id" | "severity" | "code" | "message">,
+  label: string,
+): void {
+  (["purpose", "boundary", "failure"] as const).forEach((field) => {
+    if (contract[field].trim()) return;
+    issue(
+      issues,
+      "warning",
+      `BD-CONTRACT-${field.toUpperCase()}-MISSING`,
+      `${label} does not define its ${field}.`,
+      target,
+    );
+  });
+}
+
 export function validateBlockDesignDocument(document: BlockDesignDocument): DesignIssue[] {
   const issues: DesignIssue[] = [];
   const levelIds = document.levels.map((level) => level.id);
@@ -320,9 +338,28 @@ export function validateBlockDesignDocument(document: BlockDesignDocument): Desi
       );
     });
 
-    level.nodes.forEach((node) => validateHierarchy(index, indexes, node, issues));
+    level.nodes.forEach((node) => {
+      validateHierarchy(index, indexes, node, issues);
+      validateContractText(
+        issues,
+        node.inspector,
+        { levelId: level.id, nodeId: node.id },
+        `Block ${node.id}`,
+      );
+    });
 
-    level.connections.forEach((connection) => validateConnection(document, index, connection, issues));
+    level.connections.forEach((connection) => {
+      validateConnection(document, index, connection, issues);
+      const definition = document.interfaceDefinitions[connection.interfaceId];
+      if (definition) {
+        validateContractText(
+          issues,
+          definition,
+          { levelId: level.id, connectionId: connection.id },
+          `Interface ${connection.interfaceId}`,
+        );
+      }
+    });
 
     const connectedPorts = new Set(externallyBoundPorts.get(level.id));
     level.connections.forEach((connection) => {

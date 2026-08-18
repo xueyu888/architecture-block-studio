@@ -19,6 +19,8 @@ export interface BlockNodeData extends Record<string, unknown> {
   levelId: string;
   expanded: boolean;
   hierarchyDepth: number;
+  designPosition: { x: number; y: number };
+  positionEditable: boolean;
   toggleHierarchy?: (levelId: string) => void;
   inspectPort?: (nodeId: string, port: BlockPort) => void;
 }
@@ -28,9 +30,9 @@ export interface InterfaceEdgeData extends Record<string, unknown> {
   levelId: string;
   definition: InterfaceDefinition;
   kind: InterfaceKind;
-  label: string;
-  showLabel: boolean;
   boundaryContinuation: boolean;
+  boundaryNodeId?: string;
+  laneSeparation?: boolean;
   inspect: () => void;
 }
 

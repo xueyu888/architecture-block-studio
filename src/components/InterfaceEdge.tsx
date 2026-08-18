@@ -1,5 +1,10 @@
-import { BaseEdge, StepEdge, useStore, type EdgeProps } from "@xyflow/react";
-import { absoluteRoutingObstacles, routeOrthogonalInterface } from "../routing";
+import { BaseEdge, getSmoothStepPath, useStore, type EdgeProps } from "@xyflow/react";
+import {
+  absoluteRoutingObstacles,
+  routeLaneOffset,
+  routeOrthogonalInterface,
+  separateOrthogonalRoute,
+} from "../routing";
 import type { StudioFlowEdge } from "../studio/types";
 
 export function InterfaceEdgeComponent(props: EdgeProps<StudioFlowEdge>) {
@@ -11,9 +16,6 @@ export function InterfaceEdgeComponent(props: EdgeProps<StudioFlowEdge>) {
   });
   const data = props.data;
   if (!data) return null;
-  const label = data.showLabel || props.selected
-    ? `${data.kind.toUpperCase()}  ${data.label}`
-    : undefined;
   const route = routeOrthogonalInterface({
     nodes: routeNodes,
     sourceX: props.sourceX,
@@ -23,32 +25,36 @@ export function InterfaceEdgeComponent(props: EdgeProps<StudioFlowEdge>) {
     sourcePosition: props.sourcePosition,
     targetPosition: props.targetPosition,
   });
-  const edge = route instanceof Error ? (
-    <StepEdge {...props} label={label} />
-  ) : (
-    <BaseEdge
-      path={route.svgPathString}
-      labelX={route.edgeCenterX}
-      labelY={route.edgeCenterY}
-      label={label}
-      interactionWidth={28}
-      labelShowBg
-      labelBgPadding={[5, 3]}
-      labelBgBorderRadius={1}
-      labelBgStyle={{ fill: "#fbfcfa", fillOpacity: 0.96 }}
-      labelStyle={{ fontSize: 9, fontFamily: "SFMono-Regular, Consolas, monospace" }}
-      markerStart={props.markerStart}
-      markerEnd={props.markerEnd}
-      style={props.style}
-    />
-  );
+  const [fallbackPath] = getSmoothStepPath({
+    sourceX: props.sourceX,
+    sourceY: props.sourceY,
+    targetX: props.targetX,
+    targetY: props.targetY,
+    sourcePosition: props.sourcePosition,
+    targetPosition: props.targetPosition,
+    borderRadius: 0,
+  });
+  const separatedRoute = route instanceof Error
+    ? { path: fallbackPath }
+    : separateOrthogonalRoute(
+        route.svgPathString,
+        data.laneSeparation ? routeLaneOffset(data.connection.id) : 0,
+      );
   return (
     <g
       data-source-node-id={props.source}
       data-target-node-id={props.target}
+      data-connection-id={data.connection.id}
       data-boundary-continuation={data.boundaryContinuation ? "true" : "false"}
+      data-boundary-node-id={data.boundaryNodeId}
     >
-      {edge}
+      <path className="bd-interface-underlay" d={separatedRoute.path} aria-hidden="true" />
+      <BaseEdge
+        {...props}
+        path={separatedRoute.path}
+        interactionWidth={28}
+        className="bd-interface-route"
+      />
     </g>
   );
 }

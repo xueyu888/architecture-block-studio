@@ -1,1 +1,6 @@
-export { absoluteRoutingObstacles, routeOrthogonalInterface } from "./routeInterface";
+export {
+  absoluteRoutingObstacles,
+  routeLaneOffset,
+  routeOrthogonalInterface,
+  separateOrthogonalRoute,
+} from "./routeInterface";
