@@ -71,10 +71,13 @@ import {
   canvasClientBounds,
   canvasGeometryBounds,
   canvasPointHitStack,
+  canvasSelectionTraversal,
   nextCanvasPointHitTarget,
+  nextCanvasTraversalTarget,
   reconcileCanvasSelection,
   type CanvasBoundsSelectionMode,
   type CanvasPointHitTarget,
+  type CanvasTraversalTarget,
 } from "./canvasSelection";
 import type { CanvasFlowEdge, CanvasFlowNode, RouteHandleFocusTarget } from "./canvasTypes";
 import { InterfaceEdgeComponent } from "./InterfaceEdge";
@@ -93,6 +96,7 @@ const NODE_KEYBOARD_DELTAS: Readonly<Record<string, { x: number; y: number; dire
   ArrowUp: { x: 0, y: -SNAP_GRID[1], direction: "up" },
   ArrowDown: { x: 0, y: SNAP_GRID[1], direction: "down" },
 };
+const CANVAS_OBJECT_CONTROL_SELECTOR = "button:not([disabled]), [tabindex='0']";
 const FIT_VIEW_OPTIONS = { padding: FIT_PADDING };
 const REACT_FLOW_OPTIONS = { hideAttribution: true };
 const VIEWPORT_CULL_NODE_COUNT = 500;
@@ -269,6 +273,11 @@ interface NodeFocusRequest {
   dimensions?: { width: number; height: number };
 }
 
+interface SelectionFocusRequest {
+  revision: number;
+  item: DiagramSelectionRef;
+}
+
 interface AlignmentGesture {
   nodeId: string;
   original: AlignmentRect;
@@ -308,6 +317,30 @@ function blocksCanvasPanMode(target: EventTarget | null): boolean {
   ));
 }
 
+function renderedFlowElement(
+  root: HTMLElement | null | undefined,
+  selector: ".react-flow__node" | ".react-flow__edge",
+  ids: readonly string[],
+): HTMLElement | SVGElement | undefined {
+  if (!root || ids.length === 0) return undefined;
+  const idSet = new Set(ids);
+  return [...root.querySelectorAll<HTMLElement | SVGElement>(`${selector}[data-id]`)]
+    .find((element) => idSet.has(element.getAttribute("data-id") ?? ""));
+}
+
+function flowElementIntersectsCanvas(element: Element, root: HTMLElement): boolean {
+  const bounds = element.getBoundingClientRect();
+  const canvas = root.getBoundingClientRect();
+  return bounds.right >= canvas.left && bounds.left <= canvas.right
+    && bounds.bottom >= canvas.top && bounds.top <= canvas.bottom;
+}
+
+function focusRestorationWasSuperseded(previousElement: Element | undefined): boolean {
+  return Boolean(
+    previousElement?.isConnected && document.activeElement !== previousElement,
+  );
+}
+
 export interface BlockDesignCanvasProps extends Omit<CanvasInnerProps, "entryLevelId"> {
   document: BlockDesignDocument;
   onAddModule: () => void;
@@ -338,6 +371,8 @@ const CanvasInner = memo(function CanvasInner({
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   const [nodeFocusRequest, setNodeFocusRequest] = useState<NodeFocusRequest>();
+  const [selectionFocusRequest, setSelectionFocusRequest] = useState<SelectionFocusRequest>();
+  const selectionFocusRevision = useRef(0);
   const [routeHandleFocusRequest, setRouteHandleFocusRequest] = useState<RouteHandleFocusRequest>();
   const [canvasAnnouncement, setCanvasAnnouncement] = useState("");
   const [spacePanActive, setSpacePanActive] = useState(false);
@@ -545,6 +580,11 @@ const CanvasInner = memo(function CanvasInner({
     () =>
       layout.nodes.map((node) => ({
         ...node,
+        focusable: true,
+        domAttributes: {
+          ...node.domAttributes,
+          tabIndex: -1,
+        },
         data: {
           ...node.data,
           toggleHierarchy: onToggleHierarchy,
@@ -630,6 +670,11 @@ const CanvasInner = memo(function CanvasInner({
         const plannedRoute = routingResult.routes.get(edge.id)?.points;
         return {
           ...edge,
+          focusable: true,
+          domAttributes: {
+            ...edge.domAttributes,
+            tabIndex: -1,
+          },
           reconnectable: !data.boundaryContinuation,
           markerEnd: data.boundaryContinuation ? undefined : CONNECTION_TARGET_MARKER,
           data: {
@@ -696,6 +741,45 @@ const CanvasInner = memo(function CanvasInner({
     });
     return result;
   }, [routedEdges]);
+  const canvasKeyboardTraversal = useMemo(() => {
+    const selectionByKey = new Map<string, DiagramSelectionRef>();
+    const traversalNodes: CanvasTraversalTarget[] = baseNodes.map((node) => {
+      const item: DiagramSelectionRef = {
+        kind: "node",
+        levelId: node.data.levelId,
+        nodeId: node.data.block.id,
+      };
+      const selectionKey = diagramSelectionKey(item);
+      selectionByKey.set(selectionKey, item);
+      return {
+        id: node.id,
+        selectionKey,
+        levelId: node.data.levelId,
+        kind: "node",
+        parentId: node.parentId,
+      };
+    });
+    const traversalConnections: CanvasTraversalTarget[] = routedEdges.flatMap((edge) => {
+      if (!edge.data) return [];
+      const item: DiagramSelectionRef = {
+        kind: "connection",
+        levelId: edge.data.levelId,
+        connectionId: edge.data.connection.id,
+      };
+      const selectionKey = diagramSelectionKey(item);
+      selectionByKey.set(selectionKey, item);
+      return [{
+        id: edge.id,
+        selectionKey,
+        levelId: edge.data.levelId,
+        kind: "connection" as const,
+      }];
+    });
+    return {
+      ...canvasSelectionTraversal(traversalNodes, traversalConnections),
+      selectionByKey,
+    };
+  }, [baseNodes, routedEdges]);
   const selectedEdgeIds = selectedDiagramItems.length === 0
     ? NO_SELECTED_IDS
     : [...new Set(selectedDiagramItems.flatMap((item) => item.kind === "connection"
@@ -806,6 +890,10 @@ const CanvasInner = memo(function CanvasInner({
     let stableFrames = 0;
     let attempts = 0;
     const restoreFocus = () => {
+      if (focusRestorationWasSuperseded(previousNode)) {
+        setNodeFocusRequest((current) => current === nodeFocusRequest ? undefined : current);
+        return;
+      }
       const root = store.getState().domNode;
       const node = [...(root?.querySelectorAll<HTMLElement>(".react-flow__node") ?? [])]
         .find((candidate) => candidate.dataset.id === nodeFocusRequest.flowNodeId);
@@ -826,6 +914,47 @@ const CanvasInner = memo(function CanvasInner({
   }, [nodeFocusRequest, nodes, store]);
 
   useEffect(() => {
+    if (!selectionFocusRequest) return;
+    const item = selectionFocusRequest.item;
+    const ids = item.kind === "node"
+      ? flowNodeIdsBySelection.get(`${item.levelId}\u0000${item.nodeId}`) ?? []
+      : flowEdgeIdsBySelection.get(`${item.levelId}\u0000${item.connectionId}`) ?? [];
+    const selector = item.kind === "node" ? ".react-flow__node" : ".react-flow__edge";
+    if (ids.length === 0) {
+      setSelectionFocusRequest(undefined);
+      return;
+    }
+    let frame = 0;
+    let previousElement: HTMLElement | SVGElement | undefined;
+    let stableFrames = 0;
+    let attempts = 0;
+    const restoreFocus = () => {
+      if (focusRestorationWasSuperseded(previousElement)) {
+        setSelectionFocusRequest((current) =>
+          current?.revision === selectionFocusRequest.revision ? undefined : current);
+        return;
+      }
+      const element = renderedFlowElement(store.getState().domNode, selector, ids);
+      if (element) {
+        element.focus();
+        stableFrames = element === previousElement && document.activeElement === element
+          ? stableFrames + 1
+          : 0;
+        previousElement = element;
+        if (stableFrames >= 2) {
+          setSelectionFocusRequest((current) =>
+            current?.revision === selectionFocusRequest.revision ? undefined : current);
+          return;
+        }
+      }
+      attempts += 1;
+      if (attempts < 36) frame = window.requestAnimationFrame(restoreFocus);
+    };
+    frame = window.requestAnimationFrame(restoreFocus);
+    return () => window.cancelAnimationFrame(frame);
+  }, [edges, flowEdgeIdsBySelection, flowNodeIdsBySelection, nodes, selectionFocusRequest, store]);
+
+  useEffect(() => {
     if (!routeHandleFocusRequest) return;
     if (!selectedEdgeIdsRef.current.has(routeHandleFocusRequest.edgeId)) {
       setRouteHandleFocusRequest(undefined);
@@ -836,6 +965,10 @@ const CanvasInner = memo(function CanvasInner({
     let stableFrames = 0;
     let attempts = 0;
     const restoreFocus = () => {
+      if (focusRestorationWasSuperseded(previousHandle)) {
+        setRouteHandleFocusRequest((current) => current === routeHandleFocusRequest ? undefined : current);
+        return;
+      }
       const root = store.getState().domNode;
       const edge = [...(root?.querySelectorAll<SVGGElement>(".react-flow__edge") ?? [])]
         .find((candidate) => candidate.dataset.id === routeHandleFocusRequest.edgeId);
@@ -1005,6 +1138,41 @@ const CanvasInner = memo(function CanvasInner({
     else if (announcement) setCanvasAnnouncement(announcement);
     return accepted;
   }, [onSelect]);
+  const focusCanvasSelection = useCallback((item: DiagramSelectionRef) => {
+    const root = store.getState().domNode;
+    const flowIds = item.kind === "node"
+      ? flowNodeIdsBySelection.get(`${item.levelId}\u0000${item.nodeId}`) ?? []
+      : flowEdgeIdsBySelection.get(`${item.levelId}\u0000${item.connectionId}`) ?? [];
+    const selector = item.kind === "node" ? ".react-flow__node" : ".react-flow__edge";
+    const element = renderedFlowElement(root, selector, flowIds);
+    if (root && (!element || !flowElementIntersectsCanvas(element, root))) {
+      const navigationNodeIds = item.kind === "node"
+        ? flowIds
+        : [...new Set(flowIds.flatMap((id) => {
+            const edge = routedEdgeById.get(id);
+            return edge ? [edge.source, edge.target] : [];
+          }))];
+      if (navigationNodeIds.length > 0) {
+        navigateViewport({
+          nodes: navigationNodeIds.map((id) => ({ id })),
+          padding: 0.55,
+          maxZoom: 1.05,
+          duration: navigationDuration,
+          interpolate: navigationInterpolation,
+        });
+      }
+    }
+    selectionFocusRevision.current += 1;
+    setSelectionFocusRequest({ revision: selectionFocusRevision.current, item });
+  }, [
+    flowEdgeIdsBySelection,
+    flowNodeIdsBySelection,
+    navigateViewport,
+    navigationDuration,
+    navigationInterpolation,
+    routedEdgeById,
+    store,
+  ]);
   const canvasPointHitSelections = useCallback((point: { x: number; y: number }) => {
     const canvasRoot = store.getState().domNode;
     const rootBounds = canvasRoot?.getBoundingClientRect();
@@ -1202,11 +1370,137 @@ const CanvasInner = memo(function CanvasInner({
   }, [baseNodeById, commitCanvasSelection, entryLevelId, routedEdgeById, store]);
   const onElementKeyDownCapture = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
     const target = event.target;
-    if (!(target instanceof Element) || !target.matches(".react-flow__node, .react-flow__edge")) return;
+    if (!(target instanceof Element)) return;
+    const canvasRoot = store.getState().domNode;
+    const containingFlowElement = target.closest<HTMLElement | SVGElement>(
+      ".react-flow__node, .react-flow__edge",
+    );
+    const flowElementFocused = target === containingFlowElement;
+    const canvasRootFocused = target === canvasRoot || target.classList.contains("bd-react-flow");
+    if (
+      containingFlowElement &&
+      !flowElementFocused &&
+      event.key === "Tab" &&
+      !event.ctrlKey &&
+      !event.metaKey
+    ) {
+      const controls = [...containingFlowElement.querySelectorAll<HTMLElement>(
+        CANVAS_OBJECT_CONTROL_SELECTOR,
+      )].filter((candidate) => candidate.getClientRects().length > 0);
+      const currentIndex = controls.indexOf(target as HTMLElement);
+      const nextIndex = currentIndex + (event.shiftKey ? -1 : 1);
+      if (currentIndex >= 0 && nextIndex >= 0 && nextIndex < controls.length) {
+        event.preventDefault();
+        event.stopPropagation();
+        controls[nextIndex].focus();
+        setCanvasAnnouncement(
+          `Focused object control ${nextIndex + 1} of ${controls.length}.`,
+        );
+        return;
+      }
+      if (currentIndex === 0 && event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        containingFlowElement.focus();
+        setCanvasAnnouncement("Returned focus to the selected diagram object.");
+        return;
+      }
+    }
+    if (containingFlowElement && !flowElementFocused && event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      containingFlowElement.focus();
+      setCanvasAnnouncement("Returned focus to the selected diagram object.");
+      return;
+    }
+    if (
+      event.key === "Tab" &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      (flowElementFocused || canvasRootFocused)
+    ) {
+      const current = selectionRef.current;
+      let traversalTarget: CanvasTraversalTarget | undefined;
+      let announcement: string;
+      if (event.altKey) {
+        const currentLevelId = current.kind === "document" || current.kind === "multiple"
+          ? undefined
+          : current.levelId;
+        const parentSelectionKey = currentLevelId
+          ? canvasKeyboardTraversal.parentSelectionKeyByLevelId.get(currentLevelId)
+          : undefined;
+        traversalTarget = parentSelectionKey
+          ? canvasKeyboardTraversal.items.find((item) => item.selectionKey === parentSelectionKey)
+          : undefined;
+        announcement = traversalTarget
+          ? "Selected the parent module."
+          : current.kind === "multiple"
+            ? "Select one diagram object before moving to its parent."
+            : "The current diagram object has no visible parent module.";
+      } else {
+        const selectedKeys = new Set(
+          diagramSelectionItems(current).map(diagramSelectionKey),
+        );
+        if (current.kind === "port") {
+          selectedKeys.add(diagramSelectionKey({
+            kind: "node",
+            levelId: current.levelId,
+            nodeId: current.nodeId,
+          }));
+        }
+        const currentIndex = selectedKeys.size === 1
+          ? canvasKeyboardTraversal.items.findIndex((item) => selectedKeys.has(item.selectionKey))
+          : -1;
+        const leavingTraversal = currentIndex >= 0 && (
+          (!event.shiftKey && currentIndex === canvasKeyboardTraversal.items.length - 1) ||
+          (event.shiftKey && currentIndex === 0)
+        );
+        if (leavingTraversal) return;
+        traversalTarget = nextCanvasTraversalTarget(
+          canvasKeyboardTraversal.items,
+          selectedKeys,
+          event.shiftKey ? "backward" : "forward",
+          current.kind === "level" ? current.levelId : undefined,
+        );
+        const targetIndex = traversalTarget
+          ? canvasKeyboardTraversal.items.findIndex((item) => item.selectionKey === traversalTarget?.selectionKey)
+          : -1;
+        announcement = traversalTarget
+          ? `Selected diagram object ${targetIndex + 1} of ${canvasKeyboardTraversal.items.length}.`
+          : "There are no visible diagram objects to select.";
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (!traversalTarget) {
+        setCanvasAnnouncement(announcement);
+        return;
+      }
+      const next = canvasKeyboardTraversal.selectionByKey.get(traversalTarget.selectionKey);
+      if (next && commitCanvasSelection(next, announcement)) focusCanvasSelection(next);
+      return;
+    }
+    if (!flowElementFocused) return;
     const flowId = target.getAttribute("data-id");
     if (!flowId) return;
     const node = baseNodes.find((candidate) => candidate.id === flowId);
     const edge = node ? undefined : routedEdges.find((candidate) => candidate.id === flowId);
+    if (
+      event.key === "Enter" &&
+      ((node && selectedNodeIdsRef.current.has(flowId)) || (edge && selectedEdgeIdsRef.current.has(flowId)))
+    ) {
+      const editorControl = [...target.querySelectorAll<HTMLElement>(
+        CANVAS_OBJECT_CONTROL_SELECTOR,
+      )].find((candidate) => candidate !== target && candidate.getClientRects().length > 0);
+      if (editorControl) {
+        event.preventDefault();
+        event.stopPropagation();
+        editorControl.focus();
+        setCanvasAnnouncement(
+          node ? `Editing controls inside ${node.data.block.title}.` : "Editing the selected route.",
+        );
+        return;
+      }
+    }
     const keyboardDelta = NODE_KEYBOARD_DELTAS[event.key];
     if (node && keyboardDelta && event.shiftKey && selectedNodeIdsRef.current.has(flowId)) {
       event.preventDefault();
@@ -1290,7 +1584,16 @@ const CanvasInner = memo(function CanvasInner({
     if (selectRef.current(nextSelection) && event.key === "Escape") {
       (target as Element & { blur?: () => void }).blur?.();
     }
-  }, [baseNodes, onMoveNodes, onResizeNode, routedEdges]);
+  }, [
+    baseNodes,
+    canvasKeyboardTraversal,
+    commitCanvasSelection,
+    focusCanvasSelection,
+    onMoveNodes,
+    onResizeNode,
+    routedEdges,
+    store,
+  ]);
 
   const resolveEndpoint = useCallback((flowNodeId: string | null, handleId: string | null | undefined) => {
     if (!flowNodeId || !handleId) return undefined;
@@ -1479,6 +1782,8 @@ const CanvasInner = memo(function CanvasInner({
       isValidConnection={isValidConnection}
       onError={warnReactFlowError}
       onPaneClick={onPaneClick}
+      tabIndex={0}
+      aria-label="Architecture diagram canvas"
       connectionMode={ConnectionMode.Loose}
       nodesConnectable
       edgesReconnectable

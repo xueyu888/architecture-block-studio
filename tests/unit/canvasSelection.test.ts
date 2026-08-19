@@ -5,7 +5,9 @@ import {
   canvasClientBounds,
   canvasGeometryBounds,
   canvasPointHitStack,
+  canvasSelectionTraversal,
   nextCanvasPointHitTarget,
+  nextCanvasTraversalTarget,
   reconcileCanvasSelection,
 } from "../../src/components/canvasSelection";
 
@@ -115,6 +117,52 @@ describe("canvas selection projection", () => {
     expect(nextCanvasPointHitTarget(stack, new Set(["node:l5:leaf"]))?.id).toBe("sibling");
     expect(nextCanvasPointHitTarget(stack, new Set(["node:l5:sibling"]))?.id).toBe("edge");
     expect(nextCanvasPointHitTarget(stack, new Set(["connection:l5:edge"]))?.id).toBe("leaf");
+  });
+
+  test("derives one depth-first keyboard order and canonicalizes repeated connection legs", () => {
+    const traversal = canvasSelectionTraversal([
+      { id: "parent", selectionKey: "node:root:parent", levelId: "root", kind: "node" },
+      { id: "child-a", selectionKey: "node:child:a", levelId: "child", kind: "node", parentId: "parent" },
+      { id: "child-b", selectionKey: "node:child:b", levelId: "child", kind: "node", parentId: "parent" },
+      { id: "sibling", selectionKey: "node:root:sibling", levelId: "root", kind: "node" },
+    ], [
+      { id: "child-edge", selectionKey: "connection:child:flow", levelId: "child", kind: "connection" },
+      { id: "child-edge-leg", selectionKey: "connection:child:flow", levelId: "child", kind: "connection" },
+      { id: "root-edge", selectionKey: "connection:root:flow", levelId: "root", kind: "connection" },
+    ]);
+
+    expect(traversal.items.map((item) => item.selectionKey)).toEqual([
+      "node:root:parent",
+      "node:child:a",
+      "node:child:b",
+      "connection:child:flow",
+      "node:root:sibling",
+      "connection:root:flow",
+    ]);
+    expect(traversal.parentSelectionKeyByLevelId.get("child")).toBe("node:root:parent");
+    expect(traversal.parentSelectionKeyByLevelId.has("root")).toBe(false);
+
+    const ambiguousParent = canvasSelectionTraversal([
+      { id: "parent-a", selectionKey: "node:root:parent-a", levelId: "root", kind: "node" },
+      { id: "parent-b", selectionKey: "node:root:parent-b", levelId: "root", kind: "node" },
+      { id: "child-a", selectionKey: "node:child:item", levelId: "child", kind: "node", parentId: "parent-a" },
+      { id: "child-b", selectionKey: "node:child:item", levelId: "child", kind: "node", parentId: "parent-b" },
+    ], []);
+    expect(ambiguousParent.parentSelectionKeyByLevelId.has("child")).toBe(false);
+  });
+
+  test("moves forward and backward, wraps, and collapses non-primary selections predictably", () => {
+    const items = [
+      { id: "a", selectionKey: "node:root:a", levelId: "root", kind: "node" as const },
+      { id: "b", selectionKey: "node:nested:b", levelId: "nested", kind: "node" as const },
+      { id: "edge", selectionKey: "connection:root:edge", levelId: "root", kind: "connection" as const },
+    ];
+
+    expect(nextCanvasTraversalTarget(items, new Set(["node:root:a"]), "forward")?.id).toBe("b");
+    expect(nextCanvasTraversalTarget(items, new Set(["node:root:a"]), "backward")?.id).toBe("edge");
+    expect(nextCanvasTraversalTarget(items, new Set(["connection:root:edge"]), "forward")?.id).toBe("a");
+    expect(nextCanvasTraversalTarget(items, new Set(), "forward", "nested")?.id).toBe("b");
+    expect(nextCanvasTraversalTarget(items, new Set(["node:root:a", "node:nested:b"]), "backward")?.id).toBe("edge");
   });
 
   test("unifies selected module rectangles and complete route points into one fit bound", () => {

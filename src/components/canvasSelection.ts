@@ -44,6 +44,19 @@ export interface CanvasPointHitTarget {
   routeTolerance?: number;
 }
 
+export interface CanvasTraversalTarget {
+  id: string;
+  selectionKey: string;
+  levelId: string;
+  kind: "node" | "connection";
+  parentId?: string;
+}
+
+export interface CanvasSelectionTraversal {
+  items: readonly CanvasTraversalTarget[];
+  parentSelectionKeyByLevelId: ReadonlyMap<string, string>;
+}
+
 export function canvasClientBounds(
   start: CanvasClientPoint,
   end: CanvasClientPoint,
@@ -136,6 +149,93 @@ export function nextCanvasPointHitTarget(
   if (selectedIndex < 0) return eligible[0];
   return eligible.slice(selectedIndex + 1)
     .find((target) => !selectedKeys.has(target.selectionKey)) ?? eligible[0];
+}
+
+/**
+ * Builds one canonical, depth-first traversal from the explicit Canvas
+ * projection. Connections follow the nodes in their owning level, while
+ * repeated hierarchy legs collapse to one workspace selection.
+ */
+export function canvasSelectionTraversal(
+  nodes: readonly CanvasTraversalTarget[],
+  connections: readonly CanvasTraversalTarget[],
+): CanvasSelectionTraversal {
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const nodesByParent = new Map<string | undefined, CanvasTraversalTarget[]>();
+  nodes.forEach((node) => {
+    nodesByParent.set(node.parentId, [...(nodesByParent.get(node.parentId) ?? []), node]);
+  });
+  const connectionsByLevel = new Map<string, CanvasTraversalTarget[]>();
+  connections.forEach((connection) => {
+    connectionsByLevel.set(
+      connection.levelId,
+      [...(connectionsByLevel.get(connection.levelId) ?? []), connection],
+    );
+  });
+  const parentSelectionKeysByLevelId = new Map<string, Set<string>>();
+  nodes.forEach((node) => {
+    if (!node.parentId) return;
+    const parent = nodesById.get(node.parentId);
+    if (!parent) return;
+    const keys = parentSelectionKeysByLevelId.get(node.levelId) ?? new Set<string>();
+    keys.add(parent.selectionKey);
+    parentSelectionKeysByLevelId.set(node.levelId, keys);
+  });
+  const parentSelectionKeyByLevelId = new Map(
+    [...parentSelectionKeysByLevelId.entries()].flatMap(([levelId, keys]) =>
+      keys.size === 1 ? [[levelId, [...keys][0]] as const] : []),
+  );
+
+  const items: CanvasTraversalTarget[] = [];
+  const selectedKeys = new Set<string>();
+  const visitedNodeIds = new Set<string>();
+  const append = (target: CanvasTraversalTarget) => {
+    if (selectedKeys.has(target.selectionKey)) return;
+    selectedKeys.add(target.selectionKey);
+    items.push(target);
+  };
+  const visitSiblings = (parentId: string | undefined) => {
+    const siblings = nodesByParent.get(parentId) ?? [];
+    const levelIds: string[] = [];
+    siblings.forEach((node) => {
+      if (visitedNodeIds.has(node.id)) return;
+      visitedNodeIds.add(node.id);
+      if (!levelIds.includes(node.levelId)) levelIds.push(node.levelId);
+      append(node);
+      visitSiblings(node.id);
+    });
+    levelIds.forEach((levelId) => {
+      (connectionsByLevel.get(levelId) ?? []).forEach(append);
+    });
+  };
+
+  visitSiblings(undefined);
+  nodes.forEach((node) => {
+    if (!visitedNodeIds.has(node.id)) visitSiblings(node.parentId);
+  });
+  connections.forEach(append);
+  return { items, parentSelectionKeyByLevelId };
+}
+
+export function nextCanvasTraversalTarget(
+  items: readonly CanvasTraversalTarget[],
+  selectedKeys: ReadonlySet<string>,
+  direction: "forward" | "backward",
+  fallbackLevelId?: string,
+): CanvasTraversalTarget | undefined {
+  if (items.length === 0) return undefined;
+  if (selectedKeys.size === 1) {
+    const currentIndex = items.findIndex((item) => selectedKeys.has(item.selectionKey));
+    if (currentIndex >= 0) {
+      const delta = direction === "forward" ? 1 : -1;
+      return items[(currentIndex + delta + items.length) % items.length];
+    }
+  }
+  const fallbackItems = fallbackLevelId
+    ? items.filter((item) => item.levelId === fallbackLevelId)
+    : items;
+  const candidates = fallbackItems.length > 0 ? fallbackItems : items;
+  return direction === "forward" ? candidates[0] : candidates[candidates.length - 1];
 }
 
 export function canvasBoundsSelectBounds(

@@ -119,6 +119,7 @@ function PortLabel({
   return (
     <button
       type="button"
+      tabIndex={-1}
       className={`bd-port-label bd-port-label-${port.side} nodrag nopan`}
       style={{
         ...(vertical ? { top: `${offset}%` } : { left: `${offset}%` }),
@@ -273,6 +274,7 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
         {hierarchy ? (
           <button
             type="button"
+            tabIndex={-1}
             className="bd-hierarchy-button nodrag nopan"
             title={data.expanded ? "折叠内部 Block Design" : "展开内部 Block Design"}
             aria-label={`${data.expanded ? "折叠" : "展开"} ${block.title} 内部 Block Design`}

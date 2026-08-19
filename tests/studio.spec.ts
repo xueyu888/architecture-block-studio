@@ -2617,6 +2617,21 @@ test("expands five hierarchy layers and audits every visible route and pair", as
   await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
   await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("Target 00");
+  await deepestTarget.focus();
+  await page.keyboard.down("Alt");
+  await page.keyboard.press("Tab");
+  await page.keyboard.up("Alt");
+  const layerFiveBoundary = diagramNode(page, "level-4", "layer-5");
+  await expect(layerFiveBoundary).toHaveClass(/selected/);
+  await expect(layerFiveBoundary).toBeFocused();
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("Layer 5 Boundary");
+  await page.keyboard.down("Alt");
+  await page.keyboard.press("Tab");
+  await page.keyboard.up("Alt");
+  const layerFourBoundary = diagramNode(page, "level-3", "layer-4");
+  await expect(layerFourBoundary).toHaveClass(/selected/);
+  await expect(layerFourBoundary).toBeFocused();
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("Layer 4 Boundary");
 });
 
 test("resizes, collapses, maximizes, floats and resets dock panels", async ({ page }) => {
@@ -2824,6 +2839,15 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
   await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
   metrics.altClickHitCycleMs = Math.round(performance.now() - hitCycleStarted);
+  const keyboardTraversalStarted = performance.now();
+  await selectedFlowNode.focus();
+  await page.keyboard.press("Tab");
+  await expect(flowNode(page, "system::module-001")).toHaveClass(/selected/);
+  await expect(flowNode(page, "system::module-001")).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(selectedFlowNode).toHaveClass(/selected/);
+  await expect(selectedFlowNode).toBeFocused();
+  metrics.keyboardTraversalRoundTripMs = Math.round(performance.now() - keyboardTraversalStarted);
   if (stress) {
     const selectedBox = await selectedFlowNode.boundingBox();
     expect(selectedBox).not.toBeNull();
@@ -3054,14 +3078,17 @@ test("selects and edits an orthogonal route entirely from the keyboard", async (
   const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
   await tabTo(page, edge);
   await expect(edge).toBeFocused();
-  await page.keyboard.press("Enter");
   await expect(edge).toHaveClass(/selected/);
   await expect(page.locator(".bd-inspector-title h2")).toContainText("Session Command");
 
   const handle = edge.locator(".bd-route-handle").first();
   await expect(handle).toBeVisible();
   expect((await accessibilityResults(page, ".bd-route-handle-object")).violations).toEqual([]);
-  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+  await expect(handle).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(edge).toBeFocused();
+  await page.keyboard.press("Enter");
   await expect(handle).toBeFocused();
   const routeBefore = await edge.locator(".bd-interface-route").getAttribute("d");
   const valueBefore = Number(await handle.getAttribute("aria-valuenow"));
@@ -3316,7 +3343,6 @@ test("moves a selected module through the document with the keyboard", async ({ 
   const node = flowNode(page, "system::agent-ui");
   await tabTo(page, node);
   await expect(node).toBeFocused();
-  await page.keyboard.press("Enter");
   await expect(node).toHaveClass(/selected/);
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("Agent UI");
 
@@ -4052,6 +4078,108 @@ test("cycles through overlapping diagram objects with Alt-click without storing 
   await page.keyboard.up("Alt");
   await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("System Overview");
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
+});
+
+test("traverses diagram objects and preserves native form focus with Canvas Tab shortcuts", async ({ page, browserName }) => {
+  const canvas = page.getByRole("application", { name: "Architecture diagram canvas" });
+  const agent = flowNode(page, "system::agent-ui");
+  const core = flowNode(page, "system::rust-agent-core");
+  const lastEdge = page.locator('.react-flow__edge[data-id="system::platform-tool-registration"]');
+  const inspector = page.getByRole("region", { name: "Properties" });
+
+  await canvas.focus();
+  await expect(canvas).toBeFocused();
+  await expect(canvas).toHaveAttribute("tabindex", "0");
+  expect(await canvas.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe("solid");
+  await page.keyboard.press("Tab");
+  await expect(agent).toHaveClass(/selected/);
+  await expect(agent).toBeFocused();
+  await expect(agent).toHaveAttribute("tabindex", "-1");
+  expect(await agent.locator(".bd-block").evaluate((element) => getComputedStyle(element).boxShadow))
+    .toContain("37, 99, 217");
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("Agent UI");
+  await expect(page.locator(".bd-canvas-announcement")).toHaveText("Selected diagram object 1 of 17.");
+
+  await page.keyboard.press("Tab");
+  await expect(core).toHaveClass(/selected/);
+  await expect(core).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(agent).toHaveClass(/selected/);
+  await expect(agent).toBeFocused();
+  await page.keyboard.press("ControlOrMeta+Shift+A");
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("System Overview");
+  await canvas.focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(lastEdge).toHaveClass(/selected/);
+  await expect(lastEdge).toBeFocused();
+  await expect(lastEdge).toHaveAttribute("tabindex", "-1");
+  await expect(page.locator(".bd-canvas-announcement")).toHaveText("Selected diagram object 17 of 17.");
+  const routeHandle = lastEdge.locator(".bd-route-handle").first();
+  await page.keyboard.press("Enter");
+  await expect(routeHandle).toBeFocused();
+  await expect(routeHandle).toHaveAttribute("tabindex", "-1");
+  await page.keyboard.press("Escape");
+  await expect(lastEdge).toBeFocused();
+  const focusedRouteColors = await lastEdge.evaluate((element) => ({
+    route: getComputedStyle(element.querySelector(".bd-interface-route")!).stroke,
+    halo: getComputedStyle(element.querySelector(".bd-interface-underlay")!).stroke,
+  }));
+  expect(focusedRouteColors.route).not.toBe(focusedRouteColors.halo);
+  expect(focusedRouteColors.halo).toContain("37, 99, 217");
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("Platform Registration");
+  await expect(page.locator(".bd-canvas-announcement")).toHaveText("Returned focus to the selected diagram object.");
+  if (process.env.CAPTURE_KEYBOARD_TRAVERSAL === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/keyboard-selection-traversal.png");
+  }
+
+  const multiHandleEdge = page.locator('.react-flow__edge[data-id="system::core-ui-notification"]');
+  await multiHandleEdge.focus();
+  await page.keyboard.press("Enter");
+  await expect(multiHandleEdge).toHaveClass(/selected/);
+  const routeHandles = multiHandleEdge.locator(".bd-route-handle");
+  expect(await routeHandles.count()).toBeGreaterThan(1);
+  await page.keyboard.press("Enter");
+  await expect(routeHandles.first()).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(routeHandles.nth(1)).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(routeHandles.first()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(multiHandleEdge).toBeFocused();
+
+  await flowNode(page, "system::project").click({ force: true, modifiers: ["Shift"] });
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("2 objects selected");
+  await page.keyboard.press("Tab");
+  await expect(agent).toHaveClass(/selected/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
+  await expect(agent).toBeFocused();
+
+  const title = inspector.getByLabel("Title", { exact: true });
+  await title.focus();
+  await page.keyboard.press("Tab");
+  await expect(inspector.getByLabel("Owner", { exact: true })).toBeFocused();
+  await expect(agent).toHaveClass(/selected/);
+
+  await title.fill("Agent UI draft");
+  await agent.focus();
+  const discardDialogPromise = page.waitForEvent("dialog");
+  const rejectedTraversal = page.keyboard.press("Tab");
+  const discardDialog = await discardDialogPromise;
+  expect(discardDialog.message()).toContain("Discard unapplied Inspector changes");
+  await discardDialog.dismiss();
+  await rejectedTraversal;
+  await expect(agent).toHaveClass(/selected/);
+  await expect(core).not.toHaveClass(/selected/);
+  await expect(agent).toBeFocused();
+  await expect(title).toHaveValue("Agent UI draft");
+
+  await title.fill("Agent UI");
+  await agent.focus();
+  await page.keyboard.press("Tab");
+  await expect(core).toHaveClass(/selected/);
+  await expect(core).toBeFocused();
   await expect(page.locator(".bd-statusbar")).toContainText("Saved");
 });
 

@@ -411,7 +411,7 @@ function NodeEditor({ document, level, node, onOperation, onDelete, onDraftChang
             ? `${node.layout.width} × ${node.layout.height}`
             : "Automatic"}</strong>
         </div>
-        <p>Drag an edge or corner handle to resize; hold Shift to preserve the original proportions, taking priority over sibling-size snapping. Alignment and equal-size guides snap nearby geometry; start the direct gesture, then hold Alt to bypass them. Alt held before pointerdown forces a selection box; Alt-click without dragging cycles through overlapping objects. With the module focused, Ctrl/Cmd + Shift + Arrow changes width or height by 16 design pixels. Apply current property changes first.</p>
+        <p>Drag an edge or corner handle to resize; hold Shift to preserve the original proportions, taking priority over sibling-size snapping. Alignment and equal-size guides snap nearby geometry; start the direct gesture, then hold Alt to bypass them. Alt held before pointerdown forces a selection box; Alt-click without dragging cycles through overlapping objects. On the Canvas, Tab / Shift + Tab traverses visible diagram objects, Alt + Tab selects the visible parent, Enter enters this module's controls, and Escape returns to the module. With the module focused, Ctrl/Cmd + Shift + Arrow changes width or height by 16 design pixels. Apply current property changes first.</p>
       </section>
       <ConnectedInterfaces document={document} level={level} node={node} onSelect={onSelect} />
       <ContractFields value={inspector} onChange={setInspector} />
@@ -493,7 +493,7 @@ function ConnectionEditor({ document, level, connectionId, onOperation, onDelete
       <Field label="Interface id"><input value={connection.interfaceId} disabled /></Field>
       <section className="bd-route-editor" aria-label="Connection routing">
         <div><span>Routing</span><strong>{connection.routing ? "Manual" : "Automatic"}</strong></div>
-        <p>Drag a diamond to move a segment. Manual routes also show solid bend points: drag or use Arrow keys to move; Delete or double click removes one. Drag either circular endpoint to reconnect. Confirmed geometry is saved in this JSON connection.</p>
+        <p>Drag a diamond to move a segment. Manual routes also show solid bend points: drag or use Arrow keys to move; Delete or double click removes one. Drag either circular endpoint to reconnect. With the connection focused, Enter enters its route handles, Tab / Shift + Tab traverses them, and Escape returns to the connection; Tab after the last handle leaves the Canvas without changing the selected connection. Confirmed geometry is saved in this JSON connection.</p>
         {connection.routing && (
           <button
             type="button"

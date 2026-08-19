@@ -305,6 +305,7 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
         >
           <button
             type="button"
+            tabIndex={-1}
             className={`bd-route-handle bd-route-segment-handle bd-route-handle-${segment.axis} nodrag nopan`}
             role="spinbutton"
             data-route-handle-index={segment.index}
@@ -333,6 +334,7 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
         >
           <button
             type="button"
+            tabIndex={-1}
             className="bd-route-handle bd-route-bend-handle nodrag nopan"
             data-route-handle-index={bend.index}
             data-route-x={bend.point.x}

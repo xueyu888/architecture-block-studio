@@ -1058,6 +1058,22 @@ button { color: inherit; }
 }
 
 .bd-react-flow { background: var(--canvas); }
+.bd-react-flow:focus-visible {
+  outline: 2px solid var(--selection);
+  outline-offset: -2px;
+}
+.bd-react-flow .react-flow__node:focus-visible,
+.bd-react-flow .react-flow__edge:focus-visible { outline: none; }
+.bd-react-flow .react-flow__node:focus-visible > .bd-block {
+  box-shadow:
+    0 0 0 2px var(--canvas),
+    0 0 0 4px var(--selection),
+    0 4px 12px rgba(37, 99, 217, 0.22);
+}
+.bd-react-flow .react-flow__edge:focus-visible .bd-interface-underlay {
+  stroke: rgba(37, 99, 217, 0.56);
+  stroke-width: 8.5;
+}
 .bd-react-flow .react-flow__pane { cursor: grab; }
 .bd-react-flow .react-flow__pane:active { cursor: grabbing; }
 .bd-react-flow .react-flow__node { cursor: move; }

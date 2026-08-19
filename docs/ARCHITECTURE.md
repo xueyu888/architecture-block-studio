@@ -272,7 +272,9 @@ Canvas 明确声明互不重叠的 gesture：左键空白拖动为 selection，`
 
 平滑定位同样必须服从新的直接操作。Studio Fit、Sources / Messages / Inspector 交叉定位、MiniMap 和 Canvas 缩放 / Fit 控件都调用同一个 Canvas 导航协调器；它以 generation 标识自己发起的动画。只要 pointer 在动画期间进入画布，当前 transform 就以零时长固定，旧动画的异步完成不能重新宣称导航仍在进行。这样鼠标按下时命中的是用户眼前的模块，而不是动画继续移动后暴露的 pane。中断只结束可丢弃 viewport 动画，不改变 `SelectionRef`、设计坐标、布局或历史。
 
-React Flow 的 Node / Edge wrapper 虽然提供原生 Tab 焦点与 Enter、Space、Escape 键，但库内 selection 不是工作区事实。Canvas 在捕获阶段把这些键转换成同一 `SelectionRef` 请求，并阻止库内平行选择；Enter / Space 选择对象，Escape 回到对象所属 Level。多选模块的 Arrow 作为一组提交，读屏公告从同一成功结果派生；Delete 随后继续调用统一 Studio command，因此键盘选择、Inspector、路由把手和删除看到同一选择合同。
+React Flow 的 Node / Edge wrapper 虽然提供默认 Tab 焦点与 Enter、Space、Escape 键，但库内 DOM 顺序和 selection 都不是工作区事实。`canvasSelectionTraversal` 从完整 `LayoutResult` 构造稳定的深度优先 canonical 顺序：模块保持布局 / 文档顺序，每个 Level 的连接跟在所属模块之后，同一连接的 hierarchy continuation 只保留一个 selection key；只有一个明确容器投影时才提供 Level → parent module 映射，复用同一子 Level 的多个容器不会武断选择父级。Canvas 捕获 Tab / Shift + Tab 并把目标转换成既有 `SelectionRef`，Alt + Tab 使用明确 parent 映射，多选没有隐藏 primary，向前 / 向后分别收敛到首项 / 末项。首尾允许原生焦点离开画布，Inspector 输入、菜单和 Dialog 始终保留浏览器 Tab。
+
+Canvas 是一个复合键盘控件：React Flow node / edge、端口按钮、层级按钮与 route handle 都从原生 Tab 序列移除，画布根是唯一外部入口；程序化焦点仍可落到任一 canonical 对象。选中对象按 Enter 进入首个内部控件，Tab / Shift + Tab 只在当前对象的实际可见控件间前后移动，首项反向返回对象、末项向前才离开 Canvas，Escape 可从任一内部控件返回对象；整个过程不改变连接选择。一次性 `SelectionFocusRequest`、`NodeFocusRequest` 和 `RouteHandleFocusRequest` 只在目标 DOM 尚未稳定时重试；如果原元素仍存在但用户已把焦点移入 Properties 或其他区域，请求立即作废，禁止异步抢回焦点。所有键盘选择仍先经过 Inspector 草稿保护；拒绝时选择和焦点都回到权威投影。多选模块的 Arrow 作为一组提交，读屏公告从同一成功结果派生；Delete 随后继续调用统一 Studio command，因此键盘选择、Inspector、路由把手和删除看到同一选择合同。
 
 选中且允许 authored placement 的模块收到 Arrow 时，Canvas 同样阻止 React Flow 只修改临时 position，按 16 × 16 设计网格提交一个 `node/move` 或 `nodes/move`。Editor 写入各自 `node.layout.position` 与 pinned，布局再从文档投影画布；一次性 `NodeFocusRequest` 只等待焦点模块的目标设计坐标出现，让连续移动、Undo、保存和重新投影使用同一几何事实。
 

@@ -378,6 +378,7 @@ export function BlockDesignStudio({
     }
     setInspectorDraftDirty(false);
     setSelection(next);
+    setCommandNotice(undefined);
     return true;
   }, []);
 
