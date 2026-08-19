@@ -1,0 +1,152 @@
+# 演进路线
+
+## 当前成熟度
+
+当前版本为 **0.1 可用基础版**：核心本地编辑闭环、层级投影与渐进搜索、跨视口交叉定位、直接依赖审查、鼠标 / 键盘接口创建、自动 / 手动正交路由、低缩放信息收敛、DRC、草稿保护、model-owned `2.0 -> 2.1` 逐步迁移与兼容矩阵、canonical JSON 文件流、公开编辑合同单测，以及 200 / 400 大型设计全量几何门禁、1000 / 2000 压力 Canvas 视口裁剪和可重复 observation-only 性能报告已经成立；崩溃恢复、历史容量策略、固定 CI 性能预算和完整跨浏览器仍未达到生产级。
+
+路线图记录真实完成的迭代，不用计划数量冒充执行数量。长期目标可以拆成 100 个小步，但每一行都必须对应实际代码、验证或文档证据。
+
+## 优先级
+
+- **P0 — 数据安全与可恢复性**：保存正确性、Undo / Redo、Schema 兼容、崩溃恢复、无效加载与原子编辑。
+- **P1 — 核心设计与审查体验**：选择、层级、Inspector、DRC、接口追踪、空状态、命令一致性与弹窗键盘行为。
+- **P2 — 可视质量与大设计**：布局、路由、性能、虚拟化、视觉 token、响应式与跨平台。
+- **P3 — 生态与扩展**：源码 / AI 适配器、设计 Diff、仓库集成、协作与发布能力。
+
+P0 未收敛前不扩展协作或服务端事实源。源码分析作为适配器消费公开 Schema，不进入 model、editor 或 routing 内部。
+
+## 已确认事实与问题
+
+| 优先级 | 状态 | 事项 | 事实 / 验收方向 |
+| --- | --- | --- | --- |
+| P0 | 进行中 | Schema 生命周期 | Iteration 8–9 建立 `2.0 -> 2.1` 纯迁移与路径合同；Iteration 26 完成 model-owned 逐步迁移注册表、不可变支持矩阵、输入 / 输出 golden fixtures 和非法版本合同；2.1 全局未知字段应严格拒绝还是保留写回仍待明确 |
+| P0 | 已完成 | 文件输出稳定性 | Iteration 27 让无序 record 使用 canonical key order，设计数组保持原顺序；Save、Save As、Export 与 dirty baseline 共用同一序列化合同 |
+| P0 | 待设计 | 崩溃恢复 | 当前只有 beforeunload 与浏览器下载，没有自动恢复副本 |
+| P0 | 进行中 | 历史内存 | Iteration 28 将历史收敛为 canonical compact UTF-8 快照并建立 1000 / 2000、20 次操作字节与时间基线；Iteration 37 让 Vitest 单 fork 显式暴露 GC，三轮 GC 后进程增量稳定为约 36.4 MB，并区分确定性快照字节与环境 heap 观测；仍无容量上限，淘汰和恢复语义待设计 |
+| P1 | 已完成 | 首屏 React 警告 | Iteration 1 已限制 `BaseEdge` 属性边界，并将测试监听前移到 navigation 之前 |
+| P1 | 已完成 | Inspector 草稿丢失 | Iteration 3 已显示 UNAPPLIED 状态，切换对象需确认，保存与结构命令要求先处理草稿 |
+| P1 | 已完成 | 空白设计引导 | Iteration 2 已提供画布内 Module → Port → Interface 起步路径与首模块入口 |
+| P1 | 已完成 | Dialog 键盘模型 | Iteration 4 已让 Editor / Open dialogs 共享 Esc、焦点循环、初始焦点与恢复协议 |
+| P1 | 已完成 | 命令单一来源 | Iteration 5 已用 `StudioCommands` 统一 execute、enabled、label、shortcut 与 icon |
+| P1 | 已完成 | DRC 筛选 | Iteration 6 已按严重度和 code / message / target 筛选，点击结果仍交叉定位 |
+| P1 | 已完成 | Hierarchy 浏览与搜索 | Iteration 19 按模块标题、id、Owner 和 Level 派生搜索结果；Iteration 29 让搜索结果按 40 行批次渐进挂载；Iteration 34 把默认层级树也收敛为完整有序行投影加渐进 DOM 窗口，展开与选择不丢失 |
+| P1 | 已完成 | 直接依赖审查 | Iteration 21 已在模块 Properties 中从文档派生直接入站 / 出站 / 自环接口、对端与类型，并复用选择链进入完整接口合同 |
+| P1 | 已完成 | 跨视口交叉定位 | Iteration 33 将持久选择与临时 viewport 导航解耦；Sources、Messages、Inspector 和 MiniMap 可把节点或接口端点聚焦到可读尺寸，Canvas 内选择不抢视口 |
+| P1 | 已完成 | 无鼠标核心旅程 | Iteration 23 已从空白设计连续完成两模块、两端口、一接口、合同、DRC、Undo / Redo 与保存；菜单 Dialog 恢复到稳定触发器；Iteration 45–47 补齐 DRC、手动布线和模块移动的连续键盘事实链 |
+| P2 | 已完成 | 连线可读性与手动路由 | Iteration 7 清理无意义小折返；Iteration 8 支持拖动、键盘、Undo、Reset 和 JSON 持久化；Iteration 25 以冲突图规划共享端点 / 模块通道的确定性车道并锁定设计坐标几何合同；Iteration 43 让拖动把手在任意缩放下保持 24 px 命中区；Iteration 46 让键盘选择进入唯一 `SelectionRef` 并在每次 Arrow 写入后恢复把手焦点；Iteration 52 让增量接口从端口外侧进入，并统一自动分道、手动提交和端点恢复的严格正交合同 |
+| P2 | 已完成 | 多尺度总览可读性 | Iteration 41 从 viewport 唯一派生 detail level；低缩放只隐藏不可读的次级文字，保留模块标题、端口名、把手和线路，放大自动恢复完整细节 |
+| P2 | 进行中 | 样式事实源 | Iteration 18 已删除旧三栏工作区与当前 Dock 工作台之间确定无效的覆盖声明和旧 DOM 样式；Iteration 42 收敛高频 surface、border、row text、control size 与 motion token 并删除四个死 token；其余低频状态色仍按独立语义保留 |
+| P2 | 进行中 | 大设计性能 | Iteration 16 建立 200 / 400 全量几何基线；Iteration 28 建立 1000 / 2000 heap 与连续编辑基线并消除无关编辑整图重排；Iteration 29、34 完成 Sources 搜索、接口与默认层级渐进挂载；Iteration 31 收敛选择投影；Iteration 32 仅对压力档启用 Canvas 视口裁剪；Iteration 35 建立带版本原始样本、重复执行入口和只观察趋势报告；Iteration 36 让压力跨图定位只做一次 viewport 变换，并修复 MiniMap 冻结初始回调；Iteration 50 最新三轮最终测量内存中位数约 65.3 MB，Sources / MiniMap 定位中位数 217 / 63 ms；固定 CI 数值预算尚未建立 |
+| P2 | 进行中 | 浏览器矩阵 | Chromium 26 / 26 完整自动化；Iteration 38 将 Firefox 从 5 条 allowlist 扩展为除 Chromium CDP heap 采样外的全部产品合同，当前 25 / 25 通过；WebKit、Windows 和 macOS 尚未验证 |
+| P2 | 进行中 | 可访问性 | 已有 dialog focus trap、WCAG A / AA 结构与文本对比度门禁、桌面菜单，以及 Chromium / Firefox 连续无鼠标核心旅程；Iteration 48 为被接受的模块键盘移动补齐位置 live 公告；读屏人工验证与 WebKit 自动化仍缺 |
+| P3 | 待完善 | 高级审查工作流 | 设计 Diff、传递影响范围、源码定位与评审状态尚未建立；不能用临时高亮伪装这些事实 |
+| P3 | 方向明确 | 源码可视化适配 | 当前不扫描代码；由外部工具输出 `BlockDesignDocument` |
+| P3 | 待评估 | 仓库与协作 | 单人文件模型稳定后再决定 Git diff、评论、协作和服务端边界 |
+
+## 阶段路线
+
+### Phase 0：事实源与质量基线
+
+- 收敛 README、产品、架构、质量与路线图的文档职责。
+- 审计模型、编辑、IO、布局、路由、Studio、样式与测试。
+- 用新用户、专业日常用户、代码审查者三种视角真实 Dogfooding。
+- 建立持续迭代记录，替代一次性验证报告。
+
+### Phase 1：编辑可靠性
+
+- 清理首屏 runtime warning，建立导航前 console gate。
+- 保护 Inspector 草稿，统一弹窗焦点与关闭语义。
+- 完成空状态、命令模型和错误反馈一致性。
+- 拆出 model / editor / serialization 单元测试。
+
+### Phase 2：文件与 Schema 生命周期
+
+- 定义 v2.x 兼容规则、迁移注册表和 golden fixtures。
+- 增加恢复副本、异常关闭恢复与保存失败反馈。
+- 建立确定性序列化合同与设计文件兼容矩阵。
+
+### Phase 3：专业审查工作流
+
+- 设计快照 Diff、受影响模块和接口合同变化。
+- DRC 筛选、分组、修复说明与源码定位。
+- 审查状态和可导出报告保持为派生 / 协作事实，不污染设计合同。
+
+### Phase 4：规模、平台与生态
+
+- 建立大型和压力设计，完成性能测量与降级策略。
+- 扩展 Firefox、WebKit、Windows 与 macOS 验证。
+- 提供语言无关的源码 / AI 适配器接口和示例。
+- 在文件与版本模型成熟后评估仓库集成和多人协作。
+
+## 迭代规则
+
+每轮只解决一个最高收益的独立问题，并完成：实际观察 → 根因 → Owner / 不变量 → 最小完整实现 → 清理旧路径 → 类型 / 测试 / 浏览器 / 截图验证。
+
+- 每 10 轮做一次产品与质量回顾，重排优先级并删除失效计划。
+- 每 25 轮做一次架构收敛检查，审计 Owner、依赖方向、事实源和公共 API。
+- 任何数据丢失、错误保存、Schema 破坏或崩溃问题立即提升为 P0。
+- 不为了凑轮次拆分同一根因，也不把文档描述算成多轮实现。
+
+## 迭代记录
+
+| 轮次 | 目标与根因 | 修改 | 验证 | 剩余问题 |
+| --- | --- | --- | --- | --- |
+| Phase 0 | 文档职责重叠，质量证据散落在一次性报告，产品价值偏重生成前设计 | 建立 `PRODUCT`、`ARCHITECTURE`、`QUALITY`、`ROADMAP` 四个 Owner；README 收敛为价值、预览、快速开始与入口；加入代码可视化和人工审查旅程 | 全仓审计；三角色 headed Chromium Dogfooding；`pnpm build`；12 / 12 Playwright | 确认首屏 warning、草稿丢失、空状态与 dialog 键盘问题，进入后续迭代 |
+| Iteration 1 | 自定义 Edge 将完整 `EdgeProps` 透传给 `BaseEdge`，最终落到 DOM；测试在导航后监听，漏掉 React 首次告警 | 显式传递 `BaseEdge` 所需的 id、path、style 与 markers；每条 E2E 在导航前收集 warning / error / pageerror，并在结束时统一断言 | `pnpm typecheck`；首屏与双层展开 2 / 2 Playwright；headed Chromium 32 nodes / 54 edges / 0 labels / 0 browser problems；截图人工检查 | 已纳入最终 17 / 17 E2E |
+| Iteration 2 | 零模块设计只有空网格，新用户必须猜工具栏图标 | 在 Canvas 增加仅对空入口 Level 显示的起步卡，说明 Module → Port → Interface，并调用现有 Add Module 命令 | `pnpm typecheck`；新手目标 E2E；headed Chromium 0 browser problems；1680 × 1050 截图检查；已纳入最终 17 / 17 E2E | 后续可在首模块创建后提供端口级渐进引导，不在本轮扩大范围 |
+| Iteration 3 | Inspector 表单是未提交草稿，但切换选择、保存或结构操作没有草稿协议 | 每类属性编辑器比较草稿与文档事实；统一 UNAPPLIED 状态；选择切换可取消；Properties / JSON 切换和面板收起保留草稿；保存、导出、移动和创建命令要求先 Apply；Undo / Redo 明确确认；提示移到画布底部避免遮挡 Apply | `pnpm typecheck`；草稿保护目标 E2E；headed Chromium 验证面板收起后草稿保留、0 browser problems；截图检查提示与固定 Apply 区；已纳入最终 17 / 17 E2E | 后续仍需更细的草稿单元测试 |
+| Iteration 4 | EditorDialogs 与 OpenDesign 各自只画遮罩，没有统一键盘和焦点 Owner | 新增 `useDialogFocus`：Esc 关闭、Tab / Shift+Tab 循环、声明式初始焦点、关闭后恢复触发命令；两类 Dialog 复用同一协议 | `pnpm typecheck`；键盘焦点目标 E2E；实际 Chromium 验证 New / Open 两类入口；已纳入最终 17 / 17 E2E | 后续仍需 axe 与读屏人工验证 |
+| Iteration 5 | MenuBar、Toolbar 和 keyboard 分别维护同一动作的 callback、可用性与文案，容易漂移 | 建立具名 `StudioCommands` 契约；MenuBar 和新 `StudioToolbar` 只投影命令；快捷键调用同一 execute；菜单展示快捷键；工具栏补齐 accessible name | `pnpm typecheck`；chrome / dialog 2 / 2 Playwright；headed Chromium 检查 17 个工具命令、菜单 shortcut 与 0 browser problems；截图检查；已纳入最终 17 / 17 E2E | 后续菜单键盘导航可继续完善 |
+| Iteration 6 | DRC 只能线性浏览，代码审查者难以收敛到严重问题或特定边界 | `MessagesPanel` 增加派生的严重度和文本筛选，统计显示结果数，保留原 issue 交叉定位，不写入设计事实 | `pnpm typecheck`；DRC 筛选目标 E2E；headed Chromium 构造 3 条 warning，按 boundary 收敛为 1，0 browser problems；截图检查；已纳入最终 17 / 17 E2E | 设计 Diff 与影响范围仍属后续审查能力 |
+| Iteration 7 | 布线根据“可见边大于 8”对全部路径增加端点 dogleg，与真实重叠无关 | 保留原正交折点数，通过移动已有通道分道；只对不同 connection 共享的规范化物理端口添加短分叉；根级同模块对的独立端口保留路由器原通道 | `pnpm typecheck`；默认 7 blocks / 10 edges；两层展开 32 blocks / 54 edges 的穿块、共路、边界与标签几何门禁 | 尚需大型设计性能基线 |
+| Iteration 8 | 连接路径只是 React Flow 派生状态，人无法手动避让业务上更重要的视觉结构 | `BlockConnection.routing.waypoints` 成为唯一手动路由事实；选中线显示正交线段把手，拖动只在松手提交一次操作；支持方向键、Reset、Undo 和下载持久化；Schema 升为 2.1，显式迁移 2.0 | `pnpm typecheck`；2.0 local golden fixture 加载为 2.1；手动路由目标 E2E 覆盖拖动、下载 JSON、Reset 与 Undo；Firefox 1680 × 1050 实际交互截图；最终 17 / 17 E2E | 大型设计响应时间仍需独立基线 |
+| Iteration 9 | Schema、核心编辑和路由纯函数全部依赖分钟级浏览器回归，失败定位慢且外部 JSON 可绕过 UI 的正交路径假设 | 引入独立 Vitest 配置；覆盖 2.0 -> 2.1、非法版本、route 写入 / Reset / 原子失败、稳定序列化、lane / 分道 / manual restore；Schema 显式拒绝相邻 waypoint 同时改变 x 与 y | `pnpm test:unit`：14 / 14，0.27 秒；`pnpm typecheck`；`git diff --check` | 其余 `DesignOperation`、DRC 与 IO 单测仍需补齐 |
+| Iteration 10 | 首个十轮复盘确认当前最高风险已从基础编辑和布线转为异常退出后的未保存文档丢失 | 核查 editor、Studio、IO 与浏览器存储链：beforeunload 只提醒；Save 只下载；应用内 Undo 只在内存；localStorage 只保存 Dock 布局；未应用 Inspector 草稿不属于文档事实 | 源码状态链审计；`pnpm build`：1870 modules，9.57 秒；2 条受影响 Chromium E2E 通过 | 恢复副本的安装时机、保留周期和 Inspector 草稿范围属于产品语义，等待明确选择 |
+| Iteration 11 | DRC 使用 `code + 数组序号` 作为 id，无关诊断插入会让后续身份全部漂移；Schema / IO 错误仍主要靠浏览器发现 | DRC id 改由规则、目标坐标和必要判别项确定，重复非法对象才追加 occurrence；补充 DRC 稳定性、定位、纯度及对象 / 文件 / URL 加载、文件名测试 | `pnpm test:unit`：23 / 23，0.29 秒；`pnpm typecheck`；DRC 筛选与 cross-probe Chromium E2E 1 / 1；`git diff --check` | `DesignOperation` 删除级联尚缺快速合同测试 |
+| Iteration 12 | 模块、端口、连接和 hierarchy 删除包含多处引用级联，仅有长浏览器旅程间接覆盖 | 建立共享设计 fixture；锁定模块连接 / 孤立接口清理、共享接口保留、父子 binding 清理、独占子树删除、共享子层保护与失败原子性 | `pnpm test:unit`：29 / 29；`pnpm typecheck`；`git diff --check` | 其余编辑组合与历史状态仍需覆盖 |
+| Iteration 13 | Undo / Redo / dirty 规则封闭在 React Hook 内，无法快速验证分支历史和 saved baseline | 抽出纯 `designHistory` 状态机，Hook 只负责 React commit；覆盖 saved / unsaved 初态、apply、undo、redo、分支清空、markSaved 与 replace | `pnpm test:unit`：34 / 34，0.31 秒；`pnpm typecheck`；手动路由 Reset -> Undo Chromium E2E 1 / 1；`git diff --check` | 历史仍为无上限全量快照，容量策略需性能基线后决定 |
+| Iteration 14 | 没有自动可访问性门禁；通用 Axe contrast 在 transformed SVG 页面超过 90 秒，无法成为持续回归 | 固定 `axe-core 4.10.2` 扫描文档与可交互责任区；用 rendered computed color、透明度合成和 WCAG luminance 替代失效的 contrast 执行层；加深层级计数与 7 个模块头部次级文字 | A11y Chromium 1 / 1，约 7 秒；0 结构违规、0 文本对比度违规；Firefox 1680 × 1050 实际截图，0 browser problems；截图 `docs/screenshots/accessibility-contrast.png` | 完整键盘旅程与读屏人工验证仍缺 |
+| Iteration 15 | 菜单只能点击；打开后没有首项焦点、方向循环、跨菜单切换或稳定的 Esc 返回 | `MENU_DEFINITIONS` 成为菜单结构单一来源，动作仍直接引用 `StudioCommands`；实现 Arrow / Home / End / Enter / Space / Esc，跨菜单时跳过没有可用命令的菜单，并让 Dialog 接管焦点 | 菜单键盘 + 既有 Dialog focus Chromium 2 / 2；`pnpm typecheck`；34 / 34 unit；`git diff --check` | 类型搜索与完整无鼠标设计旅程仍缺 |
+| Iteration 16 | 200 / 400 大型设计使用完整智能寻路和每线三层 SVG；选择还会因死 `inspect` 回调重建全部边，浏览器输入帧被不必要的合成工作拖慢 | 大图使用确定性正交避障快路由；未选中边只渲染主线，选中后才增加底衬和编辑层；缩小大图命中宽度；移除死回调并稳定 Canvas 组合回调；增加可复现生成器、真实指针 / 键盘旅程和逐线段穿块检查 | 200 modules / 400 connections / 0 穿块；本机完整回归观测：首次可交互 742 ms、选择 324 ms、筛选 319 ms、保存并校验 181 ms；35 / 35 unit；20 / 20 Chromium，5.3 分钟；build 1871 modules，6.56 秒 | 当前数字是开发机观测，不是正式预算；1000 / 2000 压力档与峰值内存仍缺 |
+| Iteration 17 | `DesignOperation` 的创建、更新、移动与 hierarchy binding 仍主要由慢速浏览器旅程间接验证 | 按公开 operation union 补齐 document / level / node / port / hierarchy / connection 的成功合同、源文档不变和失败原子性；浏览器继续只验证跨层组合 | `pnpm test:unit`：42 / 42，6 files，0.31 秒；`pnpm typecheck`；`git diff --check` | 删除级联已有独立合同；后续可增加 operation 覆盖率门禁，但不以覆盖率数字替代语义断言 |
+| Iteration 18 | 旧三栏页面和当前 Dock 工作台在同一 CSS 中重复拥有 grid、block、port、Inspector 与 Messages 最终值；旧响应式段落还会被后续全局规则无条件覆盖 | 保留基础结构，删除后文已接管的旧声明、无当前 DOM 下游的 pane / block 样式和失效 responsive 路径；当前 Vivado-style projection 成为唯一最终值 | build 1871 modules，6.41 秒；CSS 184.31 -> 180.95 kB；默认 / WCAG / 双层布线 / Dock 4 / 4 Chromium；Firefox 1680 × 1050 实图为 7 nodes / 10 edges / 0 labels / 0 browser problems | token 仍以颜色为主，spacing / typography / control height 尚未系统收敛 |
+| Iteration 19 | Hierarchy 在 200 模块下只能滚动，Reviewer 无法按职责或层级快速找到目标；接口筛选不能替代模块定位 | 查询文本只作为 Sources 临时状态；结果从 `BlockDesignDocument` 按 Level / node 顺序派生，支持 title / id / Owner / Level；点击或 Tab + Enter 继续调用既有草稿保护、reveal 和 selection 协议 | 200 模块中 Owner -> 20、Level -> 200、title / id -> 1，键盘定位到 `Module 137`；四类搜索和定位 1042 ms；42 / 42 unit；WCAG + 草稿保护 + 大图 3 / 3 Chromium；Firefox 1680 × 1050 截图 16 results / 0 browser problems | 搜索当前为字面包含匹配；模糊排序与全局命令面板需先经过 Iteration 20 复盘再决定 |
+| Iteration 20 | 第二次十轮复盘需判断前十九轮是否真的改善三种核心角色，并重新排序生产风险 | 按设计事实、工作区状态、派生结果和草稿边界复核架构；重走空白起步、完整模块 / 端口 / 连线 / 层级 / 保存重载、40 接口审查旅程；复核截图、模块职责、测试成本、键盘边界、依赖安全与平台证据 | 三角色 Chromium 3 / 3，1.6 分钟；42 / 42 unit；typecheck；官方 npm registry production audit 为 0 known vulnerabilities；默认 / 搜索 / 手动路由截图无标签、穿块或明显遮挡 | P0 恢复语义仍待选择；Reviewer 定位后缺模块直接依赖摘要；键盘旅程在拖线创建接口处中断；完整 E2E 仍为 5.3 分钟且仅 Chromium 自动化 |
+| Iteration 21 | Reviewer 找到模块后仍需在画布逐线追踪直接依赖，缩放或密集设计下成本高 | `model/graph` 从唯一文档事实派生模块直接入站 / 出站 / 自环摘要；Properties 分组展示接口、类型、对端与端口；物理点击摘要复用既有 connection selection 和 Inspector 合同链 | 45 / 45 unit；typecheck；build 1872 modules / 6.68 秒；21 / 21 Chromium / 5.5 分钟；Firefox 1680 × 1050 为 7 nodes / 10 edges / 0 labels / 2 summaries / 0 browser problems；截图 `module-interface-review.png` | 当前只表达同 Level 直接连接，不推断传递影响；创建接口仍依赖鼠标拖线 |
+| Iteration 22 | 连接只能从 Canvas 拖动端口，键盘用户无法完成核心模块组合；另建写入路径又会让合法性与 id 规则漂移 | 抽出鼠标 / 键盘共用的端点规范化规则；`Add Interface` 命令打开当前 Level 的源 / 目标端口 Dialog，优先跨模块默认组合，再进入既有类型化接口 Dialog 与 `connection/add`；工具栏、菜单和启用状态仍由 `StudioCommands` 投影 | 48 / 48 unit；typecheck；build 1872 modules / 6.60 秒；22 / 22 Chromium / 5.6 分钟；键盘创建后 11 edges、Inspector / focus / Undo 10 / Redo 11；Firefox 1680 × 1050 为 source focused / 10×10 options / correct cross-module default / 0 browser problems；截图 `keyboard-interface-dialog.png` | 分段键盘能力已成立，但尚缺从空白设计到保存的单条连续无鼠标旅程；完整自动跨浏览器仍缺 |
+| Iteration 23 | 局部键盘能力分别通过不等于完整旅程可组合；菜单项打开 Dialog 后还可能把恢复目标留在即将卸载的 menuitem | 菜单执行命令前把焦点交还稳定 trigger，Dialog 继续复用统一 focus 协议；增加只用键盘从空白设计完成模块、端口、接口、合同、Apply、DRC、Undo / Redo 和下载校验的连续 E2E | 48 / 48 unit；build 1872 modules / 6.57 秒；23 / 23 Chromium / 5.7 分钟；连续旅程 10.5 秒，下载 JSON 为 2 modules / 1 connection 且合同文本持久化；全套 0 browser problems | Chromium 连续旅程成立；Firefox / WebKit 尚未自动执行同一核心流程，读屏仍需人工验证 |
+| Iteration 24 | Playwright 1.60 需要 Firefox build 1522，但本机只有旧 build 1511；连续键盘旅程还依赖 Chromium 在文档末尾把 Tab 回绕到开头，Inspector Apply 后重挂表单会丢失焦点 | 建立可移植的 `firefox-core` project、安装与独立命令，选取 5 条高风险流程；Inspector 在成功 Apply 导致表单重建后恢复 Apply 焦点，旅程用标准 Shift+Tab 访问 DOM 前方命令，不加入浏览器分支 | Firefox 5 / 5，17.4 秒；连续旅程 9.1 秒；Chromium 23 / 23，5.7 分钟；48 / 48 unit；build 1872 modules / 6.35 秒；截图 `firefox-apply-focus.png` 显示 2 modules / 1 clean orthogonal edge / 0 labels / visible focus / 0 browser problems | 完整 Firefox 套件与 WebKit 仍缺；读屏仍需人工验证 |
+| Iteration 25 | 架构审计发现 `studio/types` 同时承载纯布局、Canvas 回调和选择协议，形成 `layout -> studio` 反向依赖；选择查询封闭在 892 行编排器内；新版浏览器还暴露出一组真实车道哈希冲突，而旧 Chromium build 1208 的截图实现会永久挂起 | 分出 `layout/types`、`components/canvasTypes` 与 `studio/selection` 三个 Owner 并删除混合类型源；选择协议增加纯单测；共享端点 / 模块通道按冲突图确定性分道，移除根级强制零偏移；共路门禁使用设计坐标，视口不再参与路由事实；升级 Playwright 1.62.1 并统一截图 helper | 52 / 52 unit；typecheck；23 / 23 Chromium / 1.3 分钟；5 / 5 Firefox / 17.6 秒；双层展开 32 blocks / 54 edges 的碰撞、边界、端点、共路和标签均为 0；build 1873 modules / 6.49 秒；四张 1680 × 1050 截图人工复核通过，其中包含默认 AIO 7 modules / 10 interfaces | `BlockDesignStudio` 与 `Inspector` 虽大但当前没有足够独立变化理由做机械拆分；E2E 文件仍大；恢复语义、历史容量、完整 Firefox / WebKit 与 1000 模块压力档未完成 |
+| Iteration 26 | `parseBlockDesignDocument` 用内联 `if` 同时判断版本、定义旧 Schema 和执行迁移；当前版本还在 editor 重复写死，2.0 文件中的 2.1 `routing` 会被 Zod 静默剥离 | `BLOCK_DESIGN_SCHEMA_VERSION` 成为当前版本唯一来源；`model/migrations` 拥有版本专属旧 Schema、逐步注册表和不可变兼容矩阵，`model/parseDesign` 只组合迁移与当前 Schema；删除旧内联分支和 editor 魔法字符串；增加 2.0 输入 / 2.1 精确输出 golden fixture | 58 / 58 unit；typecheck；Chromium / Firefox 当前与旧版文件加载及 Chromium 非法替换 3 / 3；build 1875 modules / 6.49 秒；`git diff --check` | 版本迁移链已闭环；2.1 全局未知字段的拒绝 / 保留策略涉及数据保留，等待明确后再完成 Schema 生命周期 |
+| Iteration 27 | `serializeDesign` 直接 `JSON.stringify`，语义相同的 record 插入顺序会制造 Git diff；dirty snapshot 又独立使用另一份裸 stringify，可能与实际保存内容漂移 | IO 只对 `interfaceDefinitions` 和模块 / 接口 `attributes` 生成不修改源文档的 canonical 投影；保留所有设计数组顺序；history snapshot 直接复用 `serializeDesign`，删除第二份序列化规则 | 60 / 60 unit；typecheck；Save As / 下载 / 重开和 Save / Export Chromium 2 / 2；200 / 400 当前代码首次可交互 955 ms、保存校验 217 ms；build 1875 modules / 6.48 秒；`git diff --check` | record 顺序假 dirty 与无意义文件 diff 已删除；正式恢复机制和历史容量仍缺 |
+| Iteration 28 | 历史保存完整对象且没有 1000 / 2000 内存证据；真实压力测试进一步证明普通 Level 标题编辑也因文档引用和 callback identity 变化重建 1000 nodes / 2000 edges，十次编辑需 47.8 秒，Undo / Redo 约 3.9 / 3.8 秒 | 增加可复用 200 / 400 与 1000 / 2000 fixture、独立 history performance lane 和 Chromium heap 采样；history 改为同一 canonical 投影的 compact UTF-8 快照；布局 Owner 定义 projection / geometry signatures；稳定工作区命令回调、memoize 层级行，并把轻量 Level caption 与重型 React Flow 图分离 | 64 / 64 unit；history 20 次操作保留 34,419,093 bytes，Apply / Undo 平均 24 / 18 ms；1000 / 2000 首次可交互 3618 ms，十次编辑 6700 ms，Undo / Redo 451 / 354 ms，交互内存增量 22,591,123 bytes；200 / 400 为 911 / 307 / 1392 / 328 / 63 ms；23 / 23 Chromium / 1.2 分钟；5 / 5 Firefox / 17.1 秒；build 1876 modules / 6.16 秒；两张 1680 × 1050 截图复核 | 无关编辑整图重排已消除；历史仍无容量上限；压力档 Hierarchy 搜索 7129 ms、接口筛选 2316 ms，下一轮处理列表渐进渲染；正式预算仍需 CI 硬件冻结 |
+| Iteration 29 | 压力档 Hierarchy 搜索一次可挂载 1000 行、Interfaces 初始挂载 2000 行；输入筛选时大量按钮同时创建 / 删除，四次查询与选中需 7129 ms，接口筛选需 2316 ms | Sources 拥有通用渐进结果窗口：完整有序结果仍从文档派生，首批挂载 40 行，滚动接近底部继续加载；搜索框实时显示完整结果总数，DOM 窗口只属于展示状态；E2E 验证 40 -> 80 增量而非截断 | 1000 / 2000 Hierarchy 四次查询、滚动增量和最终选择 4855 ms，接口筛选 1242 ms；200 / 400 为 1199 / 390 ms；64 / 64 unit；23 / 23 Chromium / 1.2 分钟；5 / 5 Firefox / 17.0 秒；build 1876 modules / 6.33 秒；1680 × 1050 `hierarchy-search.png` 人工复核总数、列表、画布和 Inspector 清晰 | 搜索纯列表成本已下降；压力档最终模块选择仍约 2 秒，下一性能 Owner 是 React Flow selection projection；结果批次不是正式 CI 预算 |
+| Iteration 30 | 第三次十轮复盘需确认 AI 时代的 Design / Understand / Review 价值、Owner 边界和质量证据没有被性能优化侵蚀 | 复核 README / PRODUCT 三条旅程、公开 Schema 与适配器边界、model -> editor / io -> layout / routing -> components / studio 单向依赖、恢复事实源、Owner 文件规模、平台矩阵和发布门槛；官方 npm registry production audit 单独执行，避免把镜像缺少 audit endpoint 误报为安全通过 | README 明确设计、代码可视化与人工审查；model / layout 无 UI 反向依赖；`BlockDesignDocument` 仍是唯一设计事实源；官方 registry 为 0 known vulnerabilities；当前完整 Chromium / Firefox、build、unit、pressure 与三张截图证据齐全 | P0 恢复、未知字段和历史淘汰仍等待产品决策；`BlockDesignStudio` 903 行、Inspector 562 行但尚无新增独立事实 Owner；下一轮优先解决已测得的大图选择 2 秒，而非机械拆文件或扩展服务端 |
+| Iteration 31 | 压力测试把 Playwright accessible-name 查询耗时混入选择指标，同时 Canvas selection 改变会重建所有 node / edge 对象和 React Flow 的事件、配置与静态 children；初次只稳定 item 引用没有改善端到端时间 | 用 Chromium CPU profile 分离 640 ms 测量污染，改为真实可见树行的直接指针定位；抽出纯 `reconcileCanvasSelection`，只克隆前后选中项；稳定 React Flow handlers、配置对象与静态装饰子树；层级行增加稳定数据坐标，不改变 `SelectionRef` 或用户语义 | 67 / 67 unit；修正后的 1000 / 2000 选择从 1212 ms 降到 424 ms，搜索 + 增量加载 + 最终选中从 4855 ms 降到 4241 ms，总测量内存从 378,558,810 降到 361,403,221 bytes；200 / 400 选择 113 ms；23 / 23 Chromium / 1.2 分钟；5 / 5 Firefox / 16.8 秒；build 1877 modules / 6.32 秒 | 旧 1974 ms 数字含测试查询污染，不能再作为产品指标；压力档首次可交互仍约 3.4 秒、总测量内存约 361 MB，下一轮评估不丢失画布语义的可见元素渲染策略 |
+| Iteration 32 | 1000 / 2000 压力档仍把全部节点和边挂载到 Canvas DOM，首屏约 3.4 秒、总测量内存约 361 MB；直接裁剪又可能破坏 MiniMap、Fit、跨视口选择、端口和正交路由 | 把路由快路径与渲染裁剪拆成独立策略：120 / 240 以上仍使用大图路由，只有 500 / 1000 以上启用 React Flow 可见元素挂载；文档、布局、store、MiniMap、状态总数和保存保持全量；E2E 用真实 MiniMap 拖动把屏外选中模块带回视口，并验证 selected class、两个端口及完整保存输出 | 初始 DOM 200 / 430，但状态与文件仍为 1000 / 2000；首次可交互 2638 ms，十次编辑 3704 ms，Undo / Redo 243 / 198 ms，选择 216 ms，Hierarchy 旅程 1317 ms，接口筛选 227 ms，总测量内存 119,668,400 bytes；200 / 400 仍全量挂载且 400 条路径 0 穿块；67 / 67 unit；23 / 23 Chromium；5 / 5 Firefox；build 6.31 秒；两张 1680 × 1050 编辑截图复核 | 视口裁剪只改变展示挂载，不改变任何设计事实；阈值来自当前本机实测，正式预算仍需 CI 硬件冻结；完整 Firefox / WebKit、崩溃恢复和历史容量仍未完成 |
+| Iteration 33 | 视口裁剪后，Sources 或接口审查选择屏外对象只更新 Inspector，用户仍需手动寻找；把自动居中绑定到所有 selection 又会让 Canvas 内点击抢走用户视野 | 保持 `SelectionRef` 为唯一选择事实，增加一次性 `revealSelectionRequest` 作为纯 UI 导航意图；Sources、Messages、Inspector 接受选择后才请求聚焦，Canvas 点击只选择；节点 / 端口聚焦所属模块，接口聚焦两端；MiniMap 保持 1000 个节点并支持节点点击直达，拖拽平移与滚轮缩放继续保留 | 压力档 Sources 屏外模块聚焦 907 ms、MiniMap 首尾节点跨图定位 941 ms、Hierarchy 搜索并聚焦 1141 ms、接口两端与选中路径聚焦 614 ms，最终总测量内存 68,938,282 bytes；200 / 400 聚焦后仍执行 400 路径穿块门禁；build 1877 / 6.30 秒；67 / 67 unit；23 / 23 Chromium / 1.1 分钟；5 / 5 Firefox / 16.7 秒 | 自动聚焦必须达到超过 100px 的可读模块宽度，接口全部折点必须在 viewport 内；动画数字包含 280 ms 用户可见过渡，不与旧“只改 selection”指标直接比较；正式 CI 预算仍缺 |
+| Iteration 34 | 搜索结果和接口列表已渐进挂载，但未搜索时的默认 Hierarchy 仍一次创建 1000 个模块按钮；Level 标题编辑会连带协调这些无关 DOM，展开后若重置窗口还会把用户弹回顶部 | 抽出纯 `projectHierarchyRows`，从文档与展开集合生成完整、稳定、带深度的 document / level / node 行投影；默认列表与搜索、接口共用 40 行渐进窗口，滚动到末尾增加 40；窗口不成为事实源，清空搜索和展开不清除选择，展开也不重置已加载窗口 | 压力档完整投影 1002 行，首批 DOM 40、滚动后 80；十次 Level 编辑由 3676 ms 降至 2831 ms，Undo / Redo 198 / 191 ms，Sources 模块聚焦 492 ms，最终总测量内存 65,953,289 bytes；200 / 400 保持全量 Canvas 几何；68 / 68 unit；23 / 23 Chromium；5 / 5 Firefox；build 1878 / 6.25 秒；两张 1680 × 1050 编辑截图复核层级行与线路 | 默认窗口卸载的行仍可通过实时搜索直接访问；完整结果、顺序、展开和 selection 都来自原事实源；正式 CI 性能预算、完整 Firefox / WebKit、恢复与历史容量仍缺 |
+| Iteration 35 | 压力测试只有互不关联的单次 stdout / Playwright 附件，没有统一版本、重复入口或环境一致性校验；开发机单次数字无法成为发布预算 | 定义 `performance-sample v1` 统一历史与浏览器样本；增加 `pnpm performance:baseline -- --runs N` 串行执行 1000 / 2000 两类压力旅程，在临时目录保全每轮样本，再严格校验 Schema、场景、环境、指标字段与有限数值，最后输出原始样本和 observation-only min / median / max / mean / spread 报告；明确 `thresholds: null`；性能结果使用独立 `performance-results/`，避免 Playwright 清理自己的 `test-results/` 时误删 | 最新两轮真实执行为 4 个原始样本 + 1 个趋势报告；历史 Apply / Undo 总耗时中位数 466.5 / 361.5 ms，浏览器首次可交互 2275.5 ms、十次编辑 2811 ms、最终测量内存 66,498,879.5 bytes；样本字段和环境一致，命令 24.8 秒通过；build 1878 / 6.31 秒、68 / 68 unit、23 / 23 Chromium / 1.1 分钟、typecheck、单次历史通道和 CLI 边界均通过 | 当前批次模块选择离散度 2.2%，MiniMap 跨图定位 30.83%；此前相同入口捕获过一次 1139 ms 选择长尾，下一轮继续诊断；报告仍是本机观测，固定 CI 硬件和正式数值预算尚未建立 |
+| Iteration 36 | 压力定位总时长混合 selection、挂载、动画和 Playwright 轮询；viewport 断言还读取不存在的 `transform` 属性；MiniMap 反向计时会打断前一次动画。分段后又证明 280 ms 平滑插值在裁剪图中实际持续约 1.1 秒，而 MiniMap 内部空依赖回调始终调用空布局时期捕获的旧策略 | 浏览器帧时钟分别记录 selection 提交、目标挂载 / 选中、viewport 起动 / 变换次数 / 最长帧隙与稳定完成；断言改读真实 `style.transform`，连续 MiniMap 旅程先确认前一步完成；普通 / 大型图保留 280 ms 平滑定位，压力裁剪图单次直接定位；MiniMap 使用稳定回调从 ref 读取最新规模策略，适配第三方闭包生命周期 | 最终三轮 1000 / 2000：Sources 定位 205 / 215 / 220 ms，中位离散度 6.98%；MiniMap 返回 61 / 62 / 64 ms，离散度 4.84%，出站 61 / 63 / 64 ms；两类定位均为 1 次 viewport 变换、0 动画帧隙；接口定位中位数 175 ms，Hierarchy 旅程 786 ms，最终测量内存 64,855,725 bytes；build 1878 / 6.25 秒、68 / 68 unit、23 / 23 Chromium / 1.2 分钟、5 / 5 Firefox / 16.9 秒、typecheck 与 diff check 通过；1680 × 1050 `hierarchy-search.png` 人工复核目标、端口、线路、MiniMap 与 Inspector 清晰 | 压力直接定位只改变可丢弃 viewport，不改变 selection、布局或 JSON；`garbageCollectionExposed` 当前仍为 false，历史 heap delta 虽本轮稳定但测量前提需下一轮校准；固定 CI 阈值仍未建立 |
+| Iteration 37 | `pnpm test:performance` 顶层进程带 `--expose-gc`，但 Vitest worker 不继承，样本一直诚实记录 `garbageCollectionExposed: false`；约 120 MB heap + ArrayBuffer 增量混入回收时机，不能作为可靠观测 | 由 `vitest.performance.config.ts` 唯一拥有执行前提：性能测试使用单 fork，并通过 fork `execArgv` 传入 `--expose-gc`；测试在前后显式 GC，缺少能力时直接失败；删除 package script 与聚合器上层重复参数；文档明确 canonical 字节是确定性事实，heap / ArrayBuffer 是环境观测 | 三轮均为 `garbageCollectionExposed: true`；21 份保留历史仍精确为 34,419,093 bytes；heap / ArrayBuffer / 合计增量中位数 3,646,384 / 32,780,088 / 36,426,472 bytes，三项离散度 0%；Apply / Undo 总耗时中位数 466 / 371 ms；三轮完整历史 + 浏览器趋势命令通过，typecheck 与单次性能通道通过 | GC 校准删除了约 83.8 MB 回收时机噪声，但没有改变无上限历史事实；容量淘汰仍涉及产品恢复语义，不能由测量层擅自决定 |
+| Iteration 38 | Firefox 只通过正则 allowlist 运行 5 条旅程；Inspector 草稿保护、非法替换原子性、直接依赖审查、菜单 / Dialog 焦点、Dock 和完整编辑仍只有 Chromium 证据 | 将平台边界从“列出 5 条允许测试”反转为“只排除 1 条明确依赖 Chromium CDP heap API 的性能旅程”；Firefox 直接复用其余全部 22 条产品合同，不复制实现、不增加浏览器分支、不降低断言 | Firefox 22 / 22，单 worker 1.2 分钟；覆盖 WCAG、空白起步、草稿保护、焦点、DRC、层级、40 接口审查、直接依赖、键盘接口、连续无鼠标保存、双层几何、Dock、文件 URL / 本地 / 非法替换、手动路由、完整设计保存重载与删除导出；当前同代码 build 1878 / 6.25 秒、68 / 68 unit、Chromium 23 / 23、typecheck 与 diff check 已通过 | Firefox 产品合同已闭环；CDP heap 采样仍正确归 Chromium Owner；WebKit、Windows、macOS 和读屏人工验证仍缺 |
+| Iteration 39 | WebKit 平台状态未知，直接写入 project 会把“配置存在”误当成浏览器可运行 | 下载与 Playwright 1.62.1 精确匹配的 WebKit 26.5 / build 2336，并先做宿主动态库和安装命令 dry-run；不在未授权时写系统包，也不把未执行合同写成支持 | 浏览器二进制已完整下载；宿主检查明确缺 10 类动态库，`install-deps webkit --dry-run` 展开为 90 个 Ubuntu 22.04 系统包 | WebKit 项目和产品合同仍待系统依赖授权后落地；当前状态是精确外部阻塞，不是产品通过 |
+| Iteration 40 | 第四次十轮复盘需验证连续性能优化没有破坏 Design / Understand / Review、JSON 文件事实源、线路可读性或 Owner 方向 | 重读原始生产目标与五份权威文档；审计 App 默认示例与任意 JSON 加载链、model / editor / IO / layout / routing / components / studio imports、Owner 文件规模、发布矩阵和官方依赖安全；以新用户、日常用户和 Reviewer 重走 headed 浏览器旅程并重拍三张线路截图 | headed Chromium 4 / 4、0 console / page errors；新建首模块、直接依赖跳转、双层 32 modules / 54 edges 几何、完整本地编辑 / 保存 / 重载通过；3 张 1680 × 1050 截图复核；官方 registry production audit 为 0 known vulnerabilities；设计事实仍只来自 `BlockDesignDocument` | P0 恢复、未知字段和历史淘汰仍需产品决策；WebKit 仍需宿主授权；截图确认低缩放次级文字不可读，下一轮优先建立不影响端口和线路的 detail level |
+| Iteration 41 | 默认 7 模块总览 Fit 约为 0.58 倍，process、摘要、Owner 与 data type 已缩到不可读尺寸，仍常驻只会增加端口和线路周围噪声 | React Flow viewport 成为 detail level 唯一来源；Canvas 通过 store subscription 只在层级变化时更新根展示属性，节点不各自订阅 zoom；overview 隐藏次级文字但保留模块标题、端口名、把手与全部线路，放大恢复完整信息 | 69 / 69 unit；build 1879 / 6.19 秒；Chromium 23 / 23 + Firefox 22 / 22 共 45 / 45；三轮 1000 / 2000 首次可交互中位数 2248 ms、Sources 214 ms、MiniMap 61 ms、最终测量内存 64,799,571 bytes；1680 × 1050 `aio-routing-validation.png` 人工复核总览更安静且 0 线中标签 / 0 几何问题 | detail level 只属于 viewport 展示，不改变 JSON、布局、路由或 selection；WebKit 与桌面平台仍缺；下一轮审计视觉 token 的重复事实源 |
+| Iteration 42 | `styles.css` 中高频 raised surface、控件边框、分隔线、行文本、尺寸和 120 ms 动效仍由重复字面量维护；四个声明 token 没有任何下游 | 只为同语义下游建立最小 token，复用已有 chrome / panel / ink token；删除无消费的 `chrome-300`、`canvas`、`muted`、`red`，不合并碰巧同色但职责不同的状态 | 7 组关键 computed style 前后逐字段一致；同一 1680 × 1050 路由截图 SHA-256 均为 `21225c…5624`；69 / 69 unit；build 1879 / 6.58 秒；Chromium 23 / 23 + Firefox 22 / 22 共 45 / 45；WCAG 旅程双浏览器通过 | token 只拥有视觉常量，不成为状态或组件事实；低频语义值保留局部，避免为了覆盖率制造伪 token |
+| Iteration 43 | 默认总览 zoom 0.583 时，选中线路的 14 设计像素把手实际只有 8.16 × 8.16 CSS px，功能虽存在但难以稳定命中 | 同一 Canvas viewport 投影根级 inverse zoom；把手保持 24 CSS px 透明命中区和 14 CSS px 可见方块，foreignObject 仍以线路中点为中心；鼠标、键盘、waypoint 与单次提交协议不变 | Chromium / Firefox 手动路由 2 / 2，缩放前后命中尺寸差小于 0.5 px；完整双浏览器 45 / 45；69 / 69 unit；build 1879 / 6.13 秒；三轮压力定位 Sources 219 ms / MiniMap 62 ms；`manual-routing.png` 人工复核无标签、遮挡或过大把手 | inverse zoom 是可丢弃 viewport 展示，不进入 JSON；命中区扩大不改变可见方块和路由几何；下一轮提升 DRC 从“指出问题”到“给出修正方向” |
+| Iteration 44 | Messages 只能说明问题，Reviewer 仍需自行推断下一步；若把修正文案写在 UI，又会形成第二套规则 | `DesignIssue` 增加必填 remediation；每条语义 validation rule 同时定义 message 与修正方向，Studio 只为 layout runtime failure 补充恢复建议；Messages 可展示、搜索，点击仍复用 `SelectionRef` | 69 / 69 unit；build 1879 / 9.82 秒；Chromium 23 / 23 + Firefox 22 / 22 共 45 / 45；DRC + WCAG 双浏览器 4 / 4；1680 × 1050 `drc-remediation.png` 人工复核 | remediation 是派生诊断，不进入 JSON、不自动改写设计；下一轮验证完整无鼠标 DRC 审查链 |
+| Iteration 45 | headed 键盘旅程证实 Messages 打开后焦点仍停在命令按钮，到筛选输入需再经过 22 个 Tab 停靠点 | Studio 将“显式打开 Messages / Validate”表达为一次性 `messageFocusRequest`；Messages 在自己的边界内聚焦筛选输入，随后用原生 Tab、Shift+Tab 与 Enter 完成 severity、remediation 搜索、结果交叉定位和返回筛选器 | 69 / 69 unit；build 1879 / 7.20 秒；Chromium 23 / 23 + Firefox 22 / 22 共 45 / 45，1.3 分钟；目标双浏览器 2 / 2；headed Chromium 截图人工复核焦点、面板与画布 | 焦点请求是可丢弃工作区意图，不改变诊断、selection 或 JSON；下一轮验证手动布线的完整键盘链 |
+| Iteration 46 | React Flow wrapper 可 Tab 聚焦，却只把 Enter / Space 写入库内 selection，权威 `SelectionRef` 会立即覆盖它；Arrow 路由虽然写入成功，新 Edge 投影又会丢失把手焦点；Inspector 仍只提示鼠标 | Canvas 在捕获阶段把 Node / Edge 的 Enter、Space、Escape 统一映射到 `SelectionRef`；把手改用无边界 spinbutton 语义，每次 Arrow 提交 8 像素后以一次性 edge / axis / segment / coordinate 请求等待稳定投影并恢复焦点；Inspector 同时说明拖动与 Arrow | 69 / 69 unit；build 1879 / 7.25 秒；Chromium 24 / 24 + Firefox 23 / 23 共 47 / 47，1.4 分钟；键盘布线目标双浏览器 2 / 2；headed `manual-routing.png` 与把手局部 WCAG 人工 / 自动复核 | React Flow 库内选择不再成为平行状态；焦点请求不进入 JSON 或历史；下一轮核查 Node 的 Arrow 移动是否真正写回文档 |
+| Iteration 47 | headed 实测选中 Agent UI 后 ArrowRight 把 DOM 从 `(60,270)` 临时变成 `(80,272)`，但保存 JSON 仍是 `(60,270)`；React Flow 临时 position 伪装成设计事实 | Canvas 拦截选中且可 authored placement 的 Node Arrow，按 16 × 16 网格直接提交唯一 `node/move`；文档投影达到目标坐标后以一次性 `NodeFocusRequest` 恢复焦点，连续移动、Undo、Redo 和保存都不走库内临时 position | 69 / 69 unit；build 1879 / 7.28 秒；Chromium 25 / 25 + Firefox 24 / 24 共 49 / 49，1.4 分钟；目标双浏览器 2 / 2；真实下载验证 `(76,286)` → Undo `(76,270)` → Redo `(76,286)`；`keyboard-module-move.png` 人工复核 | 模块位置仍只由 `node.layout.position` 拥有，焦点请求不持久化；下一轮核查屏幕阅读器是否收到持久移动结果 |
+| Iteration 48 | Canvas 正确拦截库内键盘位移后，React Flow 的 assertive live region 仍为空；读屏用户无法确认 Editor 已接受的方向和最终坐标 | 仅在 `node/move` 返回成功时，由 Canvas 从同一目标设计坐标派生 polite 公告，说明模块、方向与 x / y；拒绝或失败不播报成功，不查询 DOM、不复制位置状态 | 69 / 69 unit；build 1879 / 10.53 秒；Chromium / Firefox 模块移动 + 默认 WCAG 共 4 / 4；right 公告 `(76,270)`、down 公告 `(76,286)` 精确断言 | 公告是瞬时辅助语义，不进入文档或历史；下一轮核查 Inspector 草稿拒绝鼠标拖动时画布是否原子回退 |
+| Iteration 49 | headed 实测 Inspector 有未应用草稿时，拖动 Agent UI 会从文档位置显示 React Flow 临时位置；Studio 明确拒绝 `node/move`，旧 Canvas 却保留临时 transform，形成只存在于画布的第二位置 | `onNodeDragStop` 以 Editor 的 boolean 接受结果为边界；接受后等待文档投影，拒绝或不可编辑时立即恢复同一 base node position 和 dragging 状态，不创建补偿操作、不丢草稿或错误 | 69 / 69 unit；build 1879 / 6.13 秒；Chromium 25 / 25 + Firefox 24 / 24 共 49 / 49，1.4 分钟；草稿保护目标双浏览器 2 / 2；headed `rejected-module-drag.png` 人工复核 | 拖动预览仍是临时 UI，只有成功 `node/move` 才成为 JSON；下一轮执行第五次产品复评与架构收敛 |
+| Iteration 50 | 第五次十轮产品复评同时是第二次 25 轮架构收敛，需要确认连续交互修正没有重新制造 JSON、selection、位置、路由或焦点的平行事实，也要重新验证 Design / Understand / Review | 重读产品、架构、质量、路线与 README；重走新用户、日常专业用户、Reviewer 和手动布线 headed 旅程；审计 model / editor / IO / layout / routing / components / studio imports、Owner 文件规模、默认示例替换链、性能、安全和视觉证据；没有把 921 行 Studio、634 行 Canvas 或 562 行 Inspector 的文件大小当成拆分理由 | headed Chromium 4 / 4；69 / 69 unit；build 1879 / 6.13 秒；完整 Chromium 25 / 25 + Firefox 24 / 24；1000 / 2000 三轮首次可交互中位数 2552 ms、定位 217 ms、最终测量内存 65,320,494 bytes；官方 production audit 0 known vulnerabilities；三张线路截图人工复核 | JSON 仍是唯一设计事实，文件 / URL / 查询参数 / 嵌入对象可替换默认示例；P0 三项仍待产品决策，WebKit 仍待系统依赖授权；下一轮验证紧凑桌面视口的布局与线路可读性 |
+| Iteration 51 | 视觉与交互证据集中在 1680 × 1050；紧凑桌面同时打开 Sources、Inspector、Messages 后，线路、MiniMap、操作条与 Dock 最小尺寸是否互挡尚无合同 | 在 1280 × 720 下选择接口、用 Arrow 写入手动路由并打开 Messages；断言无全局滚动，Canvas ≥ 560 × 320、Inspector ≥ 300 宽、Messages ≥ 120 高，区域边界不重叠，MiniMap 留在 Canvas 内，Inspector 操作条和状态栏在 viewport 内，路线把手 ≥ 23 px 且边标签为 0；当前实现已满足，未制造 CSS 修改 | 目标 Chromium / Firefox 2 / 2；完整 51 / 51，1.4 分钟；headed `compact-workbench.png` 人工复核选中线路、端口、面板和操作区清楚，0 console / page errors | 1280 × 720 专业桌面合同成立，不据此扩展移动端语义；下一轮直接复现“既有复杂设计中新建模块和接口”的自动路由质量 |
+| Iteration 52 | 默认复杂设计中新建 Review Gateway 和 RPC 后，智能路径会从目标模块内部接近左端口；车道偏移的末端还存在微小对角线。新增连接已处于选中态时，点击路径可能命中把手，无位移 pointerup 也会把自动路径写成手动事实，下一次 Arrow 因端点对齐产生非法 waypoint | 只在原智能路径违反端口侧时，改为从两端 40 设计像素外向 stub 间重新寻路；统一将智能网格、车道偏移、手动提交和端点恢复规范成显式正交折点，并保留避障必需的同轴折返；无坐标变化的把手点击不提交 `connection/route`。没有把源 / 目标模块加入全局障碍物，避免破坏既有 compound 路由 | 新增默认复杂设计增量旅程：8 modules / 11 interfaces，0 碰撞、标签遮挡、兄弟重叠、边界逃逸、端点内侵和共路；点击线进入 Inspector、Arrow 写入 manual、下载 waypoints 逐段正交、Undo / Redo 成立；Chromium 27 / 27 + Firefox 26 / 26 共 53 / 53，1.6 分钟；73 / 73 unit；build 1879 / 6.56 秒；headed `incremental-routing.png` 人工复核无错误横幅、线中标签或模块遮挡 | `BlockDesignDocument` 仍只保存用户确认的 waypoints；自动路由保持可重建派生结果。WebKit 与桌面平台矩阵仍缺，下一轮从干净 checkout 验证公开安装和冷启动链 |
+
+## 下一轮
+
+**Iteration 53 — 干净检出与公开冷启动。**
+
+在本轮提交推送后，从 `main` 的全新临时检出执行 README 所述安装、production build、测试与开发服务器启动，确认仓库不依赖当前工作区缓存、忽略文件或本机隐式状态；再从默认示例和一份替换 JSON 各完成一次加载。若公开链已成立，只记录证据；若失败，只修复包清单、构建配置、公开资源或 README 中真正拥有根因的边界。
