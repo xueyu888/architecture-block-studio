@@ -1062,6 +1062,25 @@ button { color: inherit; }
 .bd-react-flow .react-flow__pane:active { cursor: grabbing; }
 .bd-react-flow .react-flow__node { cursor: move; }
 
+.bd-canvas-pan-mode {
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 25px;
+  padding: 0 9px;
+  color: #174c91;
+  border: 1px solid color-mix(in srgb, var(--blue) 34%, var(--control-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--blue-soft) 88%, var(--surface-raised));
+  box-shadow: 0 4px 14px rgba(31, 68, 110, 0.12);
+  font-size: 9px;
+  pointer-events: none;
+}
+
+.bd-canvas-pan-mode strong { font-size: 8px; letter-spacing: 0.08em; }
+.bd-canvas-pan-mode span { color: var(--text-secondary); }
+
 .bd-routing-diagnostic {
   position: absolute;
   z-index: 9;

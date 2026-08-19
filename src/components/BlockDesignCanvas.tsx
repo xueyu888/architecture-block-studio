@@ -9,7 +9,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Box, Map as MapIcon, Minus, Plus, Scan } from "lucide-react";
+import { Box, Hand, Map as MapIcon, Minus, Plus, Scan } from "lucide-react";
 import {
   Background,
   BackgroundVariant,
@@ -18,6 +18,7 @@ import {
   Controls,
   MarkerType,
   MiniMap,
+  Panel,
   ReactFlow,
   useNodesState,
   useReactFlow,
@@ -280,6 +281,12 @@ function hasToggleModifier(event: Pick<MouseEvent, "shiftKey" | "ctrlKey" | "met
   return event.shiftKey || event.ctrlKey || event.metaKey;
 }
 
+function blocksCanvasPanMode(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest(
+    "input, textarea, select, button, a, [contenteditable='true'], [role='dialog'], [role='menu']",
+  ));
+}
+
 export interface BlockDesignCanvasProps extends Omit<CanvasInnerProps, "entryLevelId"> {
   document: BlockDesignDocument;
   onAddModule: () => void;
@@ -311,6 +318,7 @@ const CanvasInner = memo(function CanvasInner({
   const [nodeFocusRequest, setNodeFocusRequest] = useState<NodeFocusRequest>();
   const [routeHandleFocusRequest, setRouteHandleFocusRequest] = useState<RouteHandleFocusRequest>();
   const [canvasAnnouncement, setCanvasAnnouncement] = useState("");
+  const [spacePanActive, setSpacePanActive] = useState(false);
   const [compactOverviewMapOpen, setCompactOverviewMapOpen] = useState(false);
   const [resizeRestoreRevision, setResizeRestoreRevision] = useState(0);
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
@@ -661,6 +669,26 @@ const CanvasInner = memo(function CanvasInner({
   const [edges, setEdges] = useState<CanvasFlowEdge[]>(() =>
     reconcileCanvasSelection(routedEdges, selectedEdgeIdsRef.current),
   );
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code === "Space" && !event.repeat && !blocksCanvasPanMode(event.target)) {
+        setSpacePanActive(true);
+      }
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code === "Space") setSpacePanActive(false);
+    };
+    const onWindowBlur = () => setSpacePanActive(false);
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
+    window.addEventListener("blur", onWindowBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+      window.removeEventListener("blur", onWindowBlur);
+    };
+  }, []);
 
   useEffect(() => {
     let appliedDetailLevel: CanvasDetailLevel | undefined;
@@ -1096,7 +1124,7 @@ const CanvasInner = memo(function CanvasInner({
         ? { kind: "node", levelId, nodeId: node.data.block.id }
         : { kind: "connection", levelId, connectionId: edge!.data!.connection.id };
     event.preventDefault();
-    event.stopPropagation();
+    if (event.key !== " ") event.stopPropagation();
     if (selectRef.current(nextSelection) && event.key === "Escape") {
       (target as Element & { blur?: () => void }).blur?.();
     }
@@ -1288,6 +1316,8 @@ const CanvasInner = memo(function CanvasInner({
       maxZoom={MAX_ZOOM}
       panOnScroll
       panOnDrag={[1, 2]}
+      panActivationKeyCode="Space"
+      zoomActivationKeyCode={["Control", "Meta"]}
       selectionOnDrag
       multiSelectionKeyCode={["Shift", "Control", "Meta"]}
       fitView
@@ -1298,6 +1328,13 @@ const CanvasInner = memo(function CanvasInner({
       className="bd-react-flow"
     >
       {CANVAS_BACKGROUND}
+      {spacePanActive ? (
+        <Panel className="bd-canvas-pan-mode" position="top-right" aria-live="polite">
+          <Hand size={13} aria-hidden="true" />
+          <strong>PAN MODE</strong>
+          <span>Drag the canvas · release Space to return</span>
+        </Panel>
+      ) : null}
       <AlignmentGuideLayer guides={alignmentGuides} />
       {routingFailure ? (
         <div

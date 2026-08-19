@@ -264,6 +264,8 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 
 Zoom In、Zoom Out 与 Actual Size 由 Studio 发送具名、递增 revision 的 `CanvasViewportActionRequest`；View 菜单、Command Palette 和 `Ctrl/⌘ + / −` 不直接调用第三方图实例。Canvas 是 viewport 变换的唯一执行者，左下控件复用同一 `zoomInViewport` / `zoomOutViewport` / `actualSizeViewport`，百分比直接订阅 React Flow transform 并只作展示。Actual Size 以当前视口中心回到 1:1，不改变节点设计坐标、模块 width / height、selection、历史或导出。
 
+Canvas 明确声明互不重叠的 gesture：左键空白拖动为 selection，`panOnDrag=[middle,right]`，`panActivationKeyCode=Space` 让 Space + 左拖平移，`panOnScroll` 让普通滚轮平移，`zoomActivationKeyCode=[Control,Meta]` 让 modifier + wheel 缩放。节点 / 连线的 Space 键盘选择只阻止默认浏览器行为，不再截断事件传播，因此对象有焦点时仍可进入 Space-pan。`spacePanActive` 与 PAN MODE pill 只是按键期间的可丢弃反馈；表单、按钮、链接、Dialog 与 Menu 不进入该模式，keyup、窗口失焦或卸载都会清理。
+
 平滑定位同样必须服从新的直接操作。Studio Fit、Sources / Messages / Inspector 交叉定位、MiniMap 和 Canvas 缩放 / Fit 控件都调用同一个 Canvas 导航协调器；它以 generation 标识自己发起的动画。只要 pointer 在动画期间进入画布，当前 transform 就以零时长固定，旧动画的异步完成不能重新宣称导航仍在进行。这样鼠标按下时命中的是用户眼前的模块，而不是动画继续移动后暴露的 pane。中断只结束可丢弃 viewport 动画，不改变 `SelectionRef`、设计坐标、布局或历史。
 
 React Flow 的 Node / Edge wrapper 虽然提供原生 Tab 焦点与 Enter、Space、Escape 键，但库内 selection 不是工作区事实。Canvas 在捕获阶段把这些键转换成同一 `SelectionRef` 请求，并阻止库内平行选择；Enter / Space 选择对象，Escape 回到对象所属 Level。多选模块的 Arrow 作为一组提交，读屏公告从同一成功结果派生；Delete 随后继续调用统一 Studio command，因此键盘选择、Inspector、路由把手和删除看到同一选择合同。

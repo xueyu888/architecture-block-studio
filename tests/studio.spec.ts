@@ -219,6 +219,13 @@ async function canvasZoom(page: Page): Promise<number> {
   return Number(match[1]);
 }
 
+async function canvasTransform(page: Page): Promise<{ x: number; y: number; zoom: number }> {
+  const transform = await canvasViewportTransform(page);
+  const match = /translate\(([^p]+)px, ([^p]+)px\) scale\(([^)]+)\)/.exec(transform);
+  if (!match) throw new Error(`Unexpected canvas viewport transform: ${transform}`);
+  return { x: Number(match[1]), y: Number(match[2]), zoom: Number(match[3]) };
+}
+
 interface CanvasNavigationTiming {
   selectionCommitMs: number;
   targetMountMs: number;
@@ -3786,6 +3793,82 @@ test("keeps toolbar, menu, and keyboard viewport zoom on one non-persistent comm
   if (process.env.CAPTURE_VIEWPORT_ZOOM === "1" && browserName === "chromium") {
     await captureStudioScreenshot(page, "docs/screenshots/viewport-zoom-controls.png");
   }
+});
+
+test("keeps selection, Space pan, button pan, wheel pan, and modifier zoom orthogonal", async ({ page, browserName }) => {
+  const pane = page.locator(".react-flow__pane");
+  const canvas = await page.locator(".bd-react-flow").boundingBox();
+  expect(canvas).not.toBeNull();
+  const start = { x: canvas!.x + canvas!.width * 0.5, y: canvas!.y + canvas!.height * 0.87 };
+  const drag = async (button: "left" | "middle" | "right", dx: number, dy: number) => {
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down({ button });
+    await page.mouse.move(start.x + dx, start.y + dy, { steps: 6 });
+    await page.mouse.up({ button });
+  };
+
+  const initial = await canvasTransform(page);
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down({ button: "left" });
+  await page.mouse.move(start.x + 70, start.y - 40, { steps: 6 });
+  await expect(page.locator(".react-flow__selection")).toBeVisible();
+  await page.mouse.up({ button: "left" });
+  expect(await canvasTransform(page)).toEqual(initial);
+
+  const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
+  await clickReachableEdgePoint(page, edge);
+  const routeBefore = await edge.locator(".bd-interface-route").getAttribute("d");
+  await expect(edge).toHaveClass(/selected/);
+
+  await page.keyboard.down("Space");
+  await expect(page.locator(".bd-canvas-pan-mode")).toContainText("PAN MODE");
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down({ button: "left" });
+  await page.mouse.move(start.x + 90, start.y - 55, { steps: 6 });
+  await expect(pane).toHaveCSS("cursor", "grabbing");
+  expect(await textContrastIssues(page, ".bd-canvas-pan-mode")).toEqual([]);
+  if (process.env.CAPTURE_PAN_MODE === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/pan-mode.png");
+  }
+  await page.mouse.up({ button: "left" });
+  await page.keyboard.up("Space");
+  await expect(page.locator(".bd-canvas-pan-mode")).toHaveCount(0);
+  const afterSpace = await canvasTransform(page);
+  expect(afterSpace.x).toBeCloseTo(initial.x + 90, 1);
+  expect(afterSpace.y).toBeCloseTo(initial.y - 55, 1);
+  expect(afterSpace.zoom).toBeCloseTo(initial.zoom, 5);
+
+  for (const button of ["middle", "right"] as const) {
+    const before = await canvasTransform(page);
+    await drag(button, 35, 25);
+    const after = await canvasTransform(page);
+    expect(after.x).toBeCloseTo(before.x + 35, 1);
+    expect(after.y).toBeCloseTo(before.y + 25, 1);
+    expect(after.zoom).toBeCloseTo(before.zoom, 5);
+  }
+
+  await page.mouse.move(start.x, start.y);
+  const beforeWheel = await canvasTransform(page);
+  await page.mouse.wheel(0, 180);
+  const afterWheel = await canvasTransform(page);
+  expect(afterWheel.x).toBeCloseTo(beforeWheel.x, 1);
+  expect(afterWheel.y).toBeLessThan(beforeWheel.y);
+  expect(afterWheel.zoom).toBeCloseTo(beforeWheel.zoom, 5);
+
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -180);
+  await page.keyboard.up("Control");
+  await expect.poll(() => canvasZoom(page)).toBeGreaterThan(afterWheel.zoom);
+  await expect(edge).toHaveClass(/selected/);
+  expect(await edge.locator(".bd-interface-route").getAttribute("d")).toBe(routeBefore);
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
+
+  const moduleFilter = page.getByLabel("Filter modules");
+  await moduleFilter.focus();
+  await page.keyboard.down("Space");
+  await expect(page.locator(".bd-canvas-pan-mode")).toHaveCount(0);
+  await page.keyboard.up("Space");
+  await moduleFilter.fill("");
 });
 
 test("resizes a selected module from a corner and persists one atomic geometry change", async ({ page, browserName }) => {
