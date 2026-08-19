@@ -33,12 +33,12 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 | 模块 | 原则与所有权 | 公开接口 | 边界与失败行为 |
 | --- | --- | --- | --- |
 | `src/model` | 拥有文档结构、Schema 版本与迁移、语义设计规则和无状态图查询 | `BlockDesignDocument`、`BLOCK_DESIGN_SCHEMA_VERSION`、`blockDesignSchemaCompatibility`、`parseBlockDesignDocument`、`validateBlockDesignDocument`、`listModuleInterfaces`、`normalizeConnectionEndpoints` | 不负责 UI、历史或布局；版本与结构非法时在字段路径拒绝，语义问题输出 DRC，查询与连接规范化不持有状态 |
-| `src/editor` | 拥有原子文档变换、历史与 dirty 判断 | `DesignOperation`、`applyDesignOperation`、`useDesignEditor`、具名工厂 | 不渲染、不路由、不持久化；失败不产生部分修改 |
+| `src/editor` | 拥有原子文档变换、历史、dirty 判断与可移植设计片段的引用完整性 | `DesignOperation`、`DesignFragment`、`createDesignFragment`、`parseDesignFragment`、`applyDesignOperation`、`useDesignEditor`、具名工厂 | 不渲染、不路由、不持久化；片段必须自包含，失败不产生部分修改 |
 | `src/io` | 拥有外部 JSON 与已校验文档之间的转换 | `loadDesignFromObject/File/Url`、`serializeDesign`、`downloadDesign` | 不解释模块业务；加载失败保留已安装文档 |
 | `src/layout` | 从文档与展开状态派生纯复合节点、边和位置投影，定义布局真正消费的签名，并提供不持有交互状态的吸附与多选编排几何 | `layoutBlockDesign`、`layoutFrameSignature`、`layoutProjectionSignature`、`snapMovingRect`、`snapResizingRect`、`alignSelection`、`distributeSelection`、`LayoutResult`、`PlacementMode` | 不依赖 Studio 或 React 交互回调，不修改源文档；没有合法吸附候选时原样返回预览几何，非法编排输入或布局失败上抛给 Studio |
 | `src/routing` | 从绝对布局几何和锁定 waypoint 构造 `RoutingScene`，统一拥有版本化正交多连接策略、规模资源预算、确定性求解、证明等级与独立验证；另提供不持有 UI 状态的手工路线编辑几何和由已验证路线派生的线桥 | `createRoutingSceneFromLayout`、`routingPolicyForScene`、`solveRoutingScene`、`verifyRoutingResult`、`planRouteJumps`、`RoutingScene`、`RoutingPolicy`、`RoutingResult`、`editableOrthogonalRoute`、`moveRouteSegment`、`moveRouteBend`、`removeRouteBend` | 设计坐标是路由事实；不移动模块、不改文档、不持有 gesture；规模只收紧同一策略的有界资源，不改变几何与失败语义；`planRouteJumps` 只决定交叉处的绘制表达，不反写路线。失败返回 `Unresolved` / `InvalidInput`，不调用第二套自动 fallback。完整合同见 [`ROUTING.md`](ROUTING.md) |
 | `src/components` | 将纯布局投影组合为可交互 Canvas，并展示用户视图、发出用户意图 | `CanvasBlockNodeData`、`CanvasInterfaceEdgeData`、Canvas、Node、Edge、Tree、Inspector、Dialogs、Dock、Messages | 交互回调只存在于 Canvas 投影；不直接深改文档，局部表单草稿不得伪装成已提交事实 |
-| `src/studio` | 组合公开能力，拥有工作区选择协议与其他临时工作区状态 | `BlockDesignStudio`、`BlockDesignStudioProps`、`SelectionRef` 及纯选择查询 | 不重新定义 Schema、布局投影或编辑规则；组合失败应可见、可恢复 |
+| `src/studio` | 组合公开能力，拥有工作区选择协议、临时设计剪贴板与无碰撞粘贴位置投影 | `BlockDesignStudio`、`BlockDesignStudioProps`、`SelectionRef`、`findDesignFragmentPlacement` 及纯选择查询 | 不重新定义 Schema、片段引用、布局或编辑规则；系统剪贴板失败时同源退化，组合失败应可见、可恢复 |
 | `src/App.tsx` | 提供独立应用的默认装配 | 默认示例 URL 与查询参数入口 | 示例不是核心依赖，不拥有设计内容 |
 | `tests/performance` + `scripts/performance-baseline.mjs` | 拥有压力观测样本合同与重复聚合入口 | `performance-sample v1`、`performance-trend-report v1`、`pnpm performance:baseline` | 只验证产品合同，不被运行时代码依赖，不写回设计 JSON；环境或样本漂移时停止生成可信报告 |
 
@@ -65,6 +65,28 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 对齐辅助线沿用同一几何链，但不拥有设计事实。Canvas 在 move / resize 开始时只收集同一父级、当前视口附近的模块矩形，并把 6 CSS px 容差换算为设计坐标；`layout/alignmentGuides` 纯函数从这些候选派生边缘、中心与同宽 / 同高吸附结果，`AlignmentGuideLayer` 只渲染当前 gesture 的临时线和尺寸括号。松手后仍只提交既有 `node/move` 或 `node/resize`；按住 Alt 时当前 gesture 原样使用用户预览，不显示 guide。候选不存在、吸附超出尺寸上下限或 Editor 拒绝提交时，不建立补偿状态，Canvas 回到文档投影。
 
 多选对齐与分布复用 authored 几何，但与临时辅助线是独立能力。`layout/selectionArrangement` 只接收已解析的模块矩形：六种对齐以整个选择包围框为基准，水平 / 垂直分布按中心点等距并固定两端；项目没有隐式“主选择”，因此不会让点击顺序成为第二几何规则。`StudioCommands` 负责确认至少 2 个对齐对象或 3 个分布对象、全部是同一 Level 中具有唯一可编辑投影的 authored 模块，并为接口混选、跨层选择、展开 hierarchy 或未完成布局给出同源禁用原因。Arrange 菜单与 Command Palette 只投影这些命令；执行结果统一生成一次 `nodes/move`，Editor 原子写入各模块的 `node.layout.position / pinned`，随后布局与路由从文档重新派生。任一前提或提交失败时，原文档、历史和视口都不变。
+
+复制链与选择链正交。`editor/designFragment` 是片段格式、引用闭包和 ID 重写的唯一 Owner：根层只收集所选模块之间的内部连接，递归包含这些模块拥有的全部子 Level，并只携带实际引用的接口定义；解析时逐级验证模块、Port、Connection、Hierarchy binding、父子 Level 和接口引用，拒绝缺失或多余事实。Studio 只从唯一可见的同层选择读取当前设计位置，并用 `studio/fragmentPlacement` 对片段外包围框和当前可见模块矩形做 32 设计像素网格的最近无碰撞搜索。求得的显式 offset 随一次 `fragment/insert` 交给 Editor；Editor 在克隆文档上递增生成 Level、Module、Connection 与 Interface ID，重写全部引用后才通过完整 Schema 提交，所以一次粘贴只产生一个历史记录。
+
+内部 `designClipboard`、系统剪贴板权限与连续粘贴序号都是可丢弃工作区状态。复制先安装内部片段，再尝试写入带 kind / version 的 JSON；写入失败只改变可见反馈，不撤销已成功的内部复制。粘贴优先使用内部片段，没有时才读取并严格解析系统剪贴板。外部连接不会被隐式扩张进片段，因此复制后仍为 required 的边界 Port 可能由 DRC 提示未连接；这是待人审查的真实合同缺口，不能通过偷偷改成 optional 来消除警告。
+
+```text
+SelectionRef + LayoutResult
+          │ 同一 Level、唯一可见模块位置
+          ▼
+createDesignFragment ─► versioned DesignFragment ─► internal/system clipboard
+          │                                        │
+          │                          parse + full reference closure
+          └────────────────────────────────────────┘
+                              │
+                              ▼
+findDesignFragmentPlacement（可丢弃视觉几何）
+                              │ explicit offset
+                              ▼
+fragment/insert ─► Editor clone / ID rewrite / Schema ─► BlockDesignDocument
+                                                         │
+                                                         └─► one Undo snapshot
+```
 
 ```text
 SelectionRef.multiple + LayoutResult
@@ -100,7 +122,7 @@ Dock / selection / dialogs / command query ─► disposable workspace state; ne
 | --- | --- | --- | --- |
 | 持久设计事实 | `BlockDesignDocument` | 文档、Level、模块、端口、接口、连接、层级绑定、authored 位置 / 尺寸与手动路由 | 是 |
 | 派生设计结果 | `model` / `layout` / `routing` | DRC issues、模块关联接口摘要、Flow nodes、可视边、ELK 位置、正交路径 | 否，可重建 |
-| 工作区状态 | `BlockDesignStudio` / Canvas / Dockview | 当前选择、展开 Level、面板布局、缩放、Fit 请求、自动布局模式、当前 gesture 的对齐辅助线 | 否 |
+| 工作区状态 | `BlockDesignStudio` / Canvas / Dockview | 当前选择、展开 Level、面板布局、缩放、Fit 请求、自动布局模式、当前 gesture 的对齐辅助线、内部设计剪贴板与连续粘贴序号 | 否 |
 | 未提交编辑草稿 | 各 Inspector / Dialog 表单 | 输入框内容、待创建连接 | 否；提交后才生成 `DesignOperation` |
 | 验证证据 | tests / screenshots / CI | 构建结果、几何检查、浏览器截图 | 否；只验证合同 |
 
@@ -168,6 +190,8 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 模块尺寸变化使用单用途 `node/resize`。操作同时携带设计坐标中的 position 与 size，在一次完整 Schema 校验后提交；这样四边和四角使用同一合同，Undo / Redo 也只记录一个几何状态。Canvas 的 pointer preview、resize control 可见性和一次性焦点恢复都是 UI 状态；草稿保护或 Schema 拒绝时，Canvas 重新投影原文档几何，不产生补偿操作，也不保留局部尺寸。
 
 模块组移动使用单用途 `nodes/move`。它携带去重后的 Level、node 与目标 position 列表，Editor 在同一克隆上逐项验证存在性，全部成立后才一次提交并生成一个历史记录；单模块继续使用 `node/move`。这样 React Flow 的成组拖动不会出现“画面移动多个、JSON 只保存一个”的双状态，任一目标失效时也不会产生部分位移。
+
+子图粘贴使用单用途 `fragment/insert`。操作携带已经通过片段合同的 `DesignFragment`、目标 Level 和由视觉放置 Owner 计算的明确 offset；Editor 不读取 Canvas，也不自行猜测屏幕空位。ID 递增与引用重写在同一克隆中完成，任何缺失端点、Port、接口定义、层级父子关系或非法 offset 都拒绝整项操作。Duplicate 复用“从当前选择构造片段，再执行一次 insert”的同一链路，不维护第二套克隆规则。
 
 线路端点变化使用独立的 `connection/reconnect`：Editor 在同一 Level 内重新校验 source / target 端口存在性与 input / output 方向，保留连接 id、interface id 和接口合同。手动 waypoint 描述的是旧端点几何，因此重连成功时由该操作清除 `routing`，重新进入自动路由；非法目标拒绝整项操作，原端点和原路线都不变。Canvas 只负责把拖拽结果规范化成端点意图，不复制方向规则。
 

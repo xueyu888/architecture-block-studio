@@ -15,10 +15,14 @@ import {
   Cable,
   CheckCircle2,
   CircuitBoard,
+  ClipboardPaste,
+  Copy,
+  CopyPlus,
   Download,
   FilePlus2,
   FolderOpen,
   GitBranchPlus,
+  Info,
   LayoutDashboard,
   Maximize2,
   Minimize2,
@@ -59,13 +63,17 @@ import { StudioToolbar } from "../components/StudioToolbar";
 import {
   createBlankDesign,
   createBlock,
+  createDesignFragment,
   createDesignLevel,
   createInterfaceDefinition,
   createPort,
+  parseDesignFragment,
+  serializeDesignFragment,
   suggestId,
   uniqueId,
   useDesignEditor,
   type DesignOperation,
+  type DesignFragment,
   type NodeMove,
 } from "../editor";
 import {
@@ -99,10 +107,13 @@ import {
   type DesignIssue,
 } from "../model";
 import type { StudioCommandAvailability, StudioCommands } from "./commands";
+import { findDesignFragmentPlacement } from "./fragmentPlacement";
 import {
   hierarchyLevelPath,
+  diagramSelectionItems,
   levelForSelection,
   nodeForSelection,
+  replaceDiagramSelection,
   sameSelection,
   selectionExists,
   selectionForIssue,
@@ -132,6 +143,16 @@ interface ArrangeableModule extends ArrangementRect {
   levelId: string;
   nodeId: string;
 }
+
+interface FragmentModule {
+  levelId: string;
+  nodeId: string;
+  position: { x: number; y: number };
+}
+
+type FragmentSelection =
+  | { available: true; levelId: string; items: readonly FragmentModule[] }
+  | { available: false; reason: string };
 
 type ArrangementSelection =
   | { available: true; items: readonly ArrangeableModule[] }
@@ -183,6 +204,8 @@ export function BlockDesignStudio({
   const [pendingConnection, setPendingConnection] = useState<PendingConnection>();
   const [loadError, setLoadError] = useState<string>();
   const [commandError, setCommandError] = useState<string>();
+  const [commandNotice, setCommandNotice] = useState<string>();
+  const [designClipboard, setDesignClipboard] = useState<DesignFragment>();
   const [busy, setBusy] = useState(true);
   const [layoutBusy, setLayoutBusy] = useState(true);
   const [dragActive, setDragActive] = useState(false);
@@ -194,6 +217,7 @@ export function BlockDesignStudio({
   const editorDirtyRef = useRef(editor.dirty);
   const selectionRef = useRef(selection);
   const inspectorDraftDirtyRef = useRef(inspectorDraftDirty);
+  const pasteInsertionIndex = useRef(0);
   const dockApiRef = useRef(dockApi);
   documentRef.current = document;
   editorDocumentRef.current = editor.document;
@@ -220,6 +244,8 @@ export function BlockDesignStudio({
     setFileName(fileNameFromSource(next, source));
     setLoadError(undefined);
     setCommandError(undefined);
+    setCommandNotice(undefined);
+    pasteInsertionIndex.current = 0;
     setLoadDialogOpen(false);
     setBusy(false);
     setLayoutBusy(true);
@@ -365,9 +391,11 @@ export function BlockDesignStudio({
       if (layoutFrameSignature(next) !== previousFrame) fitAfterLayout.current = true;
       setIssues(validateBlockDesignDocument(next));
       setCommandError(undefined);
+      setCommandNotice(undefined);
       setPlacementMode("authored");
       return next;
     } catch (error) {
+      setCommandNotice(undefined);
       setCommandError(errorMessage(error));
       return undefined;
     }
@@ -383,6 +411,7 @@ export function BlockDesignStudio({
     setIssues(validateBlockDesignDocument(next));
     setPlacementMode("authored");
     setCommandError(undefined);
+    setCommandNotice(undefined);
   }, [confirmDiscardInspectorDraft, editor.undo]);
 
   const redoDesign = useCallback(() => {
@@ -395,6 +424,7 @@ export function BlockDesignStudio({
     setIssues(validateBlockDesignDocument(next));
     setPlacementMode("authored");
     setCommandError(undefined);
+    setCommandNotice(undefined);
   }, [confirmDiscardInspectorDraft, editor.redo]);
 
   const saveCurrent = useCallback(() => {
@@ -592,6 +622,38 @@ export function BlockDesignStudio({
     return { available: true, items };
   }, [document, layout.nodes, layoutBusy, selection]);
 
+  const fragmentSelection = useMemo<FragmentSelection>(() => {
+    if (!document) return { available: false, reason: "Open or create a design first." };
+    if (layoutBusy) return { available: false, reason: "Wait for the diagram layout to finish." };
+    const selectedItems = diagramSelectionItems(selection);
+    const selectedNodes = selectedItems.filter((item) => item.kind === "node");
+    if (selectedNodes.length === 0) {
+      return { available: false, reason: "Select one or more modules to copy." };
+    }
+    if (new Set(selectedItems.map((item) => item.levelId)).size !== 1) {
+      return { available: false, reason: "Select modules and interfaces from the same design level." };
+    }
+    const levelId = selectedNodes[0].levelId;
+    const items: FragmentModule[] = [];
+    for (const item of selectedNodes) {
+      const matches = layout.nodes.filter((node) =>
+        node.data.levelId === item.levelId && node.data.block.id === item.nodeId
+      );
+      if (matches.length !== 1) {
+        return {
+          available: false,
+          reason: "Each copied module must have one visible diagram instance.",
+        };
+      }
+      items.push({
+        levelId: item.levelId,
+        nodeId: item.nodeId,
+        position: { ...matches[0].data.designPosition },
+      });
+    }
+    return { available: true, levelId, items };
+  }, [document, layout.nodes, layoutBusy, selection]);
+
   const openAddBlock = useCallback(() => {
     const currentDocument = documentRef.current;
     if (!currentDocument) return;
@@ -647,6 +709,115 @@ export function BlockDesignStudio({
       return false;
     }
   }, [arrangementSelection, requireAppliedInspectorDraft, runOperation]);
+
+  const selectedFragment = useCallback((): DesignFragment | undefined => {
+    const currentDocument = documentRef.current;
+    if (!currentDocument || !fragmentSelection.available) return undefined;
+    try {
+      return createDesignFragment(
+        currentDocument,
+        fragmentSelection.levelId,
+        fragmentSelection.items.map((item) => item.nodeId),
+        new Map(fragmentSelection.items.map((item) => [item.nodeId, item.position])),
+      );
+    } catch (error) {
+      setCommandNotice(undefined);
+      setCommandError(errorMessage(error));
+      return undefined;
+    }
+  }, [fragmentSelection]);
+
+  const insertFragment = useCallback((
+    fragment: DesignFragment,
+    levelId: string,
+    insertionIndex: number,
+  ): readonly string[] | undefined => {
+    const before = new Set(
+      documentRef.current?.levels.find((level) => level.id === levelId)?.nodes.map((node) => node.id) ?? [],
+    );
+    const occupied = layout.nodes
+      .filter((node) => node.data.levelId === levelId)
+      .map((node) => ({
+        x: node.data.designPosition.x,
+        y: node.data.designPosition.y,
+        width: (node.width ?? Number(node.style?.width)) || 0,
+        height: (node.height ?? Number(node.style?.height)) || 0,
+      }));
+    const offset = findDesignFragmentPlacement(fragment, occupied, insertionIndex);
+    const next = runOperation({
+      type: "fragment/insert",
+      levelId,
+      fragment,
+      offset,
+    });
+    if (!next) return undefined;
+    const insertedNodeIds = next.levels
+      .find((level) => level.id === levelId)?.nodes
+      .map((node) => node.id)
+      .filter((nodeId) => !before.has(nodeId)) ?? [];
+    setSelection(replaceDiagramSelection(
+      insertedNodeIds.map((nodeId) => ({ kind: "node" as const, levelId, nodeId })),
+      levelId,
+    ));
+    setRevealSelectionRequest((value) => value + 1);
+    return insertedNodeIds;
+  }, [layout.nodes, runOperation]);
+
+  const copySelectedModules = useCallback(async () => {
+    if (!requireAppliedInspectorDraft("copying the selected modules")) return;
+    const fragment = selectedFragment();
+    if (!fragment) return;
+    setDesignClipboard(fragment);
+    pasteInsertionIndex.current = 0;
+    setCommandError(undefined);
+    const summary = `${fragment.nodes.length} ${fragment.nodes.length === 1 ? "module" : "modules"}` +
+      `${fragment.connections.length > 0 ? ` and ${fragment.connections.length} internal ${fragment.connections.length === 1 ? "interface" : "interfaces"}` : ""}`;
+    setCommandNotice(`Copied ${summary}.`);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+      await navigator.clipboard.writeText(serializeDesignFragment(fragment));
+    } catch {
+      setCommandNotice(`Copied ${summary} inside this workspace. System clipboard access is unavailable.`);
+    }
+  }, [requireAppliedInspectorDraft, selectedFragment]);
+
+  const pasteDesignFragment = useCallback(async () => {
+    if (!requireAppliedInspectorDraft("pasting modules")) return;
+    const currentDocument = documentRef.current;
+    if (!currentDocument) return;
+    const targetLevel = levelForSelection(currentDocument, selectionRef.current);
+    let fragment = designClipboard;
+    if (!fragment) {
+      try {
+        if (!navigator.clipboard?.readText) throw new Error("Clipboard API unavailable");
+        fragment = parseDesignFragment(await navigator.clipboard.readText());
+        setDesignClipboard(fragment);
+      } catch (error) {
+        setCommandNotice(undefined);
+        const clipboardUnavailable = error instanceof Error && (
+          error.message === "Clipboard API unavailable" || error.name === "NotAllowedError"
+        );
+        setCommandError(errorMessage(clipboardUnavailable
+          ? new Error("Copy one or more modules in this Studio first, or allow system clipboard access.")
+          : error));
+        return;
+      }
+    }
+    const insertionIndex = pasteInsertionIndex.current + 1;
+    const insertedNodeIds = insertFragment(fragment, targetLevel.id, insertionIndex);
+    if (!insertedNodeIds) return;
+    pasteInsertionIndex.current = insertionIndex;
+    setCommandNotice(`Pasted ${insertedNodeIds.length} ${insertedNodeIds.length === 1 ? "module" : "modules"} into ${targetLevel.title}.`);
+  }, [designClipboard, insertFragment, requireAppliedInspectorDraft]);
+
+  const duplicateSelectedModules = useCallback(() => {
+    if (!requireAppliedInspectorDraft("duplicating the selected modules")) return;
+    const fragment = selectedFragment();
+    if (!fragment || !fragmentSelection.available) return;
+    const insertedNodeIds = insertFragment(fragment, fragmentSelection.levelId, 1);
+    if (!insertedNodeIds) return;
+    setCommandNotice(`Duplicated ${insertedNodeIds.length} ${insertedNodeIds.length === 1 ? "module" : "modules"}.`);
+  }, [fragmentSelection, insertFragment, requireAppliedInspectorDraft, selectedFragment]);
 
   const resizeNode = useCallback((
     levelId: string,
@@ -722,6 +893,19 @@ export function BlockDesignStudio({
     childDesignTarget ||
     pendingConnection
   );
+  const fragmentCommandBlockReason = editorDialogOpen
+    ? "Close the current dialog first."
+    : inspectorDraftDirty
+      ? "Apply or discard the current Inspector changes first."
+      : undefined;
+  const canCopySelection = fragmentSelection.available && !fragmentCommandBlockReason;
+  const copyUnavailableReason = fragmentCommandBlockReason ?? (
+    fragmentSelection.available ? "Select one or more modules to copy." : fragmentSelection.reason
+  );
+  const canPaste = Boolean(document) && !layoutBusy && !fragmentCommandBlockReason;
+  const pasteUnavailableReason = fragmentCommandBlockReason ?? (
+    layoutBusy ? "Wait for the diagram layout to finish." : "Open or create a design first."
+  );
   const commands = useMemo<StudioCommands>(() => ({
     newDesign: {
       id: "newDesign", label: "New Design...", toolbarTitle: "新建设计", icon: FilePlus2, enabled: true,
@@ -754,6 +938,21 @@ export function BlockDesignStudio({
     redo: {
       id: "redo", label: "Redo", toolbarTitle: "重做", shortcut: "Ctrl/⌘ ⇧ Z", icon: Redo2,
       ...commandAvailability(editor.canRedo, "No design changes to redo."), execute: redoDesign,
+    },
+    copySelection: {
+      id: "copySelection", label: "Copy", shortcut: "Ctrl/⌘ C", icon: Copy,
+      ...commandAvailability(canCopySelection, copyUnavailableReason),
+      execute: () => { void copySelectedModules(); },
+    },
+    paste: {
+      id: "paste", label: "Paste", shortcut: "Ctrl/⌘ V", icon: ClipboardPaste,
+      ...commandAvailability(canPaste, pasteUnavailableReason),
+      execute: () => { void pasteDesignFragment(); },
+    },
+    duplicateSelection: {
+      id: "duplicateSelection", label: "Duplicate", shortcut: "Ctrl/⌘ D", icon: CopyPlus,
+      ...commandAvailability(canCopySelection, copyUnavailableReason),
+      execute: duplicateSelectedModules,
     },
     deleteSelection: {
       id: "deleteSelection", label: "Delete Selection", toolbarTitle: "删除所选内容", shortcut: "Del", icon: Trash2,
@@ -874,13 +1073,18 @@ export function BlockDesignStudio({
     canAddChildDesign,
     canAddConnection,
     canAlignSelection,
+    canCopySelection,
     canDelete,
     canDistributeSelection,
+    canPaste,
+    copySelectedModules,
+    copyUnavailableReason,
     deleteUnavailableReason,
     deleteSelection,
     diagramMaximized,
     document,
     distributeUnavailableReason,
+    duplicateSelectedModules,
     editor.canRedo,
     editor.canUndo,
     editorDialogOpen,
@@ -892,6 +1096,8 @@ export function BlockDesignStudio({
     openAddConnection,
     openAddPort,
     openSaveAs,
+    pasteDesignFragment,
+    pasteUnavailableReason,
     redoDesign,
     requireAppliedInspectorDraft,
     saveCurrent,
@@ -921,7 +1127,22 @@ export function BlockDesignStudio({
       const target = event.target as HTMLElement | null;
       const editingText = target?.matches("input, textarea, select, [contenteditable='true']");
       if (editingText) return;
-      if (modifier && key === "z") {
+      if (modifier && !event.shiftKey && key === "c") {
+        if (commands.copySelection.enabled) {
+          event.preventDefault();
+          commands.copySelection.execute();
+        }
+      } else if (modifier && !event.shiftKey && key === "v") {
+        if (commands.paste.enabled) {
+          event.preventDefault();
+          commands.paste.execute();
+        }
+      } else if (modifier && !event.shiftKey && key === "d") {
+        if (commands.duplicateSelection.enabled) {
+          event.preventDefault();
+          commands.duplicateSelection.execute();
+        }
+      } else if (modifier && key === "z") {
         event.preventDefault();
         const command = event.shiftKey ? commands.redo : commands.undo;
         if (command.enabled) command.execute();
@@ -1041,6 +1262,7 @@ export function BlockDesignStudio({
       </footer>
 
       {commandError && <div className="bd-command-error" role="alert"><TriangleAlert size={15} /><span>{commandError}</span><button type="button" onClick={() => setCommandError(undefined)}>Dismiss</button></div>}
+      {commandNotice && !commandError && <div className="bd-command-notice" role="status"><Info size={15} /><span>{commandNotice}</span><button type="button" onClick={() => setCommandNotice(undefined)}>Dismiss</button></div>}
       {dragActive && <div className="bd-drop-overlay"><FileJsonDrop /></div>}
       <CommandPalette open={commandPaletteOpen} commands={commands} onClose={() => setCommandPaletteOpen(false)} />
       <LoadDesignDialog open={loadDialogOpen} busy={busy} error={loadError} onClose={() => { setLoadDialogOpen(false); setLoadError(undefined); }} onLoadFile={(file) => void openFile(file)} onLoadUrl={(url) => void openUrl(url)} />

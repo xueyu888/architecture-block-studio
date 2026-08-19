@@ -38,6 +38,7 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 - 选中模块即可从四边或四角调整尺寸；端口和线路实时跟随，结果进入同一份 JSON、Undo / Redo 与保存链。
 - 移动或调整模块时自动显示边缘、中心与同宽 / 同高辅助线；按住 Alt 可临时关闭吸附，画布不会擅自跳回全图视角。
 - 使用普通点击、Shift / Ctrl / Cmd 与左键框选建立多选；成组移动、六向对齐与水平 / 垂直等距分布都只产生一次可撤销操作。
+- 使用 **Ctrl/⌘ C、Ctrl/⌘ V、Ctrl/⌘ D** 或 Edit 菜单复制、粘贴和 Duplicate 同层模块子图；内部接口、接口合同和完整子设计一起复制，外部连接明确排除，一次 Undo 即可恢复。
 - 选中连线后拖动正交线段，手动路由随 JSON 保存，也可随时恢复自动布线。
 - 画布不显示线中标签；端口承担局部识别，点击连线后由 Inspector 展示完整合同。
 - 通过 Undo / Redo、事务性加载和 dirty 状态保护编辑过程。
@@ -53,6 +54,10 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 ![模块移动对齐辅助线](docs/screenshots/alignment-guides.png)
 
 ![模块同尺寸辅助线](docs/screenshots/same-size-guides.png)
+
+复制不是把画面像素拍成一张图。Studio 会从当前选择构造可校验的设计片段，重写模块、连接、接口定义和子 Level 的全部引用，再把整组放到最近的无碰撞网格位置。系统剪贴板不可用时仍可在当前工作台继续粘贴，并给出可见反馈。
+
+![同层模块子图的无碰撞复制与粘贴](docs/screenshots/copy-paste-subgraph.png)
 
 选中连线后，画布显示可拖动的正交线段把手，Inspector 同步显示手动路由状态和恢复自动布线入口。
 

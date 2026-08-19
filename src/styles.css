@@ -2064,7 +2064,8 @@ div.bd-tree-row { display: flex; gap: 2px; margin: 1px 0; padding-top: 0; paddin
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.bd-command-error {
+.bd-command-error,
+.bd-command-notice {
   position: fixed;
   z-index: var(--z-notification);
   left: 50%;
@@ -2084,7 +2085,14 @@ div.bd-tree-row { display: flex; gap: 2px; margin: 1px 0; padding-top: 0; paddin
   font-size: 10px;
 }
 
-.bd-command-error button { border: 0; border-bottom: 1px solid currentColor; padding: 0; color: inherit; background: transparent; cursor: pointer; font-size: 9px; }
+.bd-command-notice {
+  border-color: #79a589;
+  color: #225c37;
+  background: #eff9f2;
+}
+
+.bd-command-error button,
+.bd-command-notice button { border: 0; border-bottom: 1px solid currentColor; padding: 0; color: inherit; background: transparent; cursor: pointer; font-size: 9px; }
 .bd-statusbar .is-dirty { color: #8a5208; font-weight: 800; }
 .bd-boot-actions { display: flex; gap: 8px; }
 .react-flow__connection-path { stroke: var(--blue); stroke-width: 2; }

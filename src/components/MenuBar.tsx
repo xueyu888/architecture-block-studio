@@ -24,7 +24,11 @@ const MENU_DEFINITIONS: Array<{
   commandIds: StudioCommandId[];
 }> = [
   { id: "file", label: "File", commandIds: ["newDesign", "openDesign", "save", "saveAs", "exportJson"] },
-  { id: "edit", label: "Edit", commandIds: ["undo", "redo", "deleteSelection"] },
+  {
+    id: "edit",
+    label: "Edit",
+    commandIds: ["undo", "redo", "copySelection", "paste", "duplicateSelection", "deleteSelection"],
+  },
   { id: "design", label: "Design", commandIds: ["addBlock", "addPort", "addConnection", "addChildDesign", "regenerateLayout", "optimizeRouting", "validateDesign"] },
   {
     id: "arrange",

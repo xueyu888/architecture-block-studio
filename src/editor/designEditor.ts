@@ -14,8 +14,9 @@ import {
   type PortDirection,
   type PortSide,
 } from "../model";
-
-const AUTHOR_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+import { insertDesignFragment, type DesignFragment } from "./designFragment";
+import { isAuthorId } from "./identifiers";
+export { suggestId, uniqueId } from "./identifiers";
 
 export class DesignEditError extends Error {
   constructor(message: string) {
@@ -71,6 +72,7 @@ export type DesignOperation =
     }
   | { type: "node/move"; levelId: string; nodeId: string; position: { x: number; y: number } }
   | { type: "nodes/move"; moves: readonly NodeMove[] }
+  | { type: "fragment/insert"; levelId: string; fragment: DesignFragment; offset: { x: number; y: number } }
   | {
       type: "node/resize";
       levelId: string;
@@ -129,7 +131,7 @@ function editError(message: string): never {
 }
 
 function requireAuthorId(id: string, label: string): void {
-  if (!AUTHOR_ID_PATTERN.test(id)) {
+  if (!isAuthorId(id)) {
     editError(`${label} must start with a letter or number and contain only letters, numbers, dot, dash, or underscore.`);
   }
 }
@@ -290,6 +292,10 @@ export function applyDesignOperation(
     }
     case "nodes/move": {
       moveNodes(next, operation.moves);
+      break;
+    }
+    case "fragment/insert": {
+      insertDesignFragment(next, operation);
       break;
     }
     case "node/resize": {
@@ -559,22 +565,4 @@ export function emptyInspector(): InspectorDefinition {
     codeLanguage: "jsonc",
     attributes: {},
   };
-}
-
-export function suggestId(label: string, fallback: string): string {
-  const normalized = label
-    .trim()
-    .toLocaleLowerCase()
-    .replace(/[^a-z0-9_.-]+/g, "-")
-    .replace(/^[.-]+|[.-]+$/g, "")
-    .replace(/-{2,}/g, "-");
-  return normalized || fallback;
-}
-
-export function uniqueId(base: string, existingIds: Iterable<string>): string {
-  const existing = new Set(existingIds);
-  if (!existing.has(base)) return base;
-  let suffix = 2;
-  while (existing.has(`${base}-${suffix}`)) suffix += 1;
-  return `${base}-${suffix}`;
 }

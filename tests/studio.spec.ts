@@ -191,7 +191,7 @@ function toolbarButton(page: Page, name: string): Locator {
 
 async function runMenuCommand(
   page: Page,
-  menuName: "Design" | "Arrange" | "View",
+  menuName: "Edit" | "Design" | "Arrange" | "View",
   commandName: string | RegExp,
 ): Promise<void> {
   await page.getByRole("button", { name: menuName, exact: true }).click();
@@ -1197,7 +1197,7 @@ test("searches and runs the unified command palette without losing workflow focu
   const search = palette.getByRole("combobox", { name: "Search commands" });
   await expect(palette).toBeVisible();
   await expect(search).toBeFocused();
-  await expect(palette.getByRole("option")).toHaveCount(29);
+  await expect(palette.getByRole("option")).toHaveCount(32);
   await expect(palette.getByRole("option", { name: /^Command Palette/ })).toHaveCount(0);
 
   await search.fill("添加端口");
@@ -3460,6 +3460,102 @@ test("explains arrangement eligibility at selection and hierarchy boundaries", a
   alignLeft = arrangeMenu.getByRole("menuitem", { name: /^Align Left/ });
   await expect(alignLeft).toHaveAttribute("aria-disabled", "true");
   await expect(alignLeft).toContainText("Collapse expanded hierarchy and use authored placement");
+});
+
+test("copies, pastes, and duplicates a connected hierarchy as atomic collision-free subgraphs", async ({ page, browserName }) => {
+  test.setTimeout(120_000);
+  const agentUi = flowNode(page, "system::agent-ui");
+  const agentCore = flowNode(page, "system::rust-agent-core");
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => { throw new DOMException("Denied by test host", "NotAllowedError"); },
+      },
+    });
+  });
+  await agentUi.click({ force: true });
+  await agentCore.click({ force: true, modifiers: ["Shift"] });
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
+
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  const editMenu = page.getByRole("menu", { name: "Edit" });
+  const copy = editMenu.getByRole("menuitem", { name: /^Copy/ });
+  await expect(copy).not.toHaveAttribute("aria-disabled", "true");
+  await expect(editMenu.getByRole("menuitem", { name: /^Paste/ })).toBeVisible();
+  await expect(editMenu.getByRole("menuitem", { name: /^Duplicate/ })).toBeVisible();
+  await copy.click();
+  await expect(page.locator(".bd-command-notice")).toContainText(
+    "Copied 2 modules and 2 internal interfaces inside this workspace. System clipboard access is unavailable.",
+  );
+
+  await page.keyboard.press("ControlOrMeta+V");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(9);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(12);
+  await expect(flowNode(page, "system::agent-ui-2")).toHaveClass(/selected/);
+  await expect(flowNode(page, "system::rust-agent-core-2")).toHaveClass(/selected/);
+  await expect(page.locator(".bd-command-notice")).toContainText("Pasted 2 modules into System Overview");
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    microSegments: [],
+    sharedRoutes: [],
+  });
+  const pastedAudit = await exhaustiveRouteAudit(page);
+  expect(pastedAudit).toMatchObject({
+    auditedRouteCount: 12,
+    auditedPairCount: 66,
+    expectedPairCount: 66,
+    duplicateRouteIds: [],
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  if (process.env.CAPTURE_FRAGMENT_PROOF === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/copy-paste-subgraph.png");
+  }
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await downloadPromise).path();
+  expect(savedPath).not.toBeNull();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  const system = saved.levels.find((level: { id: string }) => level.id === "system");
+  expect(system.nodes).toHaveLength(9);
+  expect(system.connections).toHaveLength(12);
+  expect(saved.levels.find((level: { id: string }) => level.id === "core-2")).toBeDefined();
+  expect(system.nodes.find((node: { id: string }) => node.id === "rust-agent-core-2").hierarchy.childLevelId)
+    .toBe("core-2");
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(7);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(10);
+  await page.keyboard.press("ControlOrMeta+Shift+Z");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(9);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(12);
+
+  await flowNode(page, "system::agent-ui-2").click({ force: true });
+  await flowNode(page, "system::rust-agent-core-2").click({ force: true, modifiers: ["Shift"] });
+  await page.keyboard.press("ControlOrMeta+K");
+  const palette = page.getByRole("dialog", { name: "Command Palette" });
+  const search = palette.getByRole("combobox", { name: "Search commands" });
+  await search.fill("duplicate");
+  const duplicate = palette.getByRole("option", { name: /^Duplicate/ });
+  await expect(duplicate).not.toHaveAttribute("aria-disabled", "true");
+  await page.keyboard.press("Enter");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(11);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(14);
+  await expect(flowNode(page, "system::agent-ui-3")).toHaveClass(/selected/);
+  await expect(flowNode(page, "system::rust-agent-core-3")).toHaveClass(/selected/);
+  expect(await routeNodeCollisions(page)).toEqual([]);
 });
 
 test("box-selects, toggles, and moves modules as one professional selection", async ({ page, browserName }) => {
