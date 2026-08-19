@@ -63,7 +63,11 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 
 拖动模块接近同级模块的边缘或中心时，画布会用克制的洋红参考线提示吸附；调整尺寸接近同宽 / 同高时显示成对尺寸括号。辅助线只在当前操作中出现，不进入 JSON，也不会成为需要维护的第二份布局状态。
 
+多选拖动使用整个选择组的包围框，而不是临时把鼠标按下的那张卡片当成几何主体。无论从大模块还是小模块起拖，同一目标都会给整组施加同一修正，组内相对位置、内部接口和外部接口保持一致；Alt 可在当前手势中临时绕过吸附。
+
 ![模块移动对齐辅助线](docs/screenshots/alignment-guides.png)
+
+![不同尺寸模块组成的选择组边界吸附](docs/screenshots/group-boundary-alignment.png)
 
 ![模块同尺寸辅助线](docs/screenshots/same-size-guides.png)
 

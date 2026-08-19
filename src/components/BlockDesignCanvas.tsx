@@ -46,6 +46,7 @@ import type {
 } from "../model";
 import {
   BLOCK_NODE_GEOMETRY,
+  alignmentRectBounds,
   minimumNodeDimensions,
   snapMovingRect,
   snapResizingRect,
@@ -606,9 +607,38 @@ const CanvasInner = memo(function CanvasInner({
       right: (-translateX + state.width) / zoom + margin,
       bottom: (-translateY + state.height) / zoom + margin,
     };
+    const movingRects: AlignmentRect[] = [];
+    let oneParentCoordinateSpace = true;
+    for (const movingId of [...excludedNodeIds].sort()) {
+      const moving = state.nodeLookup.get(movingId);
+      const width = moving?.measured.width ?? moving?.width ?? 0;
+      const height = moving?.measured.height ?? moving?.height ?? 0;
+      // A group subject is only valid when every member has one measured
+      // rectangle. Falling back to a partial set would make the grabbed member
+      // redefine the selection boundary under viewport culling.
+      if (!moving || moving.hidden || width <= 0 || height <= 0) return undefined;
+      if (moving.parentId !== subject.parentId) oneParentCoordinateSpace = false;
+      movingRects.push({
+        id: movingId,
+        x: moving.internals.positionAbsolute.x,
+        y: moving.internals.positionAbsolute.y,
+        width,
+        height,
+      });
+    }
+    const original = alignmentRectBounds(
+      movingRects.length > 1 ? `selection:${movingRects.map((rect) => rect.id).join("|")}` : nodeId,
+      movingRects,
+    );
+    if (!original) return undefined;
     const candidates: AlignmentRect[] = [];
     state.nodeLookup.forEach((candidate, candidateId) => {
-      if (excludedNodeIds.has(candidateId) || candidate.parentId !== subject.parentId || candidate.hidden) return;
+      if (
+        !oneParentCoordinateSpace ||
+        excludedNodeIds.has(candidateId) ||
+        candidate.parentId !== subject.parentId ||
+        candidate.hidden
+      ) return;
       const width = candidate.measured.width ?? candidate.width ?? 0;
       const height = candidate.measured.height ?? candidate.height ?? 0;
       const { x, y } = candidate.internals.positionAbsolute;
@@ -622,13 +652,7 @@ const CanvasInner = memo(function CanvasInner({
     const minimum = minimumNodeDimensions(layoutSubject.data.block);
     const gesture = {
       nodeId,
-      original: {
-        id: nodeId,
-        x: subject.internals.positionAbsolute.x,
-        y: subject.internals.positionAbsolute.y,
-        width: subjectWidth,
-        height: subjectHeight,
-      },
+      original,
       originalLocalPosition: { ...subject.position },
       candidates,
       tolerance: ALIGNMENT_TOLERANCE_PX / zoom,

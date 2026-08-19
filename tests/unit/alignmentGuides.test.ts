@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  alignmentRectBounds,
   snapMovingRect,
   snapResizingRect,
   type AlignmentRect,
@@ -12,6 +13,39 @@ function rect(id: string, x: number, y: number, width = 100, height = 80): Align
 }
 
 describe("alignment guides", () => {
+  test("derives one stable subject rectangle from every member in a moving group", () => {
+    expect(alignmentRectBounds("selection:a|b", [
+      rect("a", 64, 64, 192, 144),
+      rect("b", 320, 288, 256, 192),
+    ])).toEqual({
+      id: "selection:a|b",
+      x: 64,
+      y: 64,
+      width: 512,
+      height: 416,
+    });
+    expect(alignmentRectBounds("empty", [])).toBeUndefined();
+  });
+
+  test("snaps the moving group bounds instead of whichever member was grabbed", () => {
+    const target = rect("target", 1124, 600, 208, 208);
+    const groupPreview = rect("selection:a|b", 608, 64, 512, 416);
+    const result = snapMovingRect(groupPreview, [target], 6);
+
+    expect(result.rect.x).toBe(612);
+    expect(result.rect.x + result.rect.width).toBe(target.x);
+    expect(result.guides).toEqual([
+      expect.objectContaining({
+        kind: "line",
+        axis: "x",
+        coordinate: 1124,
+        subjectAnchor: "end",
+        targetAnchor: "start",
+        targetId: "target",
+      }),
+    ]);
+  });
+
   test("snaps a moving edge and center with one deterministic guide per axis", () => {
     const result = snapMovingRect(
       rect("subject", 96, 43),

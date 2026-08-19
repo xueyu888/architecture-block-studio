@@ -50,6 +50,25 @@ interface AxisMatch {
 
 const ANCHORS: readonly AlignmentAnchor[] = ["start", "center", "end"];
 
+export function alignmentRectBounds(
+  id: string,
+  rects: readonly AlignmentRect[],
+): AlignmentRect | undefined {
+  if (rects.length === 0) return undefined;
+  let left = rects[0].x;
+  let top = rects[0].y;
+  let right = rects[0].x + rects[0].width;
+  let bottom = rects[0].y + rects[0].height;
+  for (let index = 1; index < rects.length; index += 1) {
+    const rect = rects[index];
+    left = Math.min(left, rect.x);
+    top = Math.min(top, rect.y);
+    right = Math.max(right, rect.x + rect.width);
+    bottom = Math.max(bottom, rect.y + rect.height);
+  }
+  return { id, x: left, y: top, width: right - left, height: bottom - top };
+}
+
 function axisCoordinate(rect: AlignmentRect, axis: "x" | "y", anchor: AlignmentAnchor): number {
   const start = axis === "x" ? rect.x : rect.y;
   const size = axis === "x" ? rect.width : rect.height;

@@ -7,6 +7,7 @@ import { fiveLevelRoutingDesignDocument } from "./fixtures/fiveLevelRoutingDesig
 import { routingStressDesignDocument } from "./fixtures/routingStressDesign";
 import { connectionPreviewDesignDocument } from "./fixtures/connectionPreviewDesign";
 import { viewportAutoPanDesignDocument } from "./fixtures/viewportAutoPanDesign";
+import { groupAlignmentDesignDocument } from "./fixtures/groupAlignmentDesign";
 import { createPerformanceSample, emitPerformanceSample } from "./performance/performanceSample";
 
 const examplePath = fileURLToPath(
@@ -4126,6 +4127,129 @@ test("aligns a pointer-moved module and lets Alt bypass guides for one gesture",
     (candidate: { id: string }) => candidate.id === "project",
   );
   expect(savedNode.layout.position.y).not.toBe(650);
+});
+
+test("snaps a selected group by its full boundary regardless of the grabbed member", async ({ page, browserName }) => {
+  await openDesignDialog(page);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "group-alignment-proof.block-design.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(groupAlignmentDesignDocument())),
+  });
+  await expect(page.locator(".bd-document-title span")).toHaveText("Group Alignment Proof");
+  await expect(page.locator(".react-flow__node")).toHaveCount(3);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
+  await expect(page.locator(".bd-canvas-busy")).toHaveCount(0);
+  await page.waitForTimeout(350);
+
+  const groupA = flowNode(page, "system::group-a");
+  const groupB = flowNode(page, "system::group-b");
+  const targetNode = flowNode(page, "system::target");
+  const groupIds = ["system::group-a", "system::group-b"];
+  const localPositions = () => page.locator(
+    groupIds.map((id) => `.react-flow__node[data-id="${id}"]`).join(", "),
+  ).evaluateAll((elements) => Object.fromEntries(elements.map((element) => {
+    const transform = (element as HTMLElement).style.transform;
+    const match = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(transform);
+    if (!match) throw new Error(`Unexpected node transform ${transform}`);
+    return [element.getAttribute("data-id"), { x: Number(match[1]), y: Number(match[2]) }];
+  })) as Record<string, { x: number; y: number }>);
+  const selectGroup = async () => {
+    await groupA.click({ force: true });
+    await groupB.click({ force: true, modifiers: ["Shift"] });
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
+  };
+  const beginGroupDrag = async (
+    grabbed: typeof groupA,
+    mode: "snap" | "bypass" | "clone" = "snap",
+  ) => {
+    await selectGroup();
+    const box = await grabbed.boundingBox();
+    expect(box).not.toBeNull();
+    const start = { x: box!.x + Math.min(72, box!.width * 0.38), y: box!.y + 18 };
+    await page.mouse.move(start.x, start.y);
+    if (mode === "clone") await page.keyboard.down("Control");
+    await page.mouse.down();
+    if (mode === "bypass") await page.keyboard.down("Alt");
+    const activatedPointerX = start.x + 12;
+    await page.mouse.move(activatedPointerX, start.y);
+    // Pointerdown first freezes any in-flight Fit navigation. Measure the
+    // canonical viewport only after drag activation so the test does not turn
+    // an asynchronous animation sample into a geometry fact.
+    const groupABox = await groupA.boundingBox();
+    const groupBBox = await groupB.boundingBox();
+    const targetBox = await targetNode.boundingBox();
+    expect(groupABox && groupBBox && targetBox).not.toBeNull();
+    const zoom = await canvasZoom(page);
+    const groupRight = Math.max(
+      groupABox!.x + groupABox!.width,
+      groupBBox!.x + groupBBox!.width,
+    );
+    const screenDelta = targetBox!.x - groupRight - 4 * zoom;
+    await page.mouse.move(activatedPointerX + screenDelta, start.y);
+    await page.waitForTimeout(120);
+  };
+  const endGroupDrag = async (mode: "snap" | "bypass" | "clone" = "snap") => {
+    await page.mouse.up();
+    if (mode === "bypass") await page.keyboard.up("Alt");
+    if (mode === "clone") await page.keyboard.up("Control");
+    await waitForEditorIdle(page);
+  };
+  const guide = page.locator('.bd-alignment-guide-x[data-target-id="system::target"]');
+  const baseline = await localPositions();
+
+  await beginGroupDrag(groupA);
+  await expect(guide).toBeVisible();
+  await expect(guide).toHaveAttribute("data-subject-anchor", "end");
+  await expect(guide).toHaveAttribute("data-target-anchor", "start");
+  expect(await guide.evaluate((element) => Number.parseFloat((element as HTMLElement).style.left))).toBe(1124);
+  const fromCompact = await localPositions();
+  expect(fromCompact["system::group-a"]).toEqual({ x: 612, y: 64 });
+  expect(fromCompact["system::group-b"]).toEqual({ x: 868, y: 288 });
+  if (process.env.CAPTURE_GROUP_ALIGNMENT === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/group-boundary-alignment.png");
+  }
+  await endGroupDrag();
+  expect(await routeNodeCollisions(page)).toEqual([]);
+  await expect(page.locator(".bd-statusbar")).toContainText("Unsaved changes");
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  expect(await localPositions()).toEqual(baseline);
+
+  await beginGroupDrag(groupB);
+  await expect(guide).toBeVisible();
+  expect(await localPositions()).toEqual(fromCompact);
+  await endGroupDrag();
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  expect(await localPositions()).toEqual(baseline);
+  await page.keyboard.press("ControlOrMeta+Shift+Z");
+  await waitForEditorIdle(page);
+  expect(await localPositions()).toEqual(fromCompact);
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+
+  await beginGroupDrag(groupA, "bypass");
+  await expect(guide).toHaveCount(0);
+  await endGroupDrag("bypass");
+  const bypassed = await localPositions();
+  expect(bypassed["system::group-a"]).toEqual({ x: 608, y: 64 });
+  expect(bypassed["system::group-b"]).toEqual({ x: 864, y: 288 });
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+
+  await beginGroupDrag(groupB, "clone");
+  await expect(guide).toBeVisible();
+  await endGroupDrag("clone");
+  await expect(page.locator(".react-flow__node")).toHaveCount(5);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(3);
+  await expect(page.locator(".bd-command-notice")).toContainText("Cloned 2 modules at the dragged position.");
+  expect(await routeNodeCollisions(page)).toEqual([]);
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(3);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
 });
 
 test("aligns and distributes same-level modules as atomic arrangement commands", async ({ page, browserName }) => {
