@@ -5,6 +5,23 @@ export interface NodeDimensions {
   height: number;
 }
 
+export interface NodeResizeRect extends NodeDimensions {
+  x: number;
+  y: number;
+}
+
+export interface NodeResizeDirection {
+  x: -1 | 0 | 1;
+  y: -1 | 0 | 1;
+}
+
+export interface NodeResizeLimits {
+  minWidth: number;
+  minHeight: number;
+  maxWidth: number;
+  maxHeight: number;
+}
+
 export const BLOCK_NODE_GEOMETRY = {
   defaultWidth: 242,
   defaultHeight: 144,
@@ -29,6 +46,40 @@ export const BLOCK_NODE_GEOMETRY = {
   expandedBorderWidth: 2,
   portHandleSize: 10,
 } as const;
+
+export function preserveNodeAspectRatio(
+  original: NodeResizeRect,
+  requested: NodeResizeRect,
+  direction: NodeResizeDirection,
+  limits: NodeResizeLimits,
+): NodeResizeRect {
+  if (direction.x === 0 && direction.y === 0) return requested;
+  const widthScale = requested.width / original.width;
+  const heightScale = requested.height / original.height;
+  const requestedScale = direction.x === 0
+    ? heightScale
+    : direction.y === 0
+      ? widthScale
+      : Math.abs(widthScale - 1) >= Math.abs(heightScale - 1)
+        ? widthScale
+        : heightScale;
+  const minimumScale = Math.max(limits.minWidth / original.width, limits.minHeight / original.height);
+  const maximumScale = Math.min(limits.maxWidth / original.width, limits.maxHeight / original.height);
+  const scale = Math.max(minimumScale, Math.min(maximumScale, requestedScale));
+  const width = Math.round(original.width * scale);
+  const height = Math.round(original.height * scale);
+  const x = direction.x < 0
+    ? original.x + original.width - width
+    : direction.x > 0
+      ? original.x
+      : original.x + (original.width - width) / 2;
+  const y = direction.y < 0
+    ? original.y + original.height - height
+    : direction.y > 0
+      ? original.y
+      : original.y + (original.height - height) / 2;
+  return { x: Math.round(x), y: Math.round(y), width, height };
+}
 
 /**
  * Returns the React Flow connection anchor relative to a node frame.

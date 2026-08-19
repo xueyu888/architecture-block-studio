@@ -1,6 +1,6 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { Box, Minus, Pin, Plus } from "lucide-react";
-import type { CSSProperties } from "react";
+import { useRef, type CSSProperties } from "react";
 import {
   BLOCK_NODE_GEOMETRY,
   bindingPortId,
@@ -9,6 +9,9 @@ import {
   portLabelWidth,
   portRailOffset,
   portsForSide,
+  preserveNodeAspectRatio,
+  type NodeResizeDirection,
+  type NodeResizeRect,
 } from "../layout";
 import type { BlockPort, PortSide } from "../model";
 import type { CanvasFlowNode } from "./canvasTypes";
@@ -18,6 +21,12 @@ type GeometryStyle = CSSProperties & Record<`--${string}`, string>;
 function resizeAltKey(event: { sourceEvent?: Event }): boolean {
   return event.sourceEvent instanceof MouseEvent || event.sourceEvent instanceof PointerEvent
     ? event.sourceEvent.altKey
+    : false;
+}
+
+function resizeShiftKey(event: { sourceEvent?: Event }): boolean {
+  return event.sourceEvent instanceof MouseEvent || event.sourceEvent instanceof PointerEvent
+    ? event.sourceEvent.shiftKey
     : false;
 }
 
@@ -169,6 +178,7 @@ function PortRail({
 }
 
 export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowNode>) {
+  const resizeGestureRef = useRef<{ original: NodeResizeRect; direction: NodeResizeDirection } | undefined>(undefined);
   const { block } = data;
   const hierarchy = block.hierarchy;
   const portsBySide = Object.fromEntries(
@@ -213,15 +223,51 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
         autoScale
         handleClassName="bd-node-resize-handle"
         lineClassName="bd-node-resize-line"
-        onResizeStart={() => data.beginResize?.()}
-        onResize={(event, geometry) => data.previewResize?.({
-          position: { x: geometry.x, y: geometry.y },
-          size: { width: geometry.width, height: geometry.height },
-        }, resizeAltKey(event))}
-        onResizeEnd={(event, geometry) => data.resizeNode?.({
-          position: { x: geometry.x, y: geometry.y },
-          size: { width: geometry.width, height: geometry.height },
-        }, resizeAltKey(event))}
+        onResizeStart={(_, geometry) => {
+          resizeGestureRef.current = {
+            original: { x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height },
+            direction: { x: 0, y: 0 },
+          };
+          data.beginResize?.();
+        }}
+        onResize={(event, geometry) => {
+          const gesture = resizeGestureRef.current;
+          const direction = {
+            x: Math.sign(geometry.direction[0]) as -1 | 0 | 1,
+            y: Math.sign(geometry.direction[1]) as -1 | 0 | 1,
+          };
+          if (gesture) gesture.direction = direction;
+          const requested = { x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height };
+          const resolved = resizeShiftKey(event) && gesture
+            ? preserveNodeAspectRatio(gesture.original, requested, direction, {
+                minWidth: minimumSize.width,
+                minHeight: minimumSize.height,
+                maxWidth: BLOCK_NODE_GEOMETRY.maximumWidth,
+                maxHeight: BLOCK_NODE_GEOMETRY.maximumHeight,
+              })
+            : requested;
+          data.previewResize?.({
+            position: { x: resolved.x, y: resolved.y },
+            size: { width: resolved.width, height: resolved.height },
+          }, resizeAltKey(event) || resizeShiftKey(event));
+        }}
+        onResizeEnd={(event, geometry) => {
+          const gesture = resizeGestureRef.current;
+          const requested = { x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height };
+          const resolved = resizeShiftKey(event) && gesture
+            ? preserveNodeAspectRatio(gesture.original, requested, gesture.direction, {
+                minWidth: minimumSize.width,
+                minHeight: minimumSize.height,
+                maxWidth: BLOCK_NODE_GEOMETRY.maximumWidth,
+                maxHeight: BLOCK_NODE_GEOMETRY.maximumHeight,
+              })
+            : requested;
+          resizeGestureRef.current = undefined;
+          data.resizeNode?.({
+            position: { x: resolved.x, y: resolved.y },
+            size: { width: resolved.width, height: resolved.height },
+          }, resizeAltKey(event) || resizeShiftKey(event));
+        }}
       />
       <header className="bd-block-header">
         {hierarchy ? (

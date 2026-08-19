@@ -60,7 +60,7 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 
 端口连接点几何与标签排版同样正交。`layout/nodeGeometry` 是节点安全尺寸、标签估算宽度和水平 label rail 位置的唯一计算 Owner；`BlockNode` 从同一组已排序 Port 分别投影稳定 Handle 和独立标签按钮，不能为了排文字移动 source / target。left / right 标签沿各自侧边，top / bottom 标签在 Header / Owner 之外的内部轨道分配空间；常态只显示端口名，dataType 只在可读缩放下通过 hover / focus 渐进显示，完整事实仍可由 Properties 查看。已有 authored width / height 满足标签合同时必须原样保留；只有外部 JSON 或后续 resize 小于内容安全下限时，布局投影才钳制到可读尺寸，不能把展示修正反写 JSON。
 
-模块尺寸编辑复用同一几何 Owner。`minimumNodeDimensions` 从四侧端口和内容区计算可读下限，Canvas 只把这个纯结果投影为四边 / 四角 resize 限制；最大值与 16 设计像素键盘步长同样来自统一几何常量。React Flow 在 pointer gesture 中拥有可丢弃预览，松手后只发出一次位置加尺寸意图；Editor 的 `node/resize` 才以一个原子操作写入 `node.layout.position / width / height / pinned`。左边或上边缩放会同时改变锚点和尺寸，因此不能只写 width / height，否则视觉边界与持久几何会漂移。展开的 hierarchy 容器尺寸由子图边界派生，不提供 authored resize 把手。
+模块尺寸编辑复用同一几何 Owner。`minimumNodeDimensions` 从四侧端口和内容区计算可读下限，Canvas 只把这个纯结果投影为四边 / 四角 resize 限制；最大值与 16 设计像素键盘步长同样来自统一几何常量。Shift pointer resize 由纯 `preserveNodeAspectRatio` 以 gesture 起始矩形、抓手方向和同一尺寸上下限求解，固定对侧角或对侧边中心；比例不进入文档，并优先于兄弟尺寸吸附。React Flow 只拥有可丢弃预览，松手后只发出一次位置加尺寸意图；Editor 的 `node/resize` 才以一个原子操作写入 `node.layout.position / width / height / pinned`。左边或上边缩放会同时改变锚点和尺寸，因此不能只写 width / height，否则视觉边界与持久几何会漂移。展开的 hierarchy 容器尺寸由子图边界派生，不提供 authored resize 把手。
 
 对齐辅助线沿用同一几何链，但不拥有设计事实。Canvas 在 move / resize 开始时只收集同一父级、当前视口附近的模块矩形，并把 6 CSS px 容差换算为设计坐标；`layout/alignmentGuides` 纯函数从这些候选派生边缘、中心与同宽 / 同高吸附结果，`AlignmentGuideLayer` 只渲染当前 gesture 的临时线和尺寸括号。松手后仍只提交既有 `node/move` 或 `node/resize`；按住 Alt 时当前 gesture 原样使用用户预览，不显示 guide。候选不存在、吸附超出尺寸上下限或 Editor 拒绝提交时，不建立补偿状态，Canvas 回到文档投影。
 
@@ -254,7 +254,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 
 `SelectionRef` 是 `src/studio/selection.ts` 拥有的单一工作区选择协议，区分 document、level、node、port、connection 与显式 `multiple`。多选只包含 canonical、去重的 `DiagramSelectionRef`，因此只允许可共同直接操作的 node / connection；document、level 与 port 仍保持单选语义。`diagramSelectionItems`、replace、toggle、`selectAllInLevel`、contains、exists、key 与上下文查询都由该纯协议拥有，Tree、接口列表、Canvas、DRC 和 Inspector 不各自维护选择集合。
 
-普通点击和框选替换集合，Shift / Ctrl / Cmd 点击或框选切换成员，Esc 回到当前对象所属 Level。左键空白拖动专用于完整包围框选，中键 / 右键拖动和滚轮负责平移；框选起点由 Canvas 捕获阶段记录、终点取自 gesture 结束事件，完整包围判断不依赖第三方临时矩形的渲染时序。框选矩形与 React Flow 候选只存在于 gesture，结束后立即转换为领域引用。Canvas 只投影选中状态，Sources 同步高亮，Inspector 显示模块、接口和 Level 摘要；多选时隐藏单对象 resize / route 把手，并提示从 Arrange 或 `Ctrl/⌘ K` 进入同一对齐 / 分布命令。任何选择变化仍先经过 Inspector 草稿保护，被拒绝时恢复权威选择投影。
+普通点击和框选替换集合，Shift / Ctrl / Cmd 点击或框选切换成员，Esc 回到当前对象所属 Level。左键空白拖动专用于完整包围框选，中键 / 右键拖动和滚轮负责平移；框选起点由 Canvas 捕获阶段记录、终点取自 gesture 结束事件，完整包围判断不依赖第三方临时矩形的渲染时序。React Flow 的默认 Shift selection mode 被显式关闭，避免它在 resize 抓手之前抢占同一 modifier；Shift toggle 仍由 `SelectionRef` 入口处理。框选矩形与第三方候选只存在于 gesture，结束后立即转换为领域引用。Canvas 只投影选中状态，Sources 同步高亮，Inspector 显示模块、接口和 Level 摘要；多选时隐藏单对象 resize / route 把手，并提示从 Arrange 或 `Ctrl/⌘ K` 进入同一对齐 / 分布命令。任何选择变化仍先经过 Inspector 草稿保护，被拒绝时恢复权威选择投影。
 
 节点拖动预览与克隆事实同样分离。普通拖动把同组目标位置提交为一次 `nodes/move`；Ctrl/⌘ 拖动只从同一组目标位置求一个统一平移，Studio 据当前 `BlockDesignDocument` 构造完整 `DesignFragment` 并提交一次 `fragment/insert`。无论插入成功或被草稿 / Schema 拒绝，Canvas 都恢复原节点预览；成功后选择切换到新模块。gesture、modifier 和 React Flow 临时坐标不进入 JSON，外部连接仍遵守片段边界被排除。
 

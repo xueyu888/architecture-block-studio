@@ -4004,6 +4004,70 @@ test("resizes a selected module from a corner and persists one atomic geometry c
   await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText(sizeText);
 });
 
+test("preserves a module's original proportions while Shift-resizing", async ({ page, browserName }) => {
+  const node = flowNode(page, "system::platform-provider");
+  const connectedEdge = page.locator('.react-flow__edge[data-id="system::platform-tool-registration"]');
+  await node.click({ force: true });
+  const before = await node.boundingBox();
+  const routeBefore = await connectedEdge.locator(".bd-interface-route").getAttribute("d");
+  expect(before).not.toBeNull();
+  const originalRatio = before!.width / before!.height;
+  const handle = node.locator(".bd-node-resize-handle.bottom.right");
+
+  await page.keyboard.down("Shift");
+  const handleBox = await handle.boundingBox();
+  expect(handleBox).not.toBeNull();
+  const start = {
+    x: handleBox!.x + handleBox!.width / 2,
+    y: handleBox!.y + handleBox!.height / 2,
+  };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 56, start.y + 18, { steps: 12 });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+  await waitForEditorIdle(page);
+
+  const after = await node.boundingBox();
+  expect(after).not.toBeNull();
+  expect(after!.width).toBeGreaterThan(before!.width + 35);
+  expect(after!.height).toBeGreaterThan(before!.height + 20);
+  expect(after!.width / after!.height).toBeCloseTo(originalRatio, 2);
+  await expect.poll(() => connectedEdge.locator(".bd-interface-route").getAttribute("d"))
+    .not.toBe(routeBefore);
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    microSegments: [],
+    sharedRoutes: [],
+  });
+  if (process.env.CAPTURE_ASPECT_RESIZE === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/aspect-ratio-resize.png");
+  }
+
+  const sizeText = await page.getByRole("region", { name: "Module geometry" }).locator("strong").innerText();
+  const [width, height] = sizeText.split("×").map((value) => Number(value.trim()));
+  expect(width / height).toBeCloseTo(240 / 145, 2);
+  const downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await downloadPromise).path();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  const savedNode = saved.levels.find((level: { id: string }) => level.id === "system").nodes.find(
+    (candidate: { id: string }) => candidate.id === "platform-provider",
+  );
+  expect(savedNode.layout).toMatchObject({ width, height });
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("240 × 145");
+  await page.keyboard.press("ControlOrMeta+Shift+Z");
+  await waitForEditorIdle(page);
+  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText(sizeText);
+});
+
 test("matches a sibling size while resizing and lets Alt bypass size snapping", async ({ page, browserName }) => {
   const node = flowNode(page, "system::platform-provider");
   await node.click({ force: true });

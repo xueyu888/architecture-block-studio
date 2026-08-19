@@ -7,6 +7,7 @@ import {
   portLabelWidth,
   portRailOffset,
   portsForSide,
+  preserveNodeAspectRatio,
 } from "../../src/layout";
 import { createBlock, createPort } from "../../src/editor/designEditor";
 
@@ -94,5 +95,23 @@ describe("block node geometry", () => {
     );
 
     expect(baseNodeDimensions(node)).toEqual({ width: 236, height: 132 });
+  });
+
+  it("preserves resize proportions around the opposite corner and clamps both dimensions together", () => {
+    const original = { x: 100, y: 200, width: 240, height: 145 };
+    const limits = { minWidth: 180, minHeight: 112, maxWidth: 400, maxHeight: 300 };
+
+    expect(preserveNodeAspectRatio(
+      original,
+      { x: 100, y: 200, width: 360, height: 160 },
+      { x: 1, y: 1 },
+      limits,
+    )).toEqual({ x: 100, y: 200, width: 360, height: 218 });
+    expect(preserveNodeAspectRatio(
+      original,
+      { x: -100, y: 0, width: 500, height: 400 },
+      { x: -1, y: -1 },
+      limits,
+    )).toEqual({ x: -60, y: 103, width: 400, height: 242 });
   });
 });

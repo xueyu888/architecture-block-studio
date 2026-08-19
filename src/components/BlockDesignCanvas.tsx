@@ -1328,7 +1328,8 @@ const CanvasInner = memo(function CanvasInner({
       panActivationKeyCode="Space"
       zoomActivationKeyCode={["Control", "Meta"]}
       selectionOnDrag
-      multiSelectionKeyCode={["Shift", "Control", "Meta"]}
+      selectionKeyCode={null}
+      multiSelectionKeyCode={["Control", "Meta"]}
       fitView
       fitViewOptions={FIT_VIEW_OPTIONS}
       onlyRenderVisibleElements={cullViewportElements}
