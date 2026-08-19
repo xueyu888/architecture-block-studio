@@ -754,19 +754,23 @@ export function BlockDesignStudio({
     fragment: DesignFragment,
     levelId: string,
     insertionIndex: number,
+    explicitOffset?: { x: number; y: number },
   ): readonly string[] | undefined => {
     const before = new Set(
       documentRef.current?.levels.find((level) => level.id === levelId)?.nodes.map((node) => node.id) ?? [],
     );
-    const occupied = layout.nodes
-      .filter((node) => node.data.levelId === levelId)
-      .map((node) => ({
-        x: node.data.designPosition.x,
-        y: node.data.designPosition.y,
-        width: (node.width ?? Number(node.style?.width)) || 0,
-        height: (node.height ?? Number(node.style?.height)) || 0,
-      }));
-    const offset = findDesignFragmentPlacement(fragment, occupied, insertionIndex);
+    const offset = explicitOffset ?? findDesignFragmentPlacement(
+      fragment,
+      layout.nodes
+        .filter((node) => node.data.levelId === levelId)
+        .map((node) => ({
+          x: node.data.designPosition.x,
+          y: node.data.designPosition.y,
+          width: (node.width ?? Number(node.style?.width)) || 0,
+          height: (node.height ?? Number(node.style?.height)) || 0,
+        })),
+      insertionIndex,
+    );
     const next = runOperation({
       type: "fragment/insert",
       levelId,
@@ -841,6 +845,47 @@ export function BlockDesignStudio({
     if (!insertedNodeIds) return;
     setCommandNotice(`Duplicated ${insertedNodeIds.length} ${insertedNodeIds.length === 1 ? "module" : "modules"}.`);
   }, [fragmentSelection, insertFragment, requireAppliedInspectorDraft, selectedFragment]);
+
+  const cloneDraggedModules = useCallback((moves: readonly NodeMove[]): boolean => {
+    if (!requireAppliedInspectorDraft("cloning the dragged modules")) return false;
+    const currentDocument = documentRef.current;
+    if (!currentDocument || moves.length === 0) return false;
+    try {
+      const levelIds = new Set(moves.map((move) => move.levelId));
+      if (levelIds.size !== 1) throw new Error("Dragged modules must belong to one design level to clone them.");
+      const levelId = moves[0].levelId;
+      const sourcePositions = new Map<string, { x: number; y: number }>();
+      const deltas = moves.map((move) => {
+        const source = layout.nodes.find((node) =>
+          node.data.levelId === move.levelId && node.data.block.id === move.nodeId);
+        if (!source) throw new Error(`Module ${move.nodeId} has no visible source geometry to clone.`);
+        sourcePositions.set(move.nodeId, source.data.designPosition);
+        return {
+          x: move.position.x - source.data.designPosition.x,
+          y: move.position.y - source.data.designPosition.y,
+        };
+      });
+      const offset = { x: Math.round(deltas[0].x), y: Math.round(deltas[0].y) };
+      if (deltas.some((delta) => Math.abs(delta.x - offset.x) > 0.5 || Math.abs(delta.y - offset.y) > 0.5)) {
+        throw new Error("Dragged modules must share one clone translation.");
+      }
+      const fragment = createDesignFragment(
+        currentDocument,
+        levelId,
+        moves.map((move) => move.nodeId),
+        sourcePositions,
+      );
+      const insertedNodeIds = insertFragment(fragment, levelId, 1, offset);
+      if (!insertedNodeIds) return false;
+      setCommandError(undefined);
+      setCommandNotice(`Cloned ${insertedNodeIds.length} ${insertedNodeIds.length === 1 ? "module" : "modules"} at the dragged position.`);
+      return true;
+    } catch (error) {
+      setCommandNotice(undefined);
+      setCommandError(errorMessage(error));
+      return false;
+    }
+  }, [insertFragment, layout.nodes, requireAppliedInspectorDraft]);
 
   const resizeNode = useCallback((
     levelId: string,
@@ -1321,6 +1366,7 @@ export function BlockDesignStudio({
             onToggleHierarchy={toggleHierarchy}
             onAddModule={openAddBlock}
             onMoveNodes={moveNodes}
+            onCloneNodes={cloneDraggedModules}
             onResizeNode={resizeNode}
             onCreateConnection={createConnection}
             onRouteConnection={routeConnection}

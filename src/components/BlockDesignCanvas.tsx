@@ -224,6 +224,7 @@ interface CanvasInnerProps {
   onSelect: (selection: SelectionRef) => boolean;
   onToggleHierarchy: (levelId: string) => void;
   onMoveNodes: (moves: readonly NodeMove[]) => boolean;
+  onCloneNodes: (moves: readonly NodeMove[]) => boolean;
   onResizeNode: (
     levelId: string,
     nodeId: string,
@@ -304,6 +305,7 @@ const CanvasInner = memo(function CanvasInner({
   onSelect,
   onToggleHierarchy,
   onMoveNodes,
+  onCloneNodes,
   onResizeNode,
   onCreateConnection,
   onRouteConnection,
@@ -1224,17 +1226,24 @@ const CanvasInner = memo(function CanvasInner({
         },
       });
     });
+    const restoreSourceNodes = () => setNodes((current) => current.map((candidate) => {
+      if (!movedById.has(candidate.id)) return candidate;
+      const baseline = baseNodes.find((item) => item.id === candidate.id);
+      return baseline ? { ...candidate, position: { ...baseline.position }, dragging: false } : candidate;
+    }));
+    if ((event.ctrlKey || event.metaKey) && moves.size > 0) {
+      const cloned = onCloneNodes([...moves.values()]);
+      restoreSourceNodes();
+      if (cloned) setCanvasAnnouncement(moves.size > 1 ? `Cloned ${moves.size} modules.` : `Cloned ${node.data.block.title}.`);
+      return;
+    }
     const accepted = moves.size > 0 && onMoveNodes([...moves.values()]);
     if (accepted) {
       setCanvasAnnouncement(moves.size > 1 ? `Moved ${moves.size} modules.` : `Moved ${node.data.block.title}.`);
       return;
     }
-    setNodes((current) => current.map((candidate) => {
-      if (!movedById.has(candidate.id)) return candidate;
-      const baseline = baseNodes.find((item) => item.id === candidate.id);
-      return baseline ? { ...candidate, position: { ...baseline.position }, dragging: false } : candidate;
-    }));
-  }, [baseNodes, onMoveNodes, setNodes, snapMovingNode]);
+    restoreSourceNodes();
+  }, [baseNodes, onCloneNodes, onMoveNodes, setNodes, snapMovingNode]);
   const onConnect = useCallback((connection: Connection) => {
     const normalized = normalizedConnection(connection);
     if (normalized) onCreateConnection(normalized);
@@ -1387,6 +1396,7 @@ export function BlockDesignCanvas(props: BlockDesignCanvasProps) {
         onSelect={props.onSelect}
         onToggleHierarchy={props.onToggleHierarchy}
         onMoveNodes={props.onMoveNodes}
+        onCloneNodes={props.onCloneNodes}
         onResizeNode={props.onResizeNode}
         onCreateConnection={props.onCreateConnection}
         onRouteConnection={props.onRouteConnection}

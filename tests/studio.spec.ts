@@ -3570,6 +3570,69 @@ test("copies, pastes, and duplicates a connected hierarchy as atomic collision-f
   expect(await routeNodeCollisions(page)).toEqual([]);
 });
 
+test("clones a selected connected hierarchy at the Ctrl-drag target as one atomic edit", async ({ page, browserName }) => {
+  const agent = flowNode(page, "system::agent-ui");
+  const core = flowNode(page, "system::rust-agent-core");
+  await agent.click({ force: true });
+  await core.click({ force: true, modifiers: ["Shift"] });
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
+  const originalAgent = await agent.boundingBox();
+  expect(originalAgent).not.toBeNull();
+  const start = {
+    x: originalAgent!.x + originalAgent!.width / 2,
+    y: originalAgent!.y + originalAgent!.height * 0.62,
+  };
+
+  await page.keyboard.down("Control");
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x, start.y + 420, { steps: 14 });
+  await page.mouse.up();
+  await page.keyboard.up("Control");
+  await waitForEditorIdle(page);
+
+  await expect(page.locator(".react-flow__node")).toHaveCount(9);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(12);
+  const clonedAgent = flowNode(page, "system::agent-ui-2");
+  const clonedCore = flowNode(page, "system::rust-agent-core-2");
+  await expect(clonedAgent).toHaveClass(/selected/);
+  await expect(clonedCore).toHaveClass(/selected/);
+  const inspector = page.getByRole("region", { name: "Properties" });
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("2 objects selected");
+  await expect(inspector.locator(".bd-multi-metrics dd")).toHaveText(["2", "0", "1"]);
+  await expect(page.locator(".bd-command-notice")).toContainText("Cloned 2 modules at the dragged position.");
+  expect(await routeNodeCollisions(page)).toEqual([]);
+  if (process.env.CAPTURE_CTRL_DRAG_CLONE === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/ctrl-drag-clone.png");
+  }
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await downloadPromise).path();
+  expect(savedPath).not.toBeNull();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  const system = saved.levels.find((level: { id: string }) => level.id === "system");
+  expect(system.nodes).toHaveLength(9);
+  expect(system.connections).toHaveLength(12);
+  expect(saved.levels.find((level: { id: string }) => level.id === "core-2")).toBeDefined();
+  expect(system.nodes.find((node: { id: string }) => node.id === "rust-agent-core-2").hierarchy.childLevelId)
+    .toBe("core-2");
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(7);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(10);
+  await expect(agent).toBeVisible();
+  await expect(core).toBeVisible();
+
+  await page.keyboard.press("ControlOrMeta+Shift+Z");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(9);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(12);
+  await expect(clonedAgent).toBeVisible();
+  await expect(clonedCore).toBeVisible();
+});
+
 test("box-selects, toggles, and moves modules as one professional selection", async ({ page, browserName }) => {
   const project = flowNode(page, "system::project");
   const knowledge = flowNode(page, "system::knowledge");

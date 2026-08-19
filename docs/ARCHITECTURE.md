@@ -66,7 +66,7 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 
 多选对齐与分布复用 authored 几何，但与临时辅助线是独立能力。`layout/selectionArrangement` 只接收已解析的模块矩形：六种对齐以整个选择包围框为基准，水平 / 垂直分布按中心点等距并固定两端；项目没有隐式“主选择”，因此不会让点击顺序成为第二几何规则。`StudioCommands` 负责确认至少 2 个对齐对象或 3 个分布对象、全部是同一 Level 中具有唯一可编辑投影的 authored 模块，并为接口混选、跨层选择、展开 hierarchy 或未完成布局给出同源禁用原因。Arrange 菜单与 Command Palette 只投影这些命令；执行结果统一生成一次 `nodes/move`，Editor 原子写入各模块的 `node.layout.position / pinned`，随后布局与路由从文档重新派生。任一前提或提交失败时，原文档、历史和视口都不变。
 
-复制链与选择链正交。`editor/designFragment` 是片段格式、引用闭包和 ID 重写的唯一 Owner：根层只收集所选模块之间的内部连接，递归包含这些模块拥有的全部子 Level，并只携带实际引用的接口定义；解析时逐级验证模块、Port、Connection、Hierarchy binding、父子 Level 和接口引用，拒绝缺失或多余事实。Studio 只从唯一可见的同层选择读取当前设计位置，并用 `studio/fragmentPlacement` 对片段外包围框和当前可见模块矩形做 32 设计像素网格的最近无碰撞搜索。求得的显式 offset 随一次 `fragment/insert` 交给 Editor；Editor 在克隆文档上递增生成 Level、Module、Connection 与 Interface ID，重写全部引用后才通过完整 Schema 提交，所以一次粘贴只产生一个历史记录。
+复制链与选择链正交。`editor/designFragment` 是片段格式、引用闭包和 ID 重写的唯一 Owner：根层只收集所选模块之间的内部连接，递归包含这些模块拥有的全部子 Level，并只携带实际引用的接口定义；解析时逐级验证模块、Port、Connection、Hierarchy binding、父子 Level 和接口引用，拒绝缺失或多余事实。Studio 只从唯一可见的同层选择读取当前设计位置。Paste / Duplicate 用 `studio/fragmentPlacement` 对片段外包围框和当前可见模块矩形做 32 设计像素网格的最近无碰撞搜索；Ctrl/⌘ 拖动则把同组模块预览相对 authored geometry 的统一平移直接作为 offset。两种入口都只把明确 offset 随一次 `fragment/insert` 交给 Editor；Editor 在克隆文档上递增生成 Level、Module、Connection 与 Interface ID，重写全部引用后才通过完整 Schema 提交，所以一次插入只产生一个历史记录。
 
 内部 `designClipboard`、系统剪贴板权限与连续粘贴序号都是可丢弃工作区状态。复制先安装内部片段，再尝试写入带 kind / version 的 JSON；写入失败只改变可见反馈，不撤销已成功的内部复制。粘贴优先使用内部片段，没有时才读取并严格解析系统剪贴板。外部连接不会被隐式扩张进片段，因此复制后仍为 required 的边界 Port 可能由 DRC 提示未连接；这是待人审查的真实合同缺口，不能通过偷偷改成 optional 来消除警告。
 
@@ -191,7 +191,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 
 模块组移动使用单用途 `nodes/move`。它携带去重后的 Level、node 与目标 position 列表，Editor 在同一克隆上逐项验证存在性，全部成立后才一次提交并生成一个历史记录；单模块继续使用 `node/move`。这样 React Flow 的成组拖动不会出现“画面移动多个、JSON 只保存一个”的双状态，任一目标失效时也不会产生部分位移。
 
-子图粘贴使用单用途 `fragment/insert`。操作携带已经通过片段合同的 `DesignFragment`、目标 Level 和由视觉放置 Owner 计算的明确 offset；Editor 不读取 Canvas，也不自行猜测屏幕空位。ID 递增与引用重写在同一克隆中完成，任何缺失端点、Port、接口定义、层级父子关系或非法 offset 都拒绝整项操作。Duplicate 复用“从当前选择构造片段，再执行一次 insert”的同一链路，不维护第二套克隆规则。
+子图插入使用单用途 `fragment/insert`。操作携带已经通过片段合同的 `DesignFragment`、目标 Level 和由视觉放置 Owner 计算的明确 offset；Editor 不读取 Canvas，也不自行猜测屏幕空位。ID 递增与引用重写在同一克隆中完成，任何缺失端点、Port、接口定义、层级父子关系或非法 offset 都拒绝整项操作。Paste、Duplicate 与 Ctrl/⌘ 拖动都复用“从当前选择构造片段，再执行一次 insert”的同一链路，不维护第二套克隆规则。
 
 线路端点变化使用独立的 `connection/reconnect`：Editor 在同一 Level 内重新校验 source / target 端口存在性与 input / output 方向，保留连接 id、interface id 和接口合同。手动 waypoint 描述的是旧端点几何，因此重连成功时由该操作清除 `routing`，重新进入自动路由；非法目标拒绝整项操作，原端点和原路线都不变。Canvas 只负责把拖拽结果规范化成端点意图，不复制方向规则。
 
@@ -255,6 +255,8 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 `SelectionRef` 是 `src/studio/selection.ts` 拥有的单一工作区选择协议，区分 document、level、node、port、connection 与显式 `multiple`。多选只包含 canonical、去重的 `DiagramSelectionRef`，因此只允许可共同直接操作的 node / connection；document、level 与 port 仍保持单选语义。`diagramSelectionItems`、replace、toggle、`selectAllInLevel`、contains、exists、key 与上下文查询都由该纯协议拥有，Tree、接口列表、Canvas、DRC 和 Inspector 不各自维护选择集合。
 
 普通点击和框选替换集合，Shift / Ctrl / Cmd 点击或框选切换成员，Esc 回到当前对象所属 Level。左键空白拖动专用于完整包围框选，中键 / 右键拖动和滚轮负责平移；框选起点由 Canvas 捕获阶段记录、终点取自 gesture 结束事件，完整包围判断不依赖第三方临时矩形的渲染时序。框选矩形与 React Flow 候选只存在于 gesture，结束后立即转换为领域引用。Canvas 只投影选中状态，Sources 同步高亮，Inspector 显示模块、接口和 Level 摘要；多选时隐藏单对象 resize / route 把手，并提示从 Arrange 或 `Ctrl/⌘ K` 进入同一对齐 / 分布命令。任何选择变化仍先经过 Inspector 草稿保护，被拒绝时恢复权威选择投影。
+
+节点拖动预览与克隆事实同样分离。普通拖动把同组目标位置提交为一次 `nodes/move`；Ctrl/⌘ 拖动只从同一组目标位置求一个统一平移，Studio 据当前 `BlockDesignDocument` 构造完整 `DesignFragment` 并提交一次 `fragment/insert`。无论插入成功或被草稿 / Schema 拒绝，Canvas 都恢复原节点预览；成功后选择切换到新模块。gesture、modifier 和 React Flow 临时坐标不进入 JSON，外部连接仍遵守片段边界被排除。
 
 `Ctrl/⌘ A` 与 Edit → Select All 只把当前 Level 的全部 module / connection 交给 `selectAllInLevel` 构造 canonical 选择；`Ctrl/⌘ Shift A` 与 Clear Selection 清空图形对象并回到当前 Level 上下文。两者都复用 `StudioCommands` 的可用性与执行链，不修改 viewport、文档或历史；当事件来自 input、textarea、select 或可编辑元素时，Studio 不拦截浏览器原生全选。
 
