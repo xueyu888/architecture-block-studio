@@ -1321,7 +1321,7 @@ test("searches and runs the unified command palette without losing workflow focu
   const search = palette.getByRole("combobox", { name: "Search commands" });
   await expect(palette).toBeVisible();
   await expect(search).toBeFocused();
-  await expect(palette.getByRole("option")).toHaveCount(47);
+  await expect(palette.getByRole("option")).toHaveCount(48);
   await expect(palette.getByRole("option", { name: /^Command Palette/ })).toHaveCount(0);
 
   await search.fill("添加端口");
@@ -1368,6 +1368,12 @@ test("searches and runs the unified command palette without losing workflow focu
   await expect(palette.getByRole("option")).toHaveCount(1);
   await expect(unavailableOutgoingNeighborhood).toHaveAttribute("aria-disabled", "true");
   await expect(unavailableOutgoingNeighborhood).toContainText("Select one or more modules first.");
+
+  await search.fill("cut");
+  const unavailableCut = palette.getByRole("option", { name: /^Cut/ });
+  await expect(palette.getByRole("option")).toHaveCount(1);
+  await expect(unavailableCut).toHaveAttribute("aria-disabled", "true");
+  await expect(unavailableCut).toContainText("Select one or more modules first.");
 
   await search.fill("no such architecture action");
   await expect(palette.getByText("No matching commands", { exact: true })).toBeVisible();
@@ -2746,6 +2752,29 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
   await waitForEditorIdle(page);
   await assertCompleteAudit();
 
+  await page.locator(
+    '.bd-tree-select[data-level-id="system"][data-node-id="satellite-left-00"]',
+  ).click({ force: true });
+  await page.keyboard.press("ControlOrMeta+X");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(100);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(99);
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 99,
+    auditedPairCount: 4851,
+    expectedPairCount: 4851,
+    duplicateRouteIds: [],
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(101);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(100);
+  await assertCompleteAudit();
+
   if (process.env.CAPTURE_ROUTING_STRESS === "1" && browserName === "chromium") {
     await toolbarButton(page, "适应窗口").click({ force: true });
     await page.waitForTimeout(400);
@@ -3361,6 +3390,22 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   await page.keyboard.press("Escape");
   await page.mouse.up();
   await expect(renderedEdges).toHaveCount(visibleEdgeCountBeforePreview);
+
+  const cutSourceId = "module-000";
+  const cutConnectionCount = document.levels[0].connections.filter((connection) => (
+    connection.source.nodeId === cutSourceId || connection.target.nodeId === cutSourceId
+  )).length;
+  await flowNode(page, `system::${cutSourceId}`).click({ force: true });
+  const cutStarted = performance.now();
+  await page.keyboard.press("ControlOrMeta+X");
+  await expect(page.locator(".bd-statusbar")).toContainText(`${nodeCount - 1} diagram blocks`);
+  await expect(page.locator(".bd-statusbar")).toContainText(
+    `${connectionCount - cutConnectionCount} diagram interfaces`,
+  );
+  await page.keyboard.press("ControlOrMeta+Z");
+  await expect(page.locator(".bd-statusbar")).toContainText(`${nodeCount} diagram blocks`);
+  await expect(page.locator(".bd-statusbar")).toContainText(`${connectionCount} diagram interfaces`);
+  metrics.cutSingleModuleUndoMs = Math.round(performance.now() - cutStarted);
 
   const saveStarted = performance.now();
   const downloadPromise = page.waitForEvent("download");
@@ -4804,6 +4849,7 @@ test("copies, pastes, and duplicates a connected hierarchy as atomic collision-f
   await expect(copy).not.toHaveAttribute("aria-disabled", "true");
   await expect(editMenu.getByRole("menuitem", { name: /^Paste/ })).toBeVisible();
   await expect(editMenu.getByRole("menuitem", { name: /^Duplicate/ })).toBeVisible();
+  await expect(editMenu.getByRole("menuitem", { name: /^Cut/ })).toBeVisible();
   await copy.click();
   await expect(page.locator(".bd-command-notice")).toContainText(
     "Copied 2 modules and 2 internal interfaces inside this workspace. System clipboard access is unavailable.",
@@ -4876,6 +4922,99 @@ test("copies, pastes, and duplicates a connected hierarchy as atomic collision-f
   await expect(flowNode(page, "system::agent-ui-3")).toHaveClass(/selected/);
   await expect(flowNode(page, "system::rust-agent-core-3")).toHaveClass(/selected/);
   expect(await routeNodeCollisions(page)).toEqual([]);
+});
+
+test("cuts a complete hierarchy once and pastes it into another design from the internal clipboard", async ({ page, browserName }) => {
+  test.setTimeout(120_000);
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => { throw new DOMException("Denied by test host", "NotAllowedError"); },
+      },
+    });
+  });
+  await flowNode(page, "system::agent-ui").click({ force: true });
+  await flowNode(page, "system::rust-agent-core").click({ force: true, modifiers: ["Shift"] });
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
+
+  await page.keyboard.press("ControlOrMeta+X");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(5);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
+  await expect(page.locator(".bd-command-notice")).toContainText(
+    "Cut 2 modules and 2 internal interfaces inside this workspace. System clipboard access is unavailable.",
+  );
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 2,
+    auditedPairCount: 1,
+    expectedPairCount: 1,
+    duplicateRouteIds: [],
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(7);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(10);
+  await page.keyboard.press("ControlOrMeta+Shift+Z");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(5);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
+
+  await openDesignDialog(page);
+  page.once("dialog", async (dialog) => dialog.accept());
+  await page.locator('input[type="file"]').setInputFiles(legacyPath);
+  await expect(page.locator(".bd-document-title span")).toHaveText("Legacy v2 Design");
+  await waitForLayout(page);
+  await page.keyboard.press("ControlOrMeta+V");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(4);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(3);
+  await expect(page.locator(".bd-command-notice")).toContainText("Pasted 2 modules into System");
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    microSegments: [],
+    sharedRoutes: [],
+  });
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 3,
+    auditedPairCount: 3,
+    expectedPairCount: 3,
+    duplicateRouteIds: [],
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  if (process.env.CAPTURE_CUT_PROOF === "1" && browserName === "chromium") {
+    await toolbarButton(page, "适应窗口").click({ force: true });
+    await page.waitForTimeout(400);
+    await captureStudioScreenshot(page, "docs/screenshots/cut-paste-subgraph.png");
+  }
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await downloadPromise).path();
+  expect(savedPath).not.toBeNull();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  expect(saved.schemaVersion).toBe("2.1");
+  expect(saved.levels.find((level: { id: string }) => level.id === "system").nodes).toHaveLength(4);
+  expect(saved.levels.find((level: { id: string }) => level.id === "system").connections).toHaveLength(3);
+  expect(saved.levels.find((level: { id: string }) => level.id === "core")).toBeDefined();
+
+  await openDesignDialog(page);
+  await page.locator('input[type="file"]').setInputFiles(savedPath!);
+  await waitForLayout(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(4);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(3);
 });
 
 test("clones a selected connected hierarchy at the Ctrl-drag target as one atomic edit", async ({ page, browserName }) => {

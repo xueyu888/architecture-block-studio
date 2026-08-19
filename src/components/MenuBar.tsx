@@ -41,6 +41,7 @@ const MENU_DEFINITIONS: Array<{
       "selectOutgoingNeighborhood",
       "clearSelection",
       "copySelection",
+      "cutSelection",
       "paste",
       "duplicateSelection",
       "deleteSelection",

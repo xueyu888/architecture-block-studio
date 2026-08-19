@@ -215,6 +215,31 @@ describe("self-contained design fragments", () => {
     expect(redone.document.levels[0].connections).toHaveLength(2);
   });
 
+  test("prepares a five-level fragment before one undoable root deletion", () => {
+    const document = fiveLevelRoutingDesignDocument();
+    const before = serializeDesign(document);
+    const fragment = createDesignFragment(
+      document,
+      "system",
+      ["layer-1"],
+      new Map([["layer-1", { x: 500, y: 0 }]]),
+    );
+    const initial = createDesignHistory(document, true);
+    const cut = applyHistoryOperation(initial, {
+      type: "objects/delete",
+      targets: [{ kind: "node", levelId: "system", nodeId: "layer-1" }],
+    });
+    const restored = undoDesignHistory(cut)!;
+
+    expect(fragment.levels).toHaveLength(5);
+    expect(fragment.connections).toEqual([]);
+    expect(cut.past).toHaveLength(1);
+    expect(cut.document.levels.map((level) => level.id)).toEqual(["system"]);
+    expect(cut.document.levels[0].nodes.some((node) => node.id === "layer-1")).toBe(false);
+    expect(restored.document).toEqual(document);
+    expect(serializeDesign(document)).toBe(before);
+  });
+
   test("preserves every reference across five owned hierarchy layers", () => {
     const document = fiveLevelRoutingDesignDocument();
     const fragment = createDesignFragment(

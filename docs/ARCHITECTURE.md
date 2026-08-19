@@ -75,7 +75,7 @@ pointer raw geometry ─► one axis snap policy ─► disposable Canvas previe
 
 复制链与选择链正交。`editor/designFragment` 是片段格式、引用闭包和 ID 重写的唯一 Owner：根层只收集所选模块之间的内部连接，递归包含这些模块拥有的全部子 Level，并只携带实际引用的接口定义；解析时逐级验证模块、Port、Connection、Hierarchy binding、父子 Level 和接口引用，拒绝缺失或多余事实。Studio 只从唯一可见的同层选择读取当前设计位置。Paste / Duplicate 用 `studio/fragmentPlacement` 对片段外包围框和当前可见模块矩形做 32 设计像素网格的最近无碰撞搜索；Ctrl/⌘ 拖动则把同组模块预览相对 authored geometry 的统一平移直接作为 offset。两种入口都只把明确 offset 随一次 `fragment/insert` 交给 Editor；Editor 在克隆文档上递增生成 Level、Module、Connection 与 Interface ID，重写全部引用后才通过完整 Schema 提交，所以一次插入只产生一个历史记录。
 
-内部 `designClipboard`、系统剪贴板权限与连续粘贴序号都是可丢弃工作区状态。复制先安装内部片段，再尝试写入带 kind / version 的 JSON；写入失败只改变可见反馈，不撤销已成功的内部复制。粘贴优先使用内部片段，没有时才读取并严格解析系统剪贴板。外部连接不会被隐式扩张进片段，因此复制后仍为 required 的边界 Port 可能由 DRC 提示未连接；这是待人审查的真实合同缺口，不能通过偷偷改成 optional 来消除警告。
+内部 `designClipboard`、系统剪贴板权限与连续粘贴序号都是可丢弃工作区状态。Copy 先安装内部片段，再尝试写入带 kind / version 的 JSON；写入失败只改变可见反馈，不撤销已成功的内部复制。Cut 先完成同一片段构造与序列化预检，再只把片段根模块交给一个 `objects/delete`；连接与独占后代 Level 继续由 Editor 级联，删除失败不改变源文档，成功后才异步镜像系统剪贴板。粘贴优先使用内部片段，没有时才读取并严格解析系统剪贴板。外部连接不会被隐式扩张进片段，因此粘贴后仍为 required 的边界 Port 可能由 DRC 提示未连接；这是待人审查的真实合同缺口，不能通过偷偷改成 optional 来消除警告。
 
 ```text
 SelectionRef + LayoutResult
@@ -200,7 +200,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 
 多选删除使用同样的原子边界，但删除闭包由 Editor 而不是 UI 拥有。`SelectionRef.multiple` 只允许 canonical module / connection 引用；Studio 将其映射成一个 `objects/delete`，不在 Canvas 里猜级联。Editor 先在原始克隆上验证目标非空、无重复且全部存在，再删除显式 connection，最后依据 `DesignLevel.parentLevelId` 由深到浅删除 node。单节点现有合同继续负责相连接口、跨层 Port binding、全局未使用接口定义和仅由该节点拥有的后代 Level；共享 child Level 仍由外部 owner 引用而保留。父级级联已覆盖的显式后代只视为同一删除闭包，不成为第二次失败。任一预检失败都不改变源文档或历史；成功只生成一个 history snapshot，一次 Undo 恢复整个混选。确认框、删除后回到 entry Level 的选择和提示都是工作区状态，不进入 JSON。
 
-子图插入使用单用途 `fragment/insert`。操作携带已经通过片段合同的 `DesignFragment`、目标 Level 和由视觉放置 Owner 计算的明确 offset；Editor 不读取 Canvas，也不自行猜测屏幕空位。ID 递增与引用重写在同一克隆中完成，任何缺失端点、Port、接口定义、层级父子关系或非法 offset 都拒绝整项操作。Paste、Duplicate 与 Ctrl/⌘ 拖动都复用“从当前选择构造片段，再执行一次 insert”的同一链路，不维护第二套克隆规则。
+子图插入使用单用途 `fragment/insert`。操作携带已经通过片段合同的 `DesignFragment`、目标 Level 和由视觉放置 Owner 计算的明确 offset；Editor 不读取 Canvas，也不自行猜测屏幕空位。ID 递增与引用重写在同一克隆中完成，任何缺失端点、Port、接口定义、层级父子关系或非法 offset 都拒绝整项操作。Paste、Duplicate 与 Ctrl/⌘ 拖动都复用“从当前选择构造片段，再执行一次 insert”的同一链路，不维护第二套克隆规则。Cut 与插入正交：它复用同一片段构造，但源图变化只走既有 `objects/delete`，不会把“移动”伪造成一个同时拥有两个文档的跨工作区 Editor 操作。
 
 线路端点变化使用独立的 `connection/reconnect`：Editor 在同一 Level 内重新校验 source / target 端口存在性与 input / output 方向，保留连接 id、interface id 和接口合同。手动 waypoint 描述的是旧端点几何，因此重连成功时由该操作清除 `routing`，重新进入自动路由；非法目标拒绝整项操作，原端点和原路线都不变。Canvas 只负责把拖拽结果规范化成端点意图，不复制方向规则。
 

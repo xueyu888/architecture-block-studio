@@ -39,6 +39,7 @@ import {
   Scan,
   ScanSearch,
   Search,
+  Scissors,
   Share2,
   ShieldCheck,
   Trash2,
@@ -204,6 +205,21 @@ type ArrangementRequest =
 type ConnectionEndpointDialogRequest =
   | { kind: "create"; levelId: string }
   | { kind: "reconnect"; levelId: string; connectionId: string };
+
+function designFragmentSummary(fragment: DesignFragment): string {
+  return `${fragment.nodes.length} ${fragment.nodes.length === 1 ? "module" : "modules"}` +
+    `${fragment.connections.length > 0 ? ` and ${fragment.connections.length} internal ${fragment.connections.length === 1 ? "interface" : "interfaces"}` : ""}`;
+}
+
+async function writeDesignFragmentToSystemClipboard(serialized: string): Promise<boolean> {
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+    await navigator.clipboard.writeText(serialized);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export interface BlockDesignStudioProps {
   initialDocument?: unknown;
@@ -735,7 +751,7 @@ export function BlockDesignStudio({
     const selectedItems = diagramSelectionItems(selection);
     const selectedNodes = selectedItems.filter((item) => item.kind === "node");
     if (selectedNodes.length === 0) {
-      return { available: false, reason: "Select one or more modules to copy." };
+      return { available: false, reason: "Select one or more modules first." };
     }
     if (new Set(selectedItems.map((item) => item.levelId)).size !== 1) {
       return { available: false, reason: "Select modules and interfaces from the same design level." };
@@ -749,7 +765,7 @@ export function BlockDesignStudio({
       if (matches.length !== 1) {
         return {
           available: false,
-          reason: "Each copied module must have one visible diagram instance.",
+          reason: "Each selected module must have one visible diagram instance.",
         };
       }
       items.push({
@@ -845,6 +861,22 @@ export function BlockDesignStudio({
     }
   }, [fragmentSelection]);
 
+  const establishDesignClipboard = useCallback((fragment: DesignFragment): {
+    serialized: string;
+    summary: string;
+  } | undefined => {
+    try {
+      const serialized = serializeDesignFragment(fragment);
+      setDesignClipboard(fragment);
+      pasteInsertionIndex.current = 0;
+      return { serialized, summary: designFragmentSummary(fragment) };
+    } catch (error) {
+      setCommandNotice(undefined);
+      setCommandError(errorMessage(error));
+      return undefined;
+    }
+  }, []);
+
   const insertFragment = useCallback((
     fragment: DesignFragment,
     levelId: string,
@@ -889,19 +921,40 @@ export function BlockDesignStudio({
     if (!requireAppliedInspectorDraft("copying the selected modules")) return;
     const fragment = selectedFragment();
     if (!fragment) return;
-    setDesignClipboard(fragment);
-    pasteInsertionIndex.current = 0;
+    const clipboard = establishDesignClipboard(fragment);
+    if (!clipboard) return;
     setCommandError(undefined);
-    const summary = `${fragment.nodes.length} ${fragment.nodes.length === 1 ? "module" : "modules"}` +
-      `${fragment.connections.length > 0 ? ` and ${fragment.connections.length} internal ${fragment.connections.length === 1 ? "interface" : "interfaces"}` : ""}`;
-    setCommandNotice(`Copied ${summary}.`);
-    try {
-      if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
-      await navigator.clipboard.writeText(serializeDesignFragment(fragment));
-    } catch {
-      setCommandNotice(`Copied ${summary} inside this workspace. System clipboard access is unavailable.`);
+    setCommandNotice(`Copied ${clipboard.summary}.`);
+    if (!await writeDesignFragmentToSystemClipboard(clipboard.serialized)) {
+      setCommandNotice(`Copied ${clipboard.summary} inside this workspace. System clipboard access is unavailable.`);
     }
-  }, [requireAppliedInspectorDraft, selectedFragment]);
+  }, [establishDesignClipboard, requireAppliedInspectorDraft, selectedFragment]);
+
+  const cutSelectedModules = useCallback(() => {
+    if (!requireAppliedInspectorDraft("cutting the selected modules")) return;
+    if (!fragmentSelection.available) return;
+    const fragment = selectedFragment();
+    if (!fragment) return;
+    const clipboard = establishDesignClipboard(fragment);
+    if (!clipboard) return;
+    const next = runOperation({
+      type: "objects/delete",
+      targets: fragmentSelection.items.map((item) => ({
+        kind: "node" as const,
+        levelId: item.levelId,
+        nodeId: item.nodeId,
+      })),
+    });
+    if (!next) return;
+    setSelection({ kind: "level", levelId: fragmentSelection.levelId });
+    setCommandError(undefined);
+    setCommandNotice(`Cut ${clipboard.summary}.`);
+    void writeDesignFragmentToSystemClipboard(clipboard.serialized).then((written) => {
+      if (!written) {
+        setCommandNotice(`Cut ${clipboard.summary} inside this workspace. System clipboard access is unavailable.`);
+      }
+    });
+  }, [establishDesignClipboard, fragmentSelection, requireAppliedInspectorDraft, runOperation, selectedFragment]);
 
   const pasteDesignFragment = useCallback(async () => {
     if (!requireAppliedInspectorDraft("pasting modules")) return;
@@ -1132,7 +1185,7 @@ export function BlockDesignStudio({
       : undefined;
   const canCopySelection = fragmentSelection.available && !fragmentCommandBlockReason;
   const copyUnavailableReason = fragmentCommandBlockReason ?? (
-    fragmentSelection.available ? "Select one or more modules to copy." : fragmentSelection.reason
+    fragmentSelection.available ? "Select one or more modules first." : fragmentSelection.reason
   );
   const canPaste = Boolean(document) && !layoutBusy && !fragmentCommandBlockReason;
   const pasteUnavailableReason = fragmentCommandBlockReason ?? (
@@ -1280,6 +1333,11 @@ export function BlockDesignStudio({
       id: "copySelection", label: "Copy", shortcut: "Ctrl/⌘ C", icon: Copy,
       ...commandAvailability(canCopySelection, copyUnavailableReason),
       execute: () => { void copySelectedModules(); },
+    },
+    cutSelection: {
+      id: "cutSelection", label: "Cut", shortcut: "Ctrl/⌘ X", icon: Scissors,
+      ...commandAvailability(canCopySelection, copyUnavailableReason),
+      execute: cutSelectedModules,
     },
     paste: {
       id: "paste", label: "Paste", shortcut: "Ctrl/⌘ V", icon: ClipboardPaste,
@@ -1449,6 +1507,7 @@ export function BlockDesignStudio({
     canPaste,
     canReconnectConnection,
     copySelectedModules,
+    cutSelectedModules,
     copyUnavailableReason,
     deleteUnavailableReason,
     deleteSelection,
@@ -1550,6 +1609,11 @@ export function BlockDesignStudio({
         if (commands.copySelection.enabled) {
           event.preventDefault();
           commands.copySelection.execute();
+        }
+      } else if (modifier && !event.shiftKey && key === "x") {
+        if (commands.cutSelection.enabled) {
+          event.preventDefault();
+          commands.cutSelection.execute();
         }
       } else if (modifier && !event.shiftKey && key === "v") {
         if (commands.paste.enabled) {

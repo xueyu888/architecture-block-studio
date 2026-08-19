@@ -19,6 +19,7 @@ export type StudioCommandId =
   | "selectOutgoingNeighborhood"
   | "clearSelection"
   | "copySelection"
+  | "cutSelection"
   | "paste"
   | "duplicateSelection"
   | "deleteSelection"
