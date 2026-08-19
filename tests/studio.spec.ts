@@ -1025,6 +1025,65 @@ test("reaches high-frequency design commands by typing menu initials", async ({ 
   await expect(childDialog.getByLabel("Child design title")).toBeFocused();
 });
 
+test("explains why context-dependent design commands are unavailable", async ({ page }) => {
+  await page.getByRole("button", { name: "新建设计", exact: true }).click();
+  await page.getByRole("dialog", { name: "New Design" }).getByRole("button", { name: "Create", exact: true }).click();
+  const emptyState = page.getByRole("region", { name: "Start with a module" });
+  await expect(emptyState).toBeVisible();
+
+  const designTrigger = page.getByRole("button", { name: "Design", exact: true });
+  const designMenu = page.getByRole("menu", { name: "Design" });
+  const addModule = designMenu.getByRole("menuitem", { name: /^Add Module/ });
+  const addPort = designMenu.getByRole("menuitem", { name: /^Add Port/ });
+  const addInterface = designMenu.getByRole("menuitem", { name: /^Add Interface/ });
+  const addChild = designMenu.getByRole("menuitem", { name: /^Create Child Design/ });
+
+  await designTrigger.click();
+  await expect(addModule).toBeEnabled();
+  await expect(addPort).toBeDisabled();
+  await expect(addPort.locator("small")).toHaveText("Select a module first.");
+  await expect(addInterface).toBeDisabled();
+  await expect(addInterface.locator("small")).toHaveText("Add compatible output/input ports to this level first.");
+  await expect(addChild).toBeDisabled();
+  await expect(addChild.locator("small")).toHaveText("Select a module first.");
+  expect((await accessibilityResults(page, '[role="menu"]')).violations).toEqual([]);
+  expect(await textContrastIssues(page, '[role="menu"]')).toEqual([]);
+  if (process.env.CAPTURE_COMMAND_GUIDANCE === "1") {
+    await captureStudioScreenshot(page, "docs/screenshots/disabled-command-guidance.png");
+  }
+  await page.keyboard.press("Escape");
+
+  const addPortTool = page.getByRole("button", { name: /^添加端口/ });
+  const addInterfaceTool = page.getByRole("button", { name: /^添加接口/ });
+  const addChildTool = page.getByRole("button", { name: /^创建子设计/ });
+  await expect(addPortTool).toHaveAttribute("title", "添加端口 — Select a module first.");
+  await expect(addInterfaceTool).toHaveAttribute("title", "添加接口 — Add compatible output/input ports to this level first.");
+
+  await emptyState.getByRole("button", { name: "Add first module" }).click();
+  await page.getByRole("dialog", { name: /Add Module/ }).getByRole("button", { name: "Add Module", exact: true }).click();
+  await waitForEditorIdle(page);
+  await designTrigger.click();
+  await expect(addPort).toBeEnabled();
+  await expect(addPort.locator("small")).toHaveCount(0);
+  await expect(addInterface).toBeDisabled();
+  await expect(addInterface.locator("small")).toHaveText("Add compatible output/input ports to this level first.");
+  await expect(addChild).toBeEnabled();
+
+  await addChild.click();
+  const childDialog = page.getByRole("dialog", { name: /Create Child Design/ });
+  await childDialog.getByRole("button", { name: "Create Child Design", exact: true }).click();
+  await waitForEditorIdle(page);
+  await page.getByRole("region", { name: "Sources" }).getByRole("button", { name: "New Module", exact: true }).click();
+  await designTrigger.click();
+  await expect(addChild).toBeDisabled();
+  await expect(addChild.locator("small")).toHaveText("Use this module's hierarchy control to open its child design.");
+  await page.keyboard.press("Escape");
+  await expect(addChildTool).toHaveAttribute(
+    "title",
+    "创建子设计 — Use this module's hierarchy control to open its child design.",
+  );
+});
+
 test("guides a new user from an empty design to the first module", async ({ page }) => {
   await page.locator('.bd-toolbar button[title="新建设计"]').click({ force: true });
   const newDialog = page.getByRole("dialog", { name: "New Design" });

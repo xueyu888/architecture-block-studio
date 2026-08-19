@@ -3,12 +3,13 @@ import type { StudioCommand, StudioCommandId, StudioCommands } from "../studio/c
 function CommandButton({ command }: { command: StudioCommand }) {
   const Icon = command.icon;
   const title = command.toolbarTitle ?? command.label;
+  const accessibleTitle = command.enabled ? title : `${title} — ${command.unavailableReason}`;
   return (
     <button
       type="button"
       className="bd-tool-button"
-      title={title}
-      aria-label={title}
+      title={accessibleTitle}
+      aria-label={accessibleTitle}
       disabled={!command.enabled}
       onClick={command.execute}
     >

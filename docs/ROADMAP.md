@@ -27,7 +27,7 @@ P0 未收敛前不扩展协作或服务端事实源。源码分析作为适配�
 | P1 | 已完成 | Inspector 草稿丢失 | Iteration 3 已显示 UNAPPLIED 状态，切换对象需确认，保存与结构命令要求先处理草稿 |
 | P1 | 已完成 | 空白设计引导 | Iteration 2 已提供画布内 Module → Port → Interface 起步路径与首模块入口 |
 | P1 | 已完成 | Dialog 键盘模型 | Iteration 4 已让 Editor / Open dialogs 共享 Esc、焦点循环、初始焦点与恢复协议 |
-| P1 | 已完成 | 命令单一来源 | Iteration 5 已用 `StudioCommands` 统一 execute、enabled、label、shortcut 与 icon |
+| P1 | 已完成 | 命令单一来源 | Iteration 5 已用 `StudioCommands` 统一 execute、enabled、label、shortcut 与 icon；Iteration 56 以判别联合补齐禁用原因，Menu / Toolbar 不再复制 eligibility 或解释 |
 | P1 | 已完成 | DRC 筛选 | Iteration 6 已按严重度和 code / message / target 筛选，点击结果仍交叉定位 |
 | P1 | 已完成 | Hierarchy 浏览与搜索 | Iteration 19 按模块标题、id、Owner 和 Level 派生搜索结果；Iteration 29 让搜索结果按 40 行批次渐进挂载；Iteration 34 把默认层级树也收敛为完整有序行投影加渐进 DOM 窗口，展开与选择不丢失 |
 | P1 | 已完成 | 直接依赖审查 | Iteration 21 已在模块 Properties 中从文档派生直接入站 / 出站 / 自环接口、对端与类型，并复用选择链进入完整接口合同 |
@@ -37,8 +37,8 @@ P0 未收敛前不扩展协作或服务端事实源。源码分析作为适配�
 | P2 | 已完成 | 多尺度总览可读性 | Iteration 41 从 viewport 唯一派生 detail level；低缩放只隐藏不可读的次级文字，保留模块标题、端口名、把手和线路，放大自动恢复完整细节 |
 | P2 | 进行中 | 样式事实源 | Iteration 18 已删除旧三栏工作区与当前 Dock 工作台之间确定无效的覆盖声明和旧 DOM 样式；Iteration 42 收敛高频 surface、border、row text、control size 与 motion token 并删除四个死 token；其余低频状态色仍按独立语义保留 |
 | P2 | 进行中 | 大设计性能 | Iteration 16 建立 200 / 400 全量几何基线；Iteration 28 建立 1000 / 2000 heap 与连续编辑基线并消除无关编辑整图重排；Iteration 29、34 完成 Sources 搜索、接口与默认层级渐进挂载；Iteration 31 收敛选择投影；Iteration 32 仅对压力档启用 Canvas 视口裁剪；Iteration 35 建立带版本原始样本、重复执行入口和只观察趋势报告；Iteration 36 让压力跨图定位只做一次 viewport 变换，并修复 MiniMap 冻结初始回调；Iteration 50 最新三轮最终测量内存中位数约 65.3 MB，Sources / MiniMap 定位中位数 217 / 63 ms；固定 CI 数值预算尚未建立 |
-| P2 | 进行中 | 浏览器矩阵 | Chromium 29 / 29 完整自动化；Iteration 38 将 Firefox 从 5 条 allowlist 扩展为除 Chromium CDP heap 采样外的全部产品合同，当前 28 / 28 通过；WebKit、Windows 和 macOS 尚未验证 |
-| P2 | 进行中 | 可访问性 | 已有 dialog focus trap、WCAG A / AA 结构与文本对比度门禁、桌面菜单，以及 Chromium / Firefox 连续无鼠标核心旅程；Iteration 48 为被接受的模块键盘移动补齐位置 live 公告，Iteration 55 补齐标准字符定位、禁用项跳过与无匹配焦点保持；读屏人工验证与 WebKit 自动化仍缺 |
+| P2 | 进行中 | 浏览器矩阵 | Chromium 30 / 30 完整自动化；Iteration 38 将 Firefox 从 5 条 allowlist 扩展为除 Chromium CDP heap 采样外的全部产品合同，当前 29 / 29 通过；WebKit、Windows 和 macOS 尚未验证 |
+| P2 | 进行中 | 可访问性 | 已有 dialog focus trap、WCAG A / AA 结构与文本对比度门禁、桌面菜单，以及 Chromium / Firefox 连续无鼠标核心旅程；Iteration 48 为被接受的模块键盘移动补齐位置 live 公告，Iteration 55 补齐字符定位，Iteration 56 为禁用命令补齐可见原因与 accessible name；读屏人工验证与 WebKit 自动化仍缺 |
 | P3 | 待完善 | 高级审查工作流 | 设计 Diff、传递影响范围、源码定位与评审状态尚未建立；不能用临时高亮伪装这些事实 |
 | P3 | 方向明确 | 源码可视化适配 | 当前不扫描代码；由外部工具输出 `BlockDesignDocument` |
 | P3 | 待评估 | 仓库与协作 | 单人文件模型稳定后再决定 Git diff、评论、协作和服务端边界 |
@@ -147,9 +147,10 @@ P0 未收敛前不扩展协作或服务端事实源。源码分析作为适配�
 | Iteration 53 | 当前仓库可构建不等于远端全新检出可用；首次冷启动还证实 Playwright 固定 4317 且默认复用服务器时，另一个检出的 Vite 可以成为测试对象，产生来源错误的绿灯 | 从远端 `main` 全新克隆并按 lockfile 安装；Playwright 配置以 `PLAYWRIGHT_PORT` 暴露隔离端口，以 `--strictPort` 保证 Vite 不漂移，默认由测试启动并停止当前检出的服务器；仅本地显式 `PLAYWRIGHT_REUSE_SERVER=1` 时复用，CI 永不复用 | 远端克隆 HEAD 精确为 `2a52d06`；frozen install 140 packages、73 / 73 unit、1879-module build、独立 4327 上 Chromium 27 / 27 + Firefox 26 / 26；headed 2 / 2 验证默认层级图、URL、本地示例与 legacy 迁移，截图复核 0 error / warning、1 正交 continuation、无中部标签或遮挡；新配置在测试自有空闲端口再通过 53 / 53（3.9 分钟），占用端口默认明确拒绝、显式复用 1 / 1，非法端口在加载配置时拒绝；最终 build 7.08 秒、unit 0.463 秒 | 安装与文件加载链没有依赖未跟踪源文件；`node_modules`、`dist`、test / performance results 仍只生成忽略产物。本机空闲 IPv4 连接拒绝表现为超时，隔离全量回归因此增加约 2 分钟启动等待；这是环境观测，不作为产品性能预算，CI 仍由配置保证不复用；下一轮继续从真实专业用户旅程选择最高 ROI 问题，不扩展未决 P0 语义 |
 | Iteration 54 | 专业用户连续创建设计、模块、端口和子层级时，每次都要重复填写名称与 ID；Editor 虽已有统一 `suggestId` / `uniqueId`，Dialog 只显示固定 `module` / `port` 默认值。复制意图也缺失，但复制模块是否包含端口、合同、子树和连接存在多种合理语义，本轮不越权决定 | 抽出 Dialog 内部 `useLinkedIdentifier` 草稿规则；Studio 用 Editor 的同一合法化函数和当前作用域已有 id 生成唯一建议。名称变化只在 id 未手改时联动，用户一旦编辑 id 就保持其决定；New Design、Module、Port、Child Design 复用同一行为，提交仍走既有工厂与 `DesignOperation` | 新旅程验证 title -> id、自定义 id 不回退、同名模块 `payment-worker-2`、同名端口 `session-events-2`、子 Level `payment-worker-runtime` 和下载 JSON；Chromium / Firefox 2 / 2，完整 28 + 27 = 55 / 55（1.7 分钟）；75 / 75 unit；build 1879 / 6.75 秒；headed `linked-id-suggestion.png` 复核焦点、Dialog、唯一 ID 与工作区上下文 | 删除了四套重复的 name / id 初始化与联动空缺，没有增加第二份 id 规则或文档字段。复制 / 多选语义仍需明确产品范围；下一轮先继续观察高频命令的键盘可达性和实际操作次数 |
 | Iteration 55 | 高频创建已统一到 `StudioCommands`，但菜单只支持顺序方向键；直接增加全局字母或 Alt 组合会和输入、浏览器及平台快捷键争用。默认未选模块时 Add Port / Create Child Design 禁用，键盘定位还必须稳定跳过它们 | 由 `MenuBar` 独占标准 printable-character 导航：顶层按 F / E / D / V 定位，展开菜单从当前项之后环绕匹配可见首字母；重复 A 在可用 Add 命令间循环，C 在可用时直达子设计。禁用项不参与，无匹配保持焦点；命令行为和 enabled 仍只来自 `StudioCommands` | 新双浏览器旅程覆盖顶层 D、禁用 Add Port 跳过、重复 A 环绕、禁用 C 不移动、新模块后 Add Module / Port / Interface 与 Child 四条路径及 Dialog 初始焦点；完整 Chromium 29 / 29 + Firefox 28 / 28 = 57 / 57（1.7 分钟）；75 / 75 unit；build 1879 / 6.90 秒；Xvfb headed Chromium `menu-typeahead.png` 人工复核焦点、菜单、Inspector、MiniMap、正交线路和 0 线中标签 | 没有增加平台快捷键、文档字段或命令副本；键入导航失败只保持当前焦点。WebKit、桌面平台和读屏人工验证仍缺；禁用命令为何不可用仍只通过状态表达，下一轮检查解释与恢复路径 |
+| Iteration 56 | 真实空白、单模块无端口和已有子设计上下文中，Add Port、Add Interface 与 Create Child Design 都只显示灰色；Menu 没有原因，Toolbar title / accessible name 也只有动作名 | `StudioCommandAvailability` 改为判别联合：enabled 或 disabled + 必填原因。Studio 从现有 document / history / selection / hierarchy / connectable pair 一次派生；Menu 在禁用项下显示恢复方向，Toolbar 同步 title 与 accessible name；移除 disabled menu 的误导 hover 和整项低透明度 | 状态转换旅程验证选择模块后 Add Port 可用、无兼容端口时 Interface 原因保留、创建子设计并重选父模块后原因切换为 hierarchy 入口；菜单 Axe + computed text contrast 为 0 问题；Chromium 30 / 30 + Firefox 29 / 29 = 59 / 59（1.8 分钟）；75 / 75 unit；build 1879 / 7.03 秒；headed `disabled-command-guidance.png` 人工复核菜单层级、空状态、Canvas、Inspector 与 MiniMap | 类型层删除了“禁用但无解释”的合法状态，投影层未新增 eligibility 分支，局部构造器未扩成公共运行时 API，JSON / selection / 历史不变；读屏用户能否通过当前跳过禁用项的菜单导航稳定发现原因仍缺人工证据，下一轮对照 ARIA 菜单惯例验证 |
 
 ## 下一轮
 
-**Iteration 56 — 禁用创建命令的解释与恢复路径。**
+**Iteration 57 — 禁用菜单项的键盘与读屏发现性。**
 
-从空白设计、未选模块、不可连接端口和已有子设计四种真实上下文观察 Add Port、Add Interface、Create Child Design 的 disabled 状态是否能让用户理解“为什么不能用、下一步做什么”。先核查 toolbar title、menu accessible name、空状态和当前选择反馈；只有命令 Owner 能从现有 eligibility 事实派生唯一解释时才修改，不在 UI 复制启用规则。
+当前箭头与字符导航会跳过 native disabled menuitem，操作次数少，但 WAI-ARIA 菜单惯例让禁用项可聚焦以便读屏发现。用 Chromium / Firefox accessibility tree、连续键盘路径和当前原因文案核查两者冲突；只有能同时保证不可激活、焦点可预测、常用命令效率和跨浏览器语义时才调整为 `aria-disabled`，不把 Toolbar 的普通按钮规则机械套进复合菜单。

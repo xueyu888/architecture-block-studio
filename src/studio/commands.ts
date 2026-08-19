@@ -23,14 +23,19 @@ export type StudioCommandId =
   | "maximizeDiagram"
   | "resetWorkspace";
 
-export interface StudioCommand {
+interface StudioCommandDefinition {
   id: StudioCommandId;
   label: string;
   toolbarTitle?: string;
   shortcut?: string;
   icon: LucideIcon;
-  enabled: boolean;
   execute: () => void;
 }
+
+export type StudioCommandAvailability =
+  | { enabled: true; unavailableReason?: never }
+  | { enabled: false; unavailableReason: string };
+
+export type StudioCommand = StudioCommandDefinition & StudioCommandAvailability;
 
 export type StudioCommands = Record<StudioCommandId, StudioCommand>;

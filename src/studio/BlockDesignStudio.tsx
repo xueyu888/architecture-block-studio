@@ -82,7 +82,7 @@ import {
   type ConnectionRouting,
   type DesignIssue,
 } from "../model";
-import type { StudioCommands } from "./commands";
+import type { StudioCommandAvailability, StudioCommands } from "./commands";
 import {
   hierarchyLevelPath,
   levelForSelection,
@@ -98,6 +98,13 @@ function errorMessage(error: unknown): string {
   if (loadError?.causeDetail) return `${loadError.message}\n${loadError.causeDetail}`;
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+function commandAvailability(
+  enabled: boolean,
+  unavailableReason: string,
+): StudioCommandAvailability {
+  return enabled ? { enabled: true } : { enabled: false, unavailableReason };
 }
 
 function fileNameFromSource(document: BlockDesignDocument, source: string): string {
@@ -577,47 +584,53 @@ export function BlockDesignStudio({
     },
     save: {
       id: "save", label: "Save", toolbarTitle: "保存设计", shortcut: "Ctrl/⌘ S", icon: Save,
-      enabled: Boolean(document), execute: saveCurrent,
+      ...commandAvailability(Boolean(document), "Open or create a design first."), execute: saveCurrent,
     },
     saveAs: {
       id: "saveAs", label: "Save As...", shortcut: "Ctrl/⌘ ⇧ S", icon: Save,
-      enabled: Boolean(document), execute: openSaveAs,
+      ...commandAvailability(Boolean(document), "Open or create a design first."), execute: openSaveAs,
     },
     exportJson: {
       id: "exportJson", label: "Export JSON", icon: Download,
-      enabled: Boolean(document), execute: exportCurrent,
+      ...commandAvailability(Boolean(document), "Open or create a design first."), execute: exportCurrent,
     },
     undo: {
       id: "undo", label: "Undo", toolbarTitle: "撤销", shortcut: "Ctrl/⌘ Z", icon: Undo2,
-      enabled: editor.canUndo, execute: undoDesign,
+      ...commandAvailability(editor.canUndo, "No design changes to undo."), execute: undoDesign,
     },
     redo: {
       id: "redo", label: "Redo", toolbarTitle: "重做", shortcut: "Ctrl/⌘ ⇧ Z", icon: Redo2,
-      enabled: editor.canRedo, execute: redoDesign,
+      ...commandAvailability(editor.canRedo, "No design changes to redo."), execute: redoDesign,
     },
     deleteSelection: {
       id: "deleteSelection", label: "Delete Selection", toolbarTitle: "删除所选内容", shortcut: "Del", icon: Trash2,
-      enabled: canDelete, execute: deleteSelection,
+      ...commandAvailability(canDelete, "Select a module, port, or interface first."), execute: deleteSelection,
     },
     addBlock: {
       id: "addBlock", label: "Add Module...", toolbarTitle: "添加模块", icon: Box,
-      enabled: Boolean(document), execute: openAddBlock,
+      ...commandAvailability(Boolean(document), "Open or create a design first."), execute: openAddBlock,
     },
     addPort: {
       id: "addPort", label: "Add Port...", toolbarTitle: "添加端口", icon: Cable,
-      enabled: Boolean(selectedNode), execute: openAddPort,
+      ...commandAvailability(Boolean(selectedNode), "Select a module first."), execute: openAddPort,
     },
     addConnection: {
       id: "addConnection", label: "Add Interface...", toolbarTitle: "添加接口", icon: Share2,
-      enabled: canAddConnection, execute: openAddConnection,
+      ...commandAvailability(canAddConnection, "Add compatible output/input ports to this level first."), execute: openAddConnection,
     },
     addChildDesign: {
       id: "addChildDesign", label: "Create Child Design...", toolbarTitle: "创建子设计", icon: GitBranchPlus,
-      enabled: canAddChildDesign, execute: openAddChildDesign,
+      ...commandAvailability(
+        canAddChildDesign,
+        selectedNode?.node.hierarchy
+          ? "Use this module's hierarchy control to open its child design."
+          : "Select a module first.",
+      ),
+      execute: openAddChildDesign,
     },
     regenerateLayout: {
       id: "regenerateLayout", label: "Regenerate Layout", toolbarTitle: "重新生成布局", icon: LayoutDashboard,
-      enabled: Boolean(document), execute: () => {
+      ...commandAvailability(Boolean(document), "Open or create a design first."), execute: () => {
         fitAfterLayout.current = true;
         setLayoutBusy(true);
         setPlacementMode("automatic");
@@ -626,15 +639,15 @@ export function BlockDesignStudio({
     },
     optimizeRouting: {
       id: "optimizeRouting", label: "Optimize Routing", toolbarTitle: "仅优化布线", icon: Route,
-      enabled: Boolean(document), execute: () => setRouteRevision((value) => value + 1),
+      ...commandAvailability(Boolean(document), "Open or create a design first."), execute: () => setRouteRevision((value) => value + 1),
     },
     validateDesign: {
       id: "validateDesign", label: "Validate Design", toolbarTitle: "验证设计", icon: ShieldCheck,
-      enabled: Boolean(document), execute: validateDesign,
+      ...commandAvailability(Boolean(document), "Open or create a design first."), execute: validateDesign,
     },
     fitDesign: {
       id: "fitDesign", label: "Fit Design", toolbarTitle: "适应窗口", icon: Scan,
-      enabled: Boolean(document), execute: () => setFitRequest((value) => value + 1),
+      ...commandAvailability(Boolean(document), "Open or create a design first."), execute: () => setFitRequest((value) => value + 1),
     },
     toggleSources: {
       id: "toggleSources", label: "Toggle Sources", toolbarTitle: "Sources", icon: PanelLeft,

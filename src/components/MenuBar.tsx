@@ -137,6 +137,7 @@ function Menu({
               type="button"
               role="menuitem"
               disabled={!command.enabled}
+              title={command.enabled ? undefined : command.unavailableReason}
               onClick={() => {
                 document.getElementById(`bd-menu-trigger-${id}`)?.focus();
                 onClose(id, false);
@@ -167,7 +168,10 @@ function Menu({
               }}
             >
               <command.icon size={14} aria-hidden="true" />
-              <span>{command.label}</span>
+              <span className="bd-menu-item-copy">
+                <span>{command.label}</span>
+                {!command.enabled && <small>{command.unavailableReason}</small>}
+              </span>
               {command.shortcut && <kbd>{command.shortcut}</kbd>}
             </button>
           ))}

@@ -168,7 +168,7 @@ button { color: inherit; }
   z-index: 100;
   top: 26px;
   left: 0;
-  min-width: 178px;
+  min-width: 270px;
   padding: 3px;
   border: 1px solid #8e9992;
   border-radius: 2px;
@@ -190,8 +190,23 @@ button { color: inherit; }
   cursor: pointer;
 }
 
-.bd-menu-popover button:hover { background: #dce7e0; }
-.bd-menu-popover button:disabled { opacity: 0.42; cursor: default; }
+.bd-menu-popover button:hover:not(:disabled) { background: #dce7e0; }
+.bd-menu-popover button:disabled { color: #59635d; cursor: default; }
+.bd-menu-popover button:disabled svg { opacity: 0.55; }
+
+.bd-menu-item-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  padding: 2px 0;
+}
+
+.bd-menu-item-copy small {
+  color: #59635d;
+  font-size: 9px;
+  line-height: 1.25;
+}
+
 .bd-menu-popover kbd { color: #7a847e; font: 8px/1 "SFMono-Regular", Consolas, monospace; }
 
 .bd-toolbar {
