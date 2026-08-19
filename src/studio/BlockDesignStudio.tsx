@@ -545,6 +545,16 @@ export function BlockDesignStudio({
     return Boolean(runOperation({ type: "node/move", levelId, nodeId, position }));
   }, [requireAppliedInspectorDraft, runOperation]);
 
+  const resizeNode = useCallback((
+    levelId: string,
+    nodeId: string,
+    position: { x: number; y: number },
+    size: { width: number; height: number },
+  ) => {
+    if (!requireAppliedInspectorDraft("resizing a module")) return false;
+    return Boolean(runOperation({ type: "node/resize", levelId, nodeId, position, size }));
+  }, [requireAppliedInspectorDraft, runOperation]);
+
   const createConnection = useCallback((connection: {
     levelId: string;
     source: { nodeId: string; portId: string; label: string };
@@ -820,6 +830,7 @@ export function BlockDesignStudio({
             onToggleHierarchy={toggleHierarchy}
             onAddModule={openAddBlock}
             onMoveNode={moveNode}
+            onResizeNode={resizeNode}
             onCreateConnection={createConnection}
             onRouteConnection={routeConnection}
             onReconnectConnection={reconnectConnection}

@@ -5,6 +5,12 @@ import type { BlockPort, ConnectionRouting } from "../model";
 export interface CanvasBlockNodeData extends LayoutBlockNodeData {
   toggleHierarchy: (levelId: string) => void;
   inspectPort: (nodeId: string, port: BlockPort) => void;
+  resizeNode?: (geometry: NodeResizeGeometry) => boolean;
+}
+
+export interface NodeResizeGeometry {
+  position: { x: number; y: number };
+  size: { width: number; height: number };
 }
 
 export interface CanvasInterfaceEdgeData extends LayoutInterfaceEdgeData {

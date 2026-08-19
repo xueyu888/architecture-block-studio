@@ -23,7 +23,7 @@ import {
 } from "@xyflow/react";
 import { normalizeConnectionEndpoints } from "../model";
 import type { BlockDesignDocument, BlockPort, ConnectionRouting } from "../model";
-import type { LayoutResult } from "../layout";
+import { BLOCK_NODE_GEOMETRY, minimumNodeDimensions, type LayoutResult } from "../layout";
 import { planRouteLaneOffsets } from "../routing";
 import type { SelectionRef } from "../studio/selection";
 import { BlockNodeComponent } from "./BlockNode";
@@ -170,6 +170,12 @@ interface CanvasInnerProps {
   onSelect: (selection: SelectionRef) => boolean;
   onToggleHierarchy: (levelId: string) => void;
   onMoveNode: (levelId: string, nodeId: string, position: { x: number; y: number }) => boolean;
+  onResizeNode: (
+    levelId: string,
+    nodeId: string,
+    position: { x: number; y: number },
+    size: { width: number; height: number },
+  ) => boolean;
   onCreateConnection: (connection: {
     levelId: string;
     source: { nodeId: string; portId: string; label: string };
@@ -191,6 +197,7 @@ type RouteHandleFocusRequest = RouteHandleFocusTarget & {
 interface NodeFocusRequest {
   flowNodeId: string;
   designPosition: { x: number; y: number };
+  dimensions?: { width: number; height: number };
 }
 
 export interface BlockDesignCanvasProps extends Omit<CanvasInnerProps, "entryLevelId"> {
@@ -208,6 +215,7 @@ const CanvasInner = memo(function CanvasInner({
   onSelect,
   onToggleHierarchy,
   onMoveNode,
+  onResizeNode,
   onCreateConnection,
   onRouteConnection,
   onReconnectConnection,
@@ -220,6 +228,7 @@ const CanvasInner = memo(function CanvasInner({
   const [routeHandleFocusRequest, setRouteHandleFocusRequest] = useState<RouteHandleFocusRequest>();
   const [canvasAnnouncement, setCanvasAnnouncement] = useState("");
   const [compactOverviewMapOpen, setCompactOverviewMapOpen] = useState(false);
+  const [resizeRestoreRevision, setResizeRestoreRevision] = useState(0);
   const largeGraph = layout.nodes.length >= LARGE_GRAPH_NODE_COUNT
     || layout.edges.length >= LARGE_GRAPH_EDGE_COUNT;
   const cullViewportElements = layout.nodes.length >= VIEWPORT_CULL_NODE_COUNT
@@ -276,9 +285,24 @@ const CanvasInner = memo(function CanvasInner({
           toggleHierarchy: onToggleHierarchy,
           inspectPort: (nodeId: string, port: BlockPort) =>
             selectRef.current({ kind: "port", levelId: node.data.levelId, nodeId, portId: port.id }),
+          resizeNode: node.data.positionEditable && !node.data.expanded
+            ? (geometry) => {
+                const accepted = onResizeNode(
+                  node.data.levelId,
+                  node.data.block.id,
+                  {
+                    x: node.data.designPosition.x + geometry.position.x - node.position.x,
+                    y: node.data.designPosition.y + geometry.position.y - node.position.y,
+                  },
+                  geometry.size,
+                );
+                if (!accepted) setResizeRestoreRevision((revision) => revision + 1);
+                return accepted;
+              }
+            : undefined,
         },
       })),
-    [layout.nodes, onToggleHierarchy],
+    [layout.nodes, onResizeNode, onToggleHierarchy, resizeRestoreRevision],
   );
   const baseEdges = useMemo<CanvasFlowEdge[]>(
     () => {
@@ -430,7 +454,11 @@ const CanvasInner = memo(function CanvasInner({
     const projected = nodes.find((candidate) => candidate.id === nodeFocusRequest.flowNodeId);
     if (
       projected?.data.designPosition.x !== nodeFocusRequest.designPosition.x ||
-      projected.data.designPosition.y !== nodeFocusRequest.designPosition.y
+      projected.data.designPosition.y !== nodeFocusRequest.designPosition.y ||
+      (nodeFocusRequest.dimensions && (
+        projected.width !== nodeFocusRequest.dimensions.width ||
+        projected.height !== nodeFocusRequest.dimensions.height
+      ))
     ) return;
     let frame = 0;
     let previousNode: HTMLElement | undefined;
@@ -569,7 +597,47 @@ const CanvasInner = memo(function CanvasInner({
     const node = baseNodes.find((candidate) => candidate.id === flowId);
     const edge = node ? undefined : routedEdges.find((candidate) => candidate.id === flowId);
     const keyboardDelta = NODE_KEYBOARD_DELTAS[event.key];
-    if (node && keyboardDelta && node.data.positionEditable && selectedNodeIdsRef.current.has(flowId)) {
+    if (node && keyboardDelta && event.shiftKey && node.data.resizeNode && selectedNodeIdsRef.current.has(flowId)) {
+      event.preventDefault();
+      event.stopPropagation();
+      const minimum = minimumNodeDimensions(node.data.block);
+      const currentWidth = node.width ?? minimum.width;
+      const currentHeight = node.height ?? minimum.height;
+      const dimensions = {
+        width: Math.max(
+          minimum.width,
+          Math.min(
+            BLOCK_NODE_GEOMETRY.maximumWidth,
+            currentWidth + (event.key === "ArrowLeft" ? -SNAP_GRID[0] : event.key === "ArrowRight" ? SNAP_GRID[0] : 0),
+          ),
+        ),
+        height: Math.max(
+          minimum.height,
+          Math.min(
+            BLOCK_NODE_GEOMETRY.maximumHeight,
+            currentHeight + (event.key === "ArrowUp" ? -SNAP_GRID[1] : event.key === "ArrowDown" ? SNAP_GRID[1] : 0),
+          ),
+        ),
+      };
+      if (dimensions.width === currentWidth && dimensions.height === currentHeight) return;
+      if (onResizeNode(
+        node.data.levelId,
+        node.data.block.id,
+        node.data.designPosition,
+        dimensions,
+      )) {
+        setNodeFocusRequest({
+          flowNodeId: flowId,
+          designPosition: node.data.designPosition,
+          dimensions,
+        });
+        setCanvasAnnouncement(
+          `Resized ${node.data.block.title}. Width ${dimensions.width}, height ${dimensions.height}.`,
+        );
+      }
+      return;
+    }
+    if (node && keyboardDelta && !event.shiftKey && node.data.positionEditable && selectedNodeIdsRef.current.has(flowId)) {
       event.preventDefault();
       event.stopPropagation();
       const designPosition = {
@@ -597,7 +665,7 @@ const CanvasInner = memo(function CanvasInner({
     if (selectRef.current(nextSelection) && event.key === "Escape") {
       (target as Element & { blur?: () => void }).blur?.();
     }
-  }, [baseNodes, onMoveNode, routedEdges]);
+  }, [baseNodes, onMoveNode, onResizeNode, routedEdges]);
 
   const resolveEndpoint = useCallback((flowNodeId: string | null, handleId: string | null | undefined) => {
     if (!flowNodeId || !handleId) return undefined;
@@ -748,6 +816,7 @@ export function BlockDesignCanvas(props: BlockDesignCanvasProps) {
         onSelect={props.onSelect}
         onToggleHierarchy={props.onToggleHierarchy}
         onMoveNode={props.onMoveNode}
+        onResizeNode={props.onResizeNode}
         onCreateConnection={props.onCreateConnection}
         onRouteConnection={props.onRouteConnection}
         onReconnectConnection={props.onReconnectConnection}

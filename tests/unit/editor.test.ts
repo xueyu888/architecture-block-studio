@@ -95,6 +95,50 @@ describe("public design operations", () => {
     });
   });
 
+  test("resizes and anchors a module in one atomic layout operation", () => {
+    let document = createBlankDesign("resize-operations", "Resize Operations");
+    document = applyDesignOperation(document, {
+      type: "node/add",
+      levelId: "system",
+      node: createBlock({ id: "worker", title: "Worker" }),
+    });
+
+    const resized = applyDesignOperation(document, {
+      type: "node/resize",
+      levelId: "system",
+      nodeId: "worker",
+      position: { x: 40.4, y: 63.6 },
+      size: { width: 319.7, height: 191.6 },
+    });
+
+    expect(resized.levels[0].nodes[0].layout).toEqual({
+      pinned: true,
+      position: { x: 40, y: 64 },
+      width: 320,
+      height: 192,
+    });
+    expect(document.levels[0].nodes[0].layout).toEqual({ pinned: false });
+  });
+
+  test("rejects invalid resize dimensions without mutating the source", () => {
+    let document = createBlankDesign("resize-failure", "Resize Failure");
+    document = applyDesignOperation(document, {
+      type: "node/add",
+      levelId: "system",
+      node: createBlock({ id: "worker", title: "Worker" }),
+    });
+    const before = serializeDesign(document);
+
+    expect(() => applyDesignOperation(document, {
+      type: "node/resize",
+      levelId: "system",
+      nodeId: "worker",
+      position: { x: 0, y: 0 },
+      size: { width: -1, height: 192 },
+    })).toThrow();
+    expect(serializeDesign(document)).toBe(before);
+  });
+
   test("adds and updates a port while preserving its identity", () => {
     let document = createBlankDesign("port-operations", "Port Operations");
     document = applyDesignOperation(document, {

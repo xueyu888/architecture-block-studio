@@ -2869,6 +2869,122 @@ test("moves a selected module through the document with the keyboard", async ({ 
   ).layout.position).toEqual({ x: 76, y: 286 });
 });
 
+test("resizes a selected module from a corner and persists one atomic geometry change", async ({ page, browserName }) => {
+  const node = flowNode(page, "system::platform-provider");
+  const connectedEdge = page.locator('.react-flow__edge[data-id="system::platform-tool-registration"]');
+  await node.click({ force: true });
+  await expect(node.locator(".bd-node-resize-handle")).toHaveCount(4);
+  await expect(node.locator(".bd-node-resize-line")).toHaveCount(4);
+  const before = await node.boundingBox();
+  const routeBefore = await connectedEdge.locator(".bd-interface-route").getAttribute("d");
+  const handle = node.locator(".bd-node-resize-handle.bottom.right");
+  const handleBox = await handle.boundingBox();
+  expect(before).not.toBeNull();
+  expect(handleBox).not.toBeNull();
+
+  await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    handleBox!.x + handleBox!.width / 2 + 30,
+    handleBox!.y + handleBox!.height / 2 + 40,
+    { steps: 10 },
+  );
+  await page.mouse.up();
+  await waitForEditorIdle(page);
+
+  const after = await node.boundingBox();
+  expect(after).not.toBeNull();
+  expect(after!.width).toBeGreaterThan(before!.width + 20);
+  expect(after!.height).toBeGreaterThan(before!.height + 30);
+  await expect.poll(() => connectedEdge.locator(".bd-interface-route").getAttribute("d"))
+    .not.toBe(routeBefore);
+  const sizeText = await page.getByRole("region", { name: "Module geometry" }).locator("strong").innerText();
+  const [width, height] = sizeText.split("×").map((value) => Number(value.trim()));
+  expect(width).toBeGreaterThan(240);
+  expect(height).toBeGreaterThan(145);
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    sharedRoutes: [],
+  });
+  if (process.env.CAPTURE_NODE_RESIZE === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/node-resize.png");
+  }
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await downloadPromise).path();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  const savedNode = saved.levels.find((level: { id: string }) => level.id === "system").nodes.find(
+    (candidate: { id: string }) => candidate.id === "platform-provider",
+  );
+  expect(savedNode.layout).toMatchObject({
+    pinned: true,
+    position: { x: 1240, y: 650 },
+    width,
+    height,
+  });
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("240 × 145");
+  await page.keyboard.press("ControlOrMeta+Shift+Z");
+  await waitForEditorIdle(page);
+  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText(sizeText);
+});
+
+test("resizes a focused module by grid increments from the keyboard", async ({ page }) => {
+  const node = flowNode(page, "system::agent-ui");
+  await node.click({ force: true });
+  await node.focus();
+  await expect(node).toBeFocused();
+
+  await page.keyboard.press("Shift+ArrowRight");
+  await waitForEditorIdle(page);
+  await expect(node).toBeFocused();
+  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("266 × 175");
+  await page.keyboard.press("Shift+ArrowDown");
+  await waitForEditorIdle(page);
+  await expect(node).toBeFocused();
+  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("266 × 191");
+  await expect(page.locator(".bd-canvas-announcement")).toHaveText(
+    "Resized Agent UI. Width 266, height 191.",
+  );
+});
+
+test("rejects a resize while Inspector properties are unapplied and restores preview geometry", async ({ page }) => {
+  const node = flowNode(page, "system::agent-ui");
+  const inspector = page.getByRole("region", { name: "Properties" });
+  await node.click({ force: true });
+  await inspector.getByLabel("Title").fill("Agent UI draft");
+  await expect(inspector.getByText("UNAPPLIED", { exact: true })).toBeVisible();
+  const before = await node.boundingBox();
+  const handle = node.locator(".bd-node-resize-handle.bottom.right");
+  const handleBox = await handle.boundingBox();
+  expect(before).not.toBeNull();
+  expect(handleBox).not.toBeNull();
+
+  await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    handleBox!.x + handleBox!.width / 2 + 36,
+    handleBox!.y + handleBox!.height / 2 + 28,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+
+  await expect(page.locator(".bd-command-error")).toContainText("before resizing a module");
+  await expect.poll(async () => {
+    const restored = await node.boundingBox();
+    return restored ? { width: Math.round(restored.width), height: Math.round(restored.height) } : null;
+  }).toEqual({ width: Math.round(before!.width), height: Math.round(before!.height) });
+  await expect(inspector.getByLabel("Title")).toHaveValue("Agent UI draft");
+  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("250 × 175");
+});
+
 test("keeps the installed design when a replacement is structurally invalid", async ({ page }) => {
   await openDesignDialog(page);
   await page.locator('input[type="file"]').setInputFiles(invalidPath);

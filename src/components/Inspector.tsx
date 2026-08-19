@@ -354,6 +354,15 @@ function NodeEditor({ document, level, node, onOperation, onDelete, onDraftChang
         <Field label="Process" value={process} onChange={setProcess} />
       </div>
       <Field label="Summary" value={summary} onChange={setSummary} multiline />
+      <section className="bd-node-geometry" aria-label="Module geometry">
+        <div>
+          <span>Canvas size</span>
+          <strong>{node.layout.width && node.layout.height
+            ? `${node.layout.width} × ${node.layout.height}`
+            : "Automatic"}</strong>
+        </div>
+        <p>Drag an edge or corner handle to resize. With the module focused, Shift + Arrow changes width or height by 16 design pixels. Apply current property changes first.</p>
+      </section>
       <ConnectedInterfaces document={document} level={level} node={node} onSelect={onSelect} />
       <ContractFields value={inspector} onChange={setInspector} />
       <HierarchyBindings document={document} level={level} node={node} onOperation={onOperation} disabled={dirty} />

@@ -1115,6 +1115,46 @@ button { color: inherit; }
 .bd-block[data-tone="platform"] { --block-color: #93611f; --block-fill: #f3ebdc; }
 .bd-block[data-tone="plugin"] { --block-color: #6c5298; --block-fill: #eee8f5; }
 .bd-block.is-selected { outline: 2px solid var(--selection); outline-offset: 3px; box-shadow: 0 3px 10px rgba(37, 99, 217, 0.2); }
+.bd-block.is-selected > .bd-port-rail { z-index: 8; }
+.bd-node-resize-handle.react-flow__resize-control.handle {
+  z-index: 7;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  background: transparent;
+}
+.bd-node-resize-handle::after {
+  position: absolute;
+  inset: 5px;
+  border: 1.5px solid var(--selection);
+  border-radius: 1px;
+  background: #fffdf8;
+  box-shadow: 0 1px 2px rgba(37, 55, 85, 0.24);
+  content: "";
+  pointer-events: none;
+}
+.bd-node-resize-line.react-flow__resize-control.line {
+  z-index: 6;
+  border: 0;
+}
+.bd-node-resize-line.react-flow__resize-control.line.left,
+.bd-node-resize-line.react-flow__resize-control.line.right {
+  width: 8px;
+}
+.bd-node-resize-line.react-flow__resize-control.line.top,
+.bd-node-resize-line.react-flow__resize-control.line.bottom {
+  height: 8px;
+}
+.bd-node-resize-line::after {
+  position: absolute;
+  background: color-mix(in srgb, var(--selection) 72%, transparent);
+  content: "";
+  pointer-events: none;
+}
+.bd-node-resize-line.left::after,
+.bd-node-resize-line.right::after { top: 0; bottom: 0; left: calc(50% - 0.5px); width: 1px; }
+.bd-node-resize-line.top::after,
+.bd-node-resize-line.bottom::after { top: calc(50% - 0.5px); right: 0; left: 0; height: 1px; }
 
 .bd-block.is-expanded {
   border: 2px solid var(--block-color);
@@ -1490,7 +1530,8 @@ div.bd-tree-row { display: flex; gap: 2px; margin: 1px 0; padding-top: 0; paddin
   padding: 12px;
 }
 
-.bd-route-editor {
+.bd-route-editor,
+.bd-node-geometry {
   display: grid;
   gap: 5px;
   border: 1px solid var(--divider-strong);
@@ -1499,9 +1540,12 @@ div.bd-tree-row { display: flex; gap: 2px; margin: 1px 0; padding-top: 0; paddin
   padding: 8px 9px;
   background: var(--panel-subtle);
 }
-.bd-route-editor > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 9px; }
-.bd-route-editor strong { color: #174f70; font-size: 8px; letter-spacing: 0.05em; text-transform: uppercase; }
-.bd-route-editor p { margin: 0; color: var(--text-subtle); font-size: 8px; line-height: 1.45; }
+.bd-route-editor > div,
+.bd-node-geometry > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 9px; }
+.bd-route-editor strong,
+.bd-node-geometry strong { color: #174f70; font-size: 8px; letter-spacing: 0.05em; text-transform: uppercase; }
+.bd-route-editor p,
+.bd-node-geometry p { margin: 0; color: var(--text-subtle); font-size: 8px; line-height: 1.45; }
 .bd-inline-action {
   justify-self: start;
   border: 0;

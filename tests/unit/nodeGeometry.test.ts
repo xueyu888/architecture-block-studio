@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BLOCK_NODE_GEOMETRY,
   baseNodeDimensions,
+  minimumNodeDimensions,
   portLabelWidth,
   portRailOffset,
   portsForSide,
@@ -10,7 +11,12 @@ import { createBlock, createPort } from "../../src/editor/designEditor";
 
 describe("block node geometry", () => {
   it("keeps the default card size when no port rail needs more room", () => {
-    expect(baseNodeDimensions(createBlock({ id: "module", title: "Module" }))).toEqual({
+    const node = createBlock({ id: "module", title: "Module" });
+    expect(minimumNodeDimensions(node)).toEqual({
+      width: BLOCK_NODE_GEOMETRY.minimumWidth,
+      height: BLOCK_NODE_GEOMETRY.minimumHeight,
+    });
+    expect(baseNodeDimensions(node)).toEqual({
       width: BLOCK_NODE_GEOMETRY.defaultWidth,
       height: BLOCK_NODE_GEOMETRY.defaultHeight,
     });

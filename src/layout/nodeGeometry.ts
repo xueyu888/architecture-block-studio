@@ -8,6 +8,10 @@ export interface NodeDimensions {
 export const BLOCK_NODE_GEOMETRY = {
   defaultWidth: 242,
   defaultHeight: 144,
+  minimumWidth: 180,
+  minimumHeight: 112,
+  maximumWidth: 1600,
+  maximumHeight: 1200,
   headerHeight: 32,
   horizontalRailHeight: 24,
   ownerBandHeight: 18,
@@ -69,7 +73,7 @@ function sideLabelWidth(ports: readonly BlockPort[]): number {
   return ports.reduce((width, port) => Math.max(width, portLabelWidth(port.label)), 0);
 }
 
-export function baseNodeDimensions(node: BlockNode): NodeDimensions {
+export function minimumNodeDimensions(node: BlockNode): NodeDimensions {
   const leftPorts = portsForSide(node.ports, "left");
   const rightPorts = portsForSide(node.ports, "right");
   const topPorts = portsForSide(node.ports, "top");
@@ -97,11 +101,15 @@ export function baseNodeDimensions(node: BlockNode): NodeDimensions {
       + 9
       + Math.max(0, sidePortCount - 1) * 22;
   return {
-    width: node.layout.width === undefined
-      ? Math.max(BLOCK_NODE_GEOMETRY.defaultWidth, contentWidth)
-      : Math.max(node.layout.width, contentWidth),
-    height: node.layout.height === undefined
-      ? Math.max(BLOCK_NODE_GEOMETRY.defaultHeight, contentHeight, sideLabelHeight)
-      : Math.max(node.layout.height, contentHeight, sideLabelHeight),
+    width: Math.max(BLOCK_NODE_GEOMETRY.minimumWidth, contentWidth),
+    height: Math.max(BLOCK_NODE_GEOMETRY.minimumHeight, contentHeight, sideLabelHeight),
+  };
+}
+
+export function baseNodeDimensions(node: BlockNode): NodeDimensions {
+  const minimum = minimumNodeDimensions(node);
+  return {
+    width: Math.max(node.layout.width ?? BLOCK_NODE_GEOMETRY.defaultWidth, minimum.width),
+    height: Math.max(node.layout.height ?? BLOCK_NODE_GEOMETRY.defaultHeight, minimum.height),
   };
 }

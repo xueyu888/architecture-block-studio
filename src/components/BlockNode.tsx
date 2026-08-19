@@ -1,10 +1,11 @@
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { Box, Minus, Pin, Plus } from "lucide-react";
 import type { CSSProperties } from "react";
 import {
   BLOCK_NODE_GEOMETRY,
   bindingPortId,
   innerPortId,
+  minimumNodeDimensions,
   portLabelWidth,
   portRailOffset,
   portsForSide,
@@ -178,6 +179,8 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
     "--port-left-label-width": `${widestLabel("left")}px`,
     "--port-right-label-width": `${widestLabel("right")}px`,
   } as GeometryStyle;
+  const minimumSize = minimumNodeDimensions(block);
+  const resizeVisible = selected && !data.expanded && Boolean(data.resizeNode);
 
   return (
     <article
@@ -186,9 +189,25 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
       data-block-id={block.id}
       data-hierarchy-depth={data.hierarchyDepth}
       data-expanded={data.expanded ? "true" : "false"}
+      data-resize-editable={data.resizeNode ? "true" : "false"}
       data-tone={block.tone}
       style={geometryStyle}
     >
+      <NodeResizer
+        nodeId={id}
+        isVisible={resizeVisible}
+        minWidth={minimumSize.width}
+        minHeight={minimumSize.height}
+        maxWidth={BLOCK_NODE_GEOMETRY.maximumWidth}
+        maxHeight={BLOCK_NODE_GEOMETRY.maximumHeight}
+        autoScale
+        handleClassName="bd-node-resize-handle"
+        lineClassName="bd-node-resize-line"
+        onResizeEnd={(_, geometry) => data.resizeNode?.({
+          position: { x: geometry.x, y: geometry.y },
+          size: { width: geometry.width, height: geometry.height },
+        })}
+      />
       <header className="bd-block-header">
         {hierarchy ? (
           <button

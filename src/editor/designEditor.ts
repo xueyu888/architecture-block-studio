@@ -64,6 +64,13 @@ export type DesignOperation =
       values: Pick<BlockNode, "title" | "kind" | "tone" | "process" | "summary" | "owner" | "inspector">;
     }
   | { type: "node/move"; levelId: string; nodeId: string; position: { x: number; y: number } }
+  | {
+      type: "node/resize";
+      levelId: string;
+      nodeId: string;
+      position: { x: number; y: number };
+      size: { width: number; height: number };
+    }
   | { type: "node/delete"; levelId: string; nodeId: string }
   | { type: "port/add"; levelId: string; nodeId: string; port: BlockPort }
   | {
@@ -254,6 +261,20 @@ export function applyDesignOperation(
     case "node/move": {
       const node = requireNode(requireLevel(next, operation.levelId), operation.nodeId);
       node.layout = { ...node.layout, position: operation.position, pinned: true };
+      break;
+    }
+    case "node/resize": {
+      const node = requireNode(requireLevel(next, operation.levelId), operation.nodeId);
+      node.layout = {
+        ...node.layout,
+        position: {
+          x: Math.round(operation.position.x),
+          y: Math.round(operation.position.y),
+        },
+        width: Math.round(operation.size.width),
+        height: Math.round(operation.size.height),
+        pinned: true,
+      };
       break;
     }
     case "node/delete": {
