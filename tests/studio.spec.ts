@@ -892,6 +892,105 @@ test("reveals one unobtrusive tooltip path for toolbar and canvas controls", asy
   }))).toEqual({ reduced: true, animationSeconds: 0.00001 });
 });
 
+test("searches and runs the unified command palette without losing workflow focus", async ({ page }) => {
+  const save = toolbarButton(page, "保存设计");
+  await save.focus();
+  await page.keyboard.press("ControlOrMeta+K");
+
+  const palette = page.getByRole("dialog", { name: "Command Palette" });
+  const search = palette.getByRole("combobox", { name: "Search commands" });
+  await expect(palette).toBeVisible();
+  await expect(search).toBeFocused();
+  await expect(palette.getByRole("option")).toHaveCount(21);
+  await expect(palette.getByRole("option", { name: /^Command Palette/ })).toHaveCount(0);
+
+  await search.fill("添加端口");
+  const unavailablePort = palette.getByRole("option", { name: /^Add Port/ });
+  await expect(palette.getByRole("option")).toHaveCount(1);
+  await expect(unavailablePort).toHaveAttribute("aria-disabled", "true");
+  await expect(unavailablePort).toContainText("Select a module first.");
+  await page.keyboard.press("Enter");
+  await expect(palette).toBeVisible();
+  await expect(search).toBeFocused();
+  await clickWithPointer(page, unavailablePort);
+  await expect(palette).toBeVisible();
+  await expect(search).toBeFocused();
+
+  await search.fill("no such architecture action");
+  await expect(palette.getByText("No matching commands", { exact: true })).toBeVisible();
+  await expect(palette.getByRole("option")).toHaveCount(0);
+  await page.keyboard.press("Enter");
+  await expect(palette).toBeVisible();
+
+  await search.fill("add");
+  await expect(palette.getByRole("option")).toHaveCount(3);
+  const addModuleOption = palette.getByRole("option", { name: /^Add Module/ });
+  const addInterfaceOption = palette.getByRole("option", { name: /^Add Interface/ });
+  await expect(addModuleOption).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("ArrowUp");
+  await expect(addInterfaceOption).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("ArrowDown");
+  await expect(addModuleOption).toHaveAttribute("aria-selected", "true");
+
+  expect((await accessibilityResults(page, ".bd-command-palette")).violations).toEqual([]);
+  expect(await textContrastIssues(page, ".bd-command-palette")).toEqual([]);
+  expect(await palette.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    return {
+      insideViewport: bounds.left >= 0 && bounds.top >= 0 &&
+        bounds.right <= window.innerWidth && bounds.bottom <= window.innerHeight,
+      overflow: [
+        document.documentElement.scrollWidth - window.innerWidth,
+        document.documentElement.scrollHeight - window.innerHeight,
+      ],
+    };
+  })).toEqual({ insideViewport: true, overflow: [0, 0] });
+  await expect(page.locator(".react-flow__edge-text")).toHaveCount(0);
+  if (process.env.CAPTURE_COMMAND_PALETTE === "1") {
+    await captureStudioScreenshot(page, "docs/screenshots/command-palette.png");
+  }
+
+  await page.keyboard.press("Escape");
+  await expect(palette).toHaveCount(0);
+  await expect(save).toBeFocused();
+
+  await page.keyboard.press("ControlOrMeta+K");
+  await search.fill("add module");
+  await page.keyboard.press("Enter");
+  const moduleDialog = page.getByRole("dialog", { name: /Add Module/ });
+  await expect(moduleDialog.getByLabel("Module title")).toBeFocused();
+  await page.keyboard.press("ControlOrMeta+K");
+  await expect(palette).toHaveCount(0);
+  await expect(moduleDialog.getByLabel("Module title")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(save).toBeFocused();
+
+  await page.keyboard.press("ControlOrMeta+K");
+  await search.fill("validate");
+  await page.keyboard.press("Enter");
+  await expect(palette).toHaveCount(0);
+  await expect(page.getByLabel("Filter design issues")).toBeFocused();
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.keyboard.press("ControlOrMeta+K");
+  await expect(search).toBeFocused();
+  expect(await palette.evaluate((element) => ({
+    reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
+    animationSeconds: Number.parseFloat(getComputedStyle(element).animationDuration),
+  }))).toEqual({ reduced: true, animationSeconds: 0.00001 });
+  await page.keyboard.press("Escape");
+  await expect(page.getByLabel("Filter design issues")).toBeFocused();
+
+  const viewTrigger = page.getByRole("button", { name: "View", exact: true });
+  await viewTrigger.click();
+  const paletteMenuItem = page.getByRole("menuitem", { name: /^Command Palette/ });
+  await expect(paletteMenuItem).toContainText("Ctrl/⌘ K");
+  await paletteMenuItem.click();
+  await expect(search).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(viewTrigger).toBeFocused();
+});
+
 test("routes and persists a new interface inside an existing complex design", async ({ page }) => {
   await addModule(page, { title: "Review Gateway", id: "review-gateway", owner: "Architecture Review" });
   const inspector = page.getByRole("region", { name: "Properties" });

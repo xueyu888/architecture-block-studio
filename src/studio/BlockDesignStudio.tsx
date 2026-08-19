@@ -22,6 +22,7 @@ import {
   Route,
   Save,
   Scan,
+  Search,
   Share2,
   ShieldCheck,
   Trash2,
@@ -29,6 +30,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { BlockDesignCanvas } from "../components/BlockDesignCanvas";
+import { CommandPalette } from "../components/CommandPalette";
 import { DockWorkspace } from "../components/DockWorkspace";
 import {
   AddBlockDialog,
@@ -144,6 +146,7 @@ export function BlockDesignStudio({
   const diagramEdgeState = useRef<Map<EdgeGroupPosition, boolean> | undefined>(undefined);
   const fitAfterLayout = useRef(true);
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [saveAsDialogOpen, setSaveAsDialogOpen] = useState(false);
   const [addBlockLevelId, setAddBlockLevelId] = useState<string>();
@@ -569,6 +572,16 @@ export function BlockDesignStudio({
   const canDelete = selection.kind === "node" || selection.kind === "port" || selection.kind === "connection";
   const canAddChildDesign = Boolean(selectedNode && !selectedNode.node.hierarchy);
   const canAddConnection = Boolean(activeLevel && firstConnectablePair(activeLevel));
+  const editorDialogOpen = Boolean(
+    loadDialogOpen ||
+    newDialogOpen ||
+    saveAsDialogOpen ||
+    addBlockLevelId ||
+    addPortTarget ||
+    connectionEndpointLevelId ||
+    childDesignTarget ||
+    pendingConnection
+  );
   const commands = useMemo<StudioCommands>(() => ({
     newDesign: {
       id: "newDesign", label: "New Design...", toolbarTitle: "新建设计", icon: FilePlus2, enabled: true,
@@ -649,6 +662,10 @@ export function BlockDesignStudio({
       id: "fitDesign", label: "Fit Design", toolbarTitle: "适应窗口", icon: Scan,
       ...commandAvailability(Boolean(document), "Open or create a design first."), execute: () => setFitRequest((value) => value + 1),
     },
+    openCommandPalette: {
+      id: "openCommandPalette", label: "Command Palette...", shortcut: "Ctrl/⌘ K", showInPalette: false, icon: Search,
+      ...commandAvailability(!editorDialogOpen, "Close the current dialog first."), execute: () => setCommandPaletteOpen(true),
+    },
     toggleSources: {
       id: "toggleSources", label: "Toggle Sources", toolbarTitle: "Sources", icon: PanelLeft,
       enabled: true, execute: () => toggleDock("left"),
@@ -680,6 +697,7 @@ export function BlockDesignStudio({
     document,
     editor.canRedo,
     editor.canUndo,
+    editorDialogOpen,
     exportCurrent,
     maximizeDiagram,
     mayDiscardChanges,
@@ -705,6 +723,13 @@ export function BlockDesignStudio({
         event.preventDefault();
         const command = event.shiftKey ? commands.saveAs : commands.save;
         if (command.enabled) command.execute();
+        return;
+      }
+      if (modifier && key === "k") {
+        if (commands.openCommandPalette.enabled) {
+          event.preventDefault();
+          commands.openCommandPalette.execute();
+        }
         return;
       }
       const target = event.target as HTMLElement | null;
@@ -829,6 +854,7 @@ export function BlockDesignStudio({
 
       {commandError && <div className="bd-command-error" role="alert"><TriangleAlert size={15} /><span>{commandError}</span><button type="button" onClick={() => setCommandError(undefined)}>Dismiss</button></div>}
       {dragActive && <div className="bd-drop-overlay"><FileJsonDrop /></div>}
+      <CommandPalette open={commandPaletteOpen} commands={commands} onClose={() => setCommandPaletteOpen(false)} />
       <LoadDesignDialog open={loadDialogOpen} busy={busy} error={loadError} onClose={() => { setLoadDialogOpen(false); setLoadError(undefined); }} onLoadFile={(file) => void openFile(file)} onLoadUrl={(url) => void openUrl(url)} />
       <NewDesignDialog open={newDialogOpen} error={commandError} idFromTitle={(title) => suggestId(title, "design")} onClose={() => { setNewDialogOpen(false); setCommandError(undefined); }} onCreate={({ id, title }) => {
         try {

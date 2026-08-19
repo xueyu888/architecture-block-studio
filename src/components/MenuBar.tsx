@@ -26,7 +26,7 @@ const MENU_DEFINITIONS: Array<{
   { id: "file", label: "File", commandIds: ["newDesign", "openDesign", "save", "saveAs", "exportJson"] },
   { id: "edit", label: "Edit", commandIds: ["undo", "redo", "deleteSelection"] },
   { id: "design", label: "Design", commandIds: ["addBlock", "addPort", "addConnection", "addChildDesign", "regenerateLayout", "optimizeRouting", "validateDesign"] },
-  { id: "view", label: "View", commandIds: ["fitDesign", "toggleSources", "toggleProperties", "toggleMessages", "maximizeDiagram", "resetWorkspace"] },
+  { id: "view", label: "View", commandIds: ["fitDesign", "toggleSources", "toggleProperties", "toggleMessages", "maximizeDiagram", "resetWorkspace", "openCommandPalette"] },
 ];
 
 function Menu({

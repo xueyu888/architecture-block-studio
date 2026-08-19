@@ -17,6 +17,7 @@ export type StudioCommandId =
   | "optimizeRouting"
   | "validateDesign"
   | "fitDesign"
+  | "openCommandPalette"
   | "toggleSources"
   | "toggleProperties"
   | "toggleMessages"
@@ -28,6 +29,7 @@ interface StudioCommandDefinition {
   label: string;
   toolbarTitle?: string;
   shortcut?: string;
+  showInPalette?: false;
   icon: LucideIcon;
   execute: () => void;
 }

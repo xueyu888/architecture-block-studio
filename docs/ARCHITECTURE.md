@@ -50,17 +50,19 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 
 工作台采用稳定的专业画布骨架：文档标题和校验摘要位于顶层，菜单负责完整命令发现，分组工具栏承载高频动作；Sources、Canvas、Inspector 构成主要横向工作区，Messages / DRC 与状态栏提供按需反馈。Canvas 始终是视觉主面，左右面板是上下文，只有选择、错误、dirty 和主操作使用强调色。改变面板显隐、Dock 布局或视觉样式不会改变设计事实。
 
-`src/styles.css` 的 `:root` 是颜色、边界、控件高度、圆角、阴影和动效时长的唯一视觉常量 Owner。组件只通过自身语义 class 表达“这是菜单、节点、属性面板或状态”，不得复制同一 surface、border、selection 或 control 尺寸；React Flow 的网格与 MiniMap 遮罩同样消费该 token 层。`StudioToolbar` 只依据 `StudioCommands` 投影命令，并用具名 `role="group"` 表达视觉分组，不拥有命令状态。视觉 token 只被组件消费，不依赖组件，也不进入 JSON、历史、selection 或布局结果。
+`src/styles.css` 的 `:root` 是颜色、边界、控件高度、圆角、阴影、层级和动效时长的唯一视觉常量 Owner。组件只通过自身语义 class 表达“这是菜单、节点、属性面板或状态”，不得复制同一 surface、border、selection、z-index 或 control 尺寸；React Flow 的网格与 MiniMap 遮罩同样消费该 token 层。`StudioToolbar` 只依据 `StudioCommands` 投影命令，并用具名 `role="group"` 表达视觉分组，不拥有命令状态。视觉 token 只被组件消费，不依赖组件，也不进入 JSON、历史、selection 或布局结果。
 
 `Tooltip` 只拥有 pointer 延迟、focus 即时打开、Esc / pointer down 关闭和 reduced-motion 展示，是命令提示的瞬时 UI Owner。它的公开输入只有 `label`、可选 `shortcut` / `detail` 与 placement；Toolbar 直接传入 `StudioCommands` 已拥有的名称、快捷键和 `unavailableReason`，Canvas viewport controls 传入自身公开动作名。Tooltip 不计算 eligibility、不执行命令、不让禁用按钮获得新的激活路径，也不持久化打开状态。Toolbar 与 Canvas controls 不再保留并行的原生 `title`，Menu 已有可见禁用原因也不再重复 title；事件取消或组件卸载时，待显示计时器被清理，原操作保持不变。
 
+`CommandPalette` 是统一命令检索的瞬时 UI Owner，只拥有打开、查询和当前结果索引。它从 `StudioCommands` 实时派生命令列表，以名称、工具栏名称、快捷键和禁用原因匹配，不保存副本、不计算 eligibility；`showInPalette: false` 仅防止“打开命令面板”递归列出自身。可用项先通过共享 Dialog 焦点协议把焦点安全交还调用位置，再执行同一个 `execute`，后续 Editor Dialog 或 Messages 可以接管焦点；禁用项保持可读取但 Enter 与 pointer 都不执行。Esc、点击遮罩或无结果不会产生业务副作用，查询和焦点索引不进入历史、selection 或 JSON。
+
 ```text
 BlockDesignDocument ─► model / editor / layout / routing ─► Studio ─► UI components
-StudioCommands ───────────────────────────────────────────► Menu / Toolbar
+StudioCommands ───────────────────────────► Menu / Toolbar / Keyboard / Command Palette
 Canvas viewport actions ──────────────────────────────────► Canvas controls
 Menu / Toolbar / Canvas controls ── label / detail ───────► Tooltip
 :root visual tokens ──────────────────────────────────────► all UI components
-Dock / selection / dialogs ─► disposable workspace state; never design JSON
+Dock / selection / dialogs / command query ─► disposable workspace state; never design JSON
 ```
 
 视觉失败与业务失败保持正交：非法编辑继续由既有命令和 Editor 给出可见错误并保留原文档；视觉回归由 WCAG computed-color、1680 × 1050 / 1280 × 720 几何合同、双浏览器旅程和 headed 截图捕获，不能通过新增文档字段或组件局部特例补偿。
@@ -204,6 +206,8 @@ React Flow 的库内键盘位移被阻止后，其内建 aria-live 不再拥有�
 `StudioCommandAvailability` 是命令可用性的唯一公开合同：命令要么 `enabled: true`，要么 `enabled: false` 且必须携带 `unavailableReason`，类型层不允许产生“禁用但无解释”的状态。Studio 从当前 document、history、selection、hierarchy 和 connectable pair 一次派生该联合类型；Menu 与 Toolbar 只投影同一结果，不重新计算 eligibility。禁用命令保持不可执行，原因只用于可见菜单文案、toolbar title 与 accessible name，不进入 JSON、历史或工作区事实。
 
 `MenuBar` 只拥有桌面复合菜单的焦点、导航和激活门禁，不拥有命令 eligibility 或行为。顶层按钮和已展开菜单都支持无修饰 printable character 定位；搜索从当前焦点之后开始并环绕一次，方向键、Home / End 与字符导航都经过实际渲染的菜单项，包括 `aria-disabled` 项。禁用项因此可获得可见焦点并让辅助技术读取同一 `unavailableReason`，但 Enter、Space 与 pointer 激活都由 MenuBar 拒绝，菜单和焦点保持原位。可用项最终仍只调用 `StudioCommands.execute`；Toolbar 普通按钮继续使用原生 `disabled`，两种交互语义不互相套用。
+
+`useDialogFocus` 是模态焦点循环、Esc 关闭和默认恢复的共享协议。命令面板执行动作时调用其 `prepareFocusHandoff`：先恢复原调用位置，再禁止卸载清理重复抢焦点，最后让被执行动作决定是否把焦点交给新 Dialog、Messages 或继续留在原位置。普通 Esc / 遮罩关闭仍走默认恢复，不需要每个 Dialog 各自查询 DOM 或复制延时逻辑。
 
 默认 Hierarchy 先由 `projectHierarchyRows` 按文档顺序和当前展开集合生成完整的 document / level / node 行投影；搜索和接口浏览器同样始终从完整文档派生有序结果与总数。三类列表只按 40 行批次把结果渐进挂入 DOM，接近滚动底部时继续加载。批次窗口是可丢弃展示状态，不截断结果、不改变排序、不重置选择，也不生成第二份模块或接口事实；展开只改变完整行投影，不能把已经滚动加载的窗口弹回顶部。
 

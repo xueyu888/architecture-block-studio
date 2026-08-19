@@ -22,7 +22,7 @@ Architecture Block Studio 处理的是可进入版本控制和 AI 工作流的�
 | 大型设计 | 200 modules / 400 connections 保持全量 Canvas DOM 与 400 条路径逐线段几何检查，默认 Hierarchy 首批仅挂载 40 行；独立执行中首次可交互 950 ms、模块选择并完成 280 ms 平滑聚焦 410 ms、四类模块搜索、一次增量加载并键盘定位 966 ms、接口筛选 255 ms、接口端点聚焦 374 ms、保存并校验 77 ms；测得 JS + embedder + backing storage 总量 71,410,189 bytes |
 | 压力设计 | 1000 modules / 2000 connections 的模型、布局、1000 个 MiniMap 节点与保存保持全量，初始 Canvas DOM 只挂载视口内 200 modules / 430 connections，默认 Hierarchy 为完整 1002 行投影但首批 DOM 仅 40 行；三轮中位数：首次可交互 2552 ms，十次 Level 编辑 2692 ms、Undo 199 ms、Redo 190 ms；Sources 选择屏外模块并定位到可读尺寸 217 ms，MiniMap 首尾节点跨图定位 63 / 60 ms，四次 Hierarchy 查询、一次增量加载与最终定位 758 ms，接口筛选 131 ms、接口端点与路径定位 182 ms，保存并校验 62 ms；历史交互测得增量 18,264,378 bytes，最终 JS + embedder + backing storage 总量 65,320,494 bytes |
 | 几何检查 | 已覆盖模块碰撞、端点内侵、边界逃逸、设计坐标中的独立线路共路、根级兄弟重叠、线中标签，以及大型设计 400 条路径逐线段穿块检查 |
-| 截图证据 | `professional-workbench.png` 复核 1680 × 1050 默认工作台的文档栏、菜单、分组工具栏、Sources、Canvas、Inspector、Messages 和状态层级；`command-tooltip.png` 复核禁用工具的名称、同源成立条件、清晰对比度及与 Canvas caption、节点和 Inspector 的边界；`compact-workbench.png` 复核 1280 × 720 下的手动线路、Inspector、Messages、MiniMap 与固定操作区；`aio-routing-validation.png` 复核默认 AIO 7 modules / 10 interfaces 的低缩放信息收敛、端口名与完整线路；`incremental-routing.png` 复核既有复杂设计中新建模块、端口和接口后的端口外向路径、手动把手、0 中部标签与连接 Inspector；`linked-id-suggestion.png` 复核同名第二模块的唯一 ID 建议、焦点、Dialog 与底层选中模块上下文；`menu-typeahead.png` 复核高频创建命令字符定位；`disabled-menu-focus.png` 复核禁用命令的可见焦点、原因层级、无误导 hover 和工作区无遮挡；`disabled-command-guidance.png` 复核空白设计中三条创建前提；`manual-routing.png` 复核恒定视觉方块、24 px 命中区、键盘焦点、手动路径与连接 Inspector；`keyboard-module-move.png` 复核模块键盘移动后的 selection、重新布线和 Inspector 上下文；`rejected-module-drag.png` 复核草稿阻止拖动后的原位投影、未应用表单和明确错误；`drc-remediation.png` 复核问题、修正方向、筛选、画布和 Inspector 的信息层级；`editor-routing-validation.png` 复核层级 continuation；`editor-polished-workbench.png` 与 `firefox-apply-focus.png` 复核选中路径、端口名与双浏览器焦点；`hierarchy-search.png` 复核大型图的列表密度、端口、线路、MiniMap 与 Inspector |
+| 截图证据 | `professional-workbench.png` 复核 1680 × 1050 默认工作台的文档栏、菜单、分组工具栏、Sources、Canvas、Inspector、Messages 和状态层级；`command-palette.png` 复核统一搜索表面、禁用原因、快捷键、画布上下文和无遮挡；`command-tooltip.png` 复核禁用工具的名称、同源成立条件、清晰对比度及与 Canvas caption、节点和 Inspector 的边界；`compact-workbench.png` 复核 1280 × 720 下的手动线路、Inspector、Messages、MiniMap 与固定操作区；`aio-routing-validation.png` 复核默认 AIO 7 modules / 10 interfaces 的低缩放信息收敛、端口名与完整线路；`incremental-routing.png` 复核既有复杂设计中新建模块、端口和接口后的端口外向路径、手动把手、0 中部标签与连接 Inspector；`linked-id-suggestion.png` 复核同名第二模块的唯一 ID 建议、焦点、Dialog 与底层选中模块上下文；`menu-typeahead.png` 复核高频创建命令字符定位；`disabled-menu-focus.png` 复核禁用命令的可见焦点、原因层级、无误导 hover 和工作区无遮挡；`disabled-command-guidance.png` 复核空白设计中三条创建前提；`manual-routing.png` 复核恒定视觉方块、24 px 命中区、键盘焦点、手动路径与连接 Inspector；`keyboard-module-move.png` 复核模块键盘移动后的 selection、重新布线和 Inspector 上下文；`rejected-module-drag.png` 复核草稿阻止拖动后的原位投影、未应用表单和明确错误；`drc-remediation.png` 复核问题、修正方向、筛选、画布和 Inspector 的信息层级；`editor-routing-validation.png` 复核层级 continuation；`editor-polished-workbench.png` 与 `firefox-apply-focus.png` 复核选中路径、端口名与双浏览器焦点；`hierarchy-search.png` 复核大型图的列表密度、端口、线路、MiniMap 与 Inspector |
 | 文件路径 | URL、本地文件、不可变兼容矩阵、`2.0 -> 2.1` 输入/输出 golden migration、canonical record ordering、保存后重载、无效替换保护已覆盖；本轮 Chromium / Firefox 文件旅程及 Chromium 无效替换 3 / 3，Save As / 重开与 Save / Export 2 / 2 |
 | 编辑闭环 | 新建、模块、端口、鼠标拖线、键盘端点选择、手动路由、层级绑定、Undo / Redo、Save / Save As / Export 已覆盖 |
 | 浏览器范围 | Chromium 31 / 31 完整自动化；Firefox 30 / 30 产品合同与真实截图，唯一排除项为 Chromium 专属 CDP heap 采样；WebKit 尚未验证 |
@@ -64,6 +64,8 @@ Iteration 57 按 ARIA 复合菜单语义让禁用菜单项可聚焦但不可激�
 Iteration 59 用一个局部、自我完备的 `Tooltip` 展示 Owner 取代 Toolbar 与 Canvas controls 的浏览器原生 `title`。Toolbar 只传入同一 `StudioCommands` label、shortcut 与 `unavailableReason`，Canvas 保留原 zoom bounds / Fit 行为；pointer 延迟、focus 即时、Esc / click 关闭、禁用按钮不可激活、视口内定位和 reduced motion 在双浏览器同一旅程验证。E2E 选择器同步改用 accessible role / name，不再把原生 title 当作产品合同。
 
 Iteration 60 第六次复评重走新用户、日常专业用户、Reviewer、DRC 和 200 / 400 大图五条 headed Chromium 旅程，并复核文件、依赖、Owner、状态分类与关键截图。复评捕获两条“画面已经可操作、延迟状态仍在变化”的竞争：Dialog 接受名称后被较晚的 passive effect 重置建议 ID；Sources 平滑定位尚未结束时，模块继续移动使 pointerdown 偶尔命中 pane。Dialog 初始化现统一前移到 layout effect；Studio Fit、交叉定位、MiniMap 和 Canvas controls 的动画统一由 Canvas generation 管理，并在 pointer 进入时固定当前 transform。唯一 ID headed 并发重复 10 / 10、Dialog / 键盘链双浏览器 8 / 8、草稿保护与 Canvas controls 动画中断双浏览器重复 20 / 20 通过；最终 75 / 75 unit、1880-module build 与 Chromium 31 / 31 + Firefox 30 / 30 完整回归通过。空白设计与 Dialog 截图已刷新到当前视觉系统，没有用重跑掩盖首次失败。
+
+Iteration 61 实测从已聚焦 Design 入口到 Validate 仍需 8 次键击，且用户必须记住命令分类。现在 `CommandPalette` 以 `Ctrl/⌘ K` 从同一 `StudioCommands` 派生 21 个可检索动作，支持中英文名称、快捷键、禁用原因、Arrow 环绕、Enter、Esc 和无结果；它不复制 execute 或 eligibility。双浏览器旅程验证禁用 Add Port 不执行、Dialog 模态期间不叠层、Add Module 焦点交接、Validate 直接进入 DRC 筛选、reduced motion、WCAG 结构与文本对比度；headed `command-palette.png` 复核弹层、画布和线路无遮挡。
 
 ## 每次迭代的最小验证门槛
 
@@ -108,7 +110,7 @@ Iteration 60 第六次复评重走新用户、日常专业用户、Reviewer、DR
 - DRC 同时说明问题与简短修正方向；修正方向由规则 Owner 派生、可搜索、可读屏，不由 Messages 复制或自动改写设计。
 - 属性编辑、选择和面板调整不导致画布重挂、意外 Fit 或缩放跳变。
 - 空白画布提供清晰的第一步，不迫使新用户猜工具栏图标。
-- 菜单、工具栏和快捷键来自同一命令定义，名称、快捷键、禁用与反馈一致。
+- 菜单、工具栏、快捷键和命令面板来自同一命令定义，名称、快捷键、禁用与反馈一致；命令面板只能维护查询和当前结果，不能保存动作副本或重新判断可用性。
 - 所有禁用命令都必须由同一命令合同给出原因；Menu 可见显示，Toolbar hover 与 accessible name 同步表达，不允许投影层复制 eligibility 判断。
 - 菜单字符定位从当前焦点向后环绕全部实际渲染且名称匹配的命令，包括 `aria-disabled` 项；重复字符循环同首字母项，无匹配时焦点不移动，禁用项激活保持无操作，命令执行仍由统一命令定义负责。
 - 弹窗支持 Esc、初始焦点、焦点循环与关闭后的焦点恢复。
@@ -137,7 +139,7 @@ Iteration 60 第六次复评重走新用户、日常专业用户、Reviewer、DR
 
 当前门禁使用 Axe 覆盖 WCAG A / AA 结构规则；Axe `color-contrast` 在该 transformed SVG 工作台无法于正常测试预算内完成，因此由浏览器 computed color、透明度合成和 WCAG luminance 计算提供等价文本对比度门禁，不跳过该质量项。
 
-当前键盘能力已覆盖菜单、Dialog、Hierarchy 搜索、Inspector 表单、端点选择、类型化接口创建、删除、Undo / Redo 与保存。Iteration 23 已用一条从空白设计到下载 JSON 的连续 Chromium 旅程证明这些能力可以组合成立；Iteration 24 已在 Firefox 重跑同一旅程并验证 Apply 后焦点恢复，Iteration 38 已把菜单、Dialog、完整编辑和文件合同扩展到 Firefox 产品旅程；Iteration 55 补齐顶层与展开菜单的字符定位，Iteration 56 让禁用前提进入可见文案和辅助名称。WebKit 自动化和读屏人工验证仍不得省略。
+当前键盘能力已覆盖菜单、命令面板、Dialog、Hierarchy 搜索、Inspector 表单、端点选择、类型化接口创建、删除、Undo / Redo 与保存。Iteration 23 已用一条从空白设计到下载 JSON 的连续 Chromium 旅程证明这些能力可以组合成立；Iteration 24 已在 Firefox 重跑同一旅程并验证 Apply 后焦点恢复，Iteration 38 已把菜单、Dialog、完整编辑和文件合同扩展到 Firefox 产品旅程；Iteration 55 补齐顶层与展开菜单的字符定位，Iteration 56 让禁用前提进入可见文案和辅助名称，Iteration 61 用统一命令搜索缩短跨菜单与跨面板路径并验证焦点交接。WebKit 自动化和读屏人工验证仍不得省略。
 
 ### 性能与大设计
 

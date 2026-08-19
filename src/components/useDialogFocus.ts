@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type RefObject } from "react";
+import { useCallback, useLayoutEffect, useRef, type RefObject } from "react";
 
 const FOCUSABLE_SELECTOR = [
   "button:not([disabled])",
@@ -24,13 +24,22 @@ export function useDialogFocus({
   onClose: () => void;
 }) {
   const onCloseRef = useRef(onClose);
+  const previouslyFocusedRef = useRef<HTMLElement | undefined>(undefined);
+  const restoreFocusOnCleanupRef = useRef(true);
   useLayoutEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
 
+  const prepareFocusHandoff = useCallback(() => {
+    restoreFocusOnCleanupRef.current = false;
+    if (previouslyFocusedRef.current?.isConnected) previouslyFocusedRef.current.focus();
+  }, []);
+
   useLayoutEffect(() => {
     if (!open) return;
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+    previouslyFocusedRef.current = previouslyFocused;
+    restoreFocusOnCleanupRef.current = true;
     const dialog = dialogRef.current;
     if (!dialog) return;
 
@@ -67,7 +76,10 @@ export function useDialogFocus({
     document.addEventListener("keydown", handleKeyDown, true);
     return () => {
       document.removeEventListener("keydown", handleKeyDown, true);
-      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+      if (restoreFocusOnCleanupRef.current && previouslyFocused?.isConnected) previouslyFocused.focus();
+      previouslyFocusedRef.current = undefined;
     };
   }, [dialogRef, open]);
+
+  return { prepareFocusHandoff };
 }

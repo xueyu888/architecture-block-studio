@@ -59,6 +59,10 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 
 ![紧凑工作区中的接口审查与 DRC](docs/screenshots/compact-workbench.png)
 
+在工作台任意位置按 **Ctrl/⌘ K** 即可打开命令面板。输入动作名、工具栏中文名称或快捷键就能筛选全部命令；方向键选择、Enter 执行、Esc 返回原位置。暂不可用的动作不会消失，面板会直接说明还缺少哪个前提，因此不必记住命令位于哪一层菜单。
+
+![统一命令面板](docs/screenshots/command-palette.png)
+
 菜单获得焦点后，可以直接输入 **F / E / D / V** 定位 File、Edit、Design 或 View；菜单展开后，输入命令首字母会跳到下一个同首字母项并支持环绕。例如在 Design 中重复按 **A** 可依次检查 Add Module、Add Port、Add Interface，用 **C** 直达 Create Child Design。暂不可用的命令仍可由方向键或首字母聚焦，菜单会直接说明成立条件；Enter、Space 和鼠标点击都不会误执行。工具栏图标在 hover 或键盘 focus 时显示同一命令的名称、快捷键和禁用原因，按 Esc 即可收起。
 
 ![工具栏命令名称与成立条件提示](docs/screenshots/command-tooltip.png)
