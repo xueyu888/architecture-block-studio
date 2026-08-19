@@ -186,7 +186,7 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
     "--port-right-label-width": `${widestLabel("right")}px`,
   } as GeometryStyle;
   const minimumSize = minimumNodeDimensions(block);
-  const resizeVisible = selected && !data.expanded && Boolean(data.resizeNode);
+  const resizeVisible = selected && !data.expanded && Boolean(data.resizeNode) && data.canEditSelection?.() !== false;
 
   return (
     <article

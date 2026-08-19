@@ -95,6 +95,30 @@ describe("public design operations", () => {
     });
   });
 
+  test("moves a module selection as one validated document operation", () => {
+    const document = connectedDesign();
+    const moved = applyDesignOperation(document, {
+      type: "nodes/move",
+      moves: [
+        { levelId: "system", nodeId: "source", position: { x: 48.4, y: 95.6 } },
+        { levelId: "system", nodeId: "target", position: { x: 400.2, y: 96.1 } },
+      ],
+    });
+
+    expect(moved.levels[0].nodes.map((node) => node.layout)).toEqual([
+      { pinned: true, position: { x: 48, y: 96 } },
+      { pinned: true, position: { x: 400, y: 96 } },
+    ]);
+    expect(document.levels[0].nodes.every((node) => node.layout.pinned === false)).toBe(true);
+    expect(() => applyDesignOperation(document, {
+      type: "nodes/move",
+      moves: [
+        { levelId: "system", nodeId: "source", position: { x: 0, y: 0 } },
+        { levelId: "system", nodeId: "source", position: { x: 20, y: 20 } },
+      ],
+    })).toThrow("can only be moved once");
+  });
+
   test("resizes and anchors a module in one atomic layout operation", () => {
     let document = createBlankDesign("resize-operations", "Resize Operations");
     document = applyDesignOperation(document, {

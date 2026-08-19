@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  diagramSelectionItems,
   hierarchyLevelPath,
   levelForSelection,
   nodeForSelection,
+  replaceDiagramSelection,
   sameSelection,
+  selectionContains,
   selectionExists,
   selectionForIssue,
   selectionKey,
+  toggleDiagramSelection,
   type SelectionRef,
 } from "../../src/studio/selection";
 import type { DesignIssue } from "../../src/model";
@@ -76,5 +80,38 @@ describe("workspace selection protocol", () => {
     expect(levelForSelection(document, { kind: "level", levelId: "missing" }).id).toBe("system");
     expect(nodeForSelection(document, childSelection)?.node.id).toBe("child");
     expect(nodeForSelection(document, { kind: "connection", levelId: "system", connectionId: "missing" })).toBeUndefined();
+  });
+
+  it("owns canonical replace and toggle semantics for diagram multi-selection", () => {
+    const source = { kind: "node", levelId: "system", nodeId: "source" } as const;
+    const target = { kind: "node", levelId: "system", nodeId: "target" } as const;
+    const connection = { kind: "connection", levelId: "system", connectionId: "source-to-target" } as const;
+
+    const multiple = replaceDiagramSelection([target, source, target], "system");
+    expect(multiple).toEqual({ kind: "multiple", items: [source, target] });
+    expect(selectionContains(multiple, source)).toBe(true);
+    expect(selectionContains(multiple, connection)).toBe(false);
+    expect(sameSelection(multiple, { kind: "multiple", items: [target, source] })).toBe(true);
+
+    const mixed = toggleDiagramSelection(multiple, [target, connection], "system");
+    expect(diagramSelectionItems(mixed)).toEqual([connection, source]);
+    expect(toggleDiagramSelection(mixed, [connection], "system")).toEqual(source);
+    expect(toggleDiagramSelection(source, [source], "system")).toEqual({ kind: "level", levelId: "system" });
+  });
+
+  it("validates every member of a multi-selection without persisting it in the document", () => {
+    const document = connectedDesign();
+    const valid: SelectionRef = {
+      kind: "multiple",
+      items: [
+        { kind: "node", levelId: "system", nodeId: "source" },
+        { kind: "connection", levelId: "system", connectionId: "source-to-target" },
+      ],
+    };
+    expect(selectionExists(document, valid)).toBe(true);
+    expect(selectionExists(document, {
+      ...valid,
+      items: [...valid.items, { kind: "node", levelId: "system", nodeId: "missing" }],
+    })).toBe(false);
   });
 });

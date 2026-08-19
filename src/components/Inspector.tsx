@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ArrowDownLeft, ArrowUpRight, Braces, Check, Copy, Repeat2, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Box, Braces, Cable, Check, Copy, Repeat2, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { DesignOperation } from "../editor";
 import { listModuleInterfaces } from "../model";
 import type {
@@ -38,6 +38,13 @@ function findPort(node: BlockNode | undefined, portId: string): BlockPort | unde
 
 function resolveInspection(document: BlockDesignDocument, selection: SelectionRef): ResolvedInspection {
   if (selection.kind === "document") return { kind: "DESIGN", title: document.title, raw: document };
+  if (selection.kind === "multiple") {
+    return {
+      kind: "MULTI",
+      title: `${selection.items.length} objects selected`,
+      raw: selection.items.map((item) => resolveInspection(document, item).raw),
+    };
+  }
   const level = findLevel(document, selection.levelId);
   if (selection.kind === "level") return { kind: "LEVEL", title: level?.title ?? selection.levelId, raw: level ?? selection };
   if (selection.kind === "node") {
@@ -66,6 +73,49 @@ function resolveInspection(document: BlockDesignDocument, selection: SelectionRe
     owner: definition?.owner,
     raw: connection ? { connection, interface: definition } : selection,
   };
+}
+
+function MultiSelectionSummary({ document, selection, onSelect }: {
+  document: BlockDesignDocument;
+  selection: Extract<SelectionRef, { kind: "multiple" }>;
+  onSelect: (selection: SelectionRef) => void;
+}) {
+  const rows = selection.items.map((item) => ({ item, inspection: resolveInspection(document, item) }));
+  const moduleCount = selection.items.filter((item) => item.kind === "node").length;
+  const interfaceCount = selection.items.length - moduleCount;
+  const levelCount = new Set(selection.items.map((item) => item.levelId)).size;
+  const visibleRows = rows.slice(0, 60);
+  return (
+    <div className="bd-multi-inspection">
+      <p className="bd-multi-lead">
+        Move the selected modules together, or choose one object below to inspect and edit its contract.
+      </p>
+      <dl className="bd-multi-metrics" aria-label="Selection summary">
+        <div><dt>Modules</dt><dd>{moduleCount}</dd></div>
+        <div><dt>Interfaces</dt><dd>{interfaceCount}</dd></div>
+        <div><dt>Levels</dt><dd>{levelCount}</dd></div>
+      </dl>
+      <div className="bd-multi-list" role="list" aria-label="Selected design objects">
+        {visibleRows.map(({ item, inspection }) => (
+          <button
+            type="button"
+            role="listitem"
+            key={selectionKey(item)}
+            onClick={() => onSelect(item)}
+          >
+            <span className="bd-multi-object-icon" aria-hidden="true">
+              {item.kind === "node" ? <Box size={13} /> : <Cable size={13} />}
+            </span>
+            <span><strong>{inspection.title}</strong><small>{inspection.kind} · {item.levelId}</small></span>
+          </button>
+        ))}
+      </div>
+      {visibleRows.length < rows.length && (
+        <p className="bd-multi-overflow">Showing 60 of {rows.length} selected objects.</p>
+      )}
+      <p className="bd-multi-help">Shift/Ctrl/⌘ click toggles objects · Drag a selected module to move the group · Esc clears the group.</p>
+    </div>
+  );
 }
 
 function CopyButton({ value }: { value: string }) {
@@ -483,6 +533,9 @@ function InspectionEditor({ document, selection, onOperation, onDelete, onDraftC
   onSelect: (selection: SelectionRef) => void;
 }) {
   if (selection.kind === "document") return <DocumentEditor document={document} onOperation={onOperation} onDraftChange={onDraftChange} />;
+  if (selection.kind === "multiple") {
+    return <MultiSelectionSummary document={document} selection={selection} onSelect={onSelect} />;
+  }
   const level = findLevel(document, selection.levelId);
   if (!level) return <p className="bd-empty-state">The selected level no longer exists.</p>;
   if (selection.kind === "level") return <LevelEditor level={level} onOperation={onOperation} onDraftChange={onDraftChange} />;
@@ -563,7 +616,7 @@ export function Inspector({ document, selection, onOperation, onDelete, onDraftC
         <InspectionEditor key={`${key}:${rawJson}`} document={document} selection={selection} onOperation={onOperation} onDelete={onDelete} onDraftChange={reportDraft} onSelect={onSelect} />
       </div>
       <div className="bd-code-section bd-raw-json" hidden={tab !== "json"}>
-          <header><h3>Selected source object</h3><CopyButton value={rawJson} /></header>
+          <header><h3>{selection.kind === "multiple" ? "Selected source objects" : "Selected source object"}</h3><CopyButton value={rawJson} /></header>
           <pre><code>{rawJson}</code></pre>
       </div>
     </section>

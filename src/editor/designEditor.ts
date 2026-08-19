@@ -46,6 +46,12 @@ export interface InterfaceDraft {
   owner: string;
 }
 
+export interface NodeMove {
+  levelId: string;
+  nodeId: string;
+  position: { x: number; y: number };
+}
+
 export type DesignOperation =
   | {
       type: "document/update";
@@ -64,6 +70,7 @@ export type DesignOperation =
       values: Pick<BlockNode, "title" | "kind" | "tone" | "process" | "summary" | "owner" | "inspector">;
     }
   | { type: "node/move"; levelId: string; nodeId: string; position: { x: number; y: number } }
+  | { type: "nodes/move"; moves: readonly NodeMove[] }
   | {
       type: "node/resize";
       levelId: string;
@@ -137,6 +144,25 @@ function requireNode(level: DesignLevel, nodeId: string): BlockNode {
 
 function requirePort(node: BlockNode, portId: string): BlockPort {
   return node.ports.find((port) => port.id === portId) ?? editError(`Port ${node.id}.${portId} does not exist.`);
+}
+
+function moveNodes(document: BlockDesignDocument, moves: readonly NodeMove[]): void {
+  if (moves.length === 0) editError("At least one module is required for a move operation.");
+  const identities = new Set<string>();
+  moves.forEach((move) => {
+    const identity = `${move.levelId}\u0000${move.nodeId}`;
+    if (identities.has(identity)) editError(`Module ${move.nodeId} can only be moved once per operation.`);
+    identities.add(identity);
+    const node = requireNode(requireLevel(document, move.levelId), move.nodeId);
+    node.layout = {
+      ...node.layout,
+      position: {
+        x: Math.round(move.position.x),
+        y: Math.round(move.position.y),
+      },
+      pinned: true,
+    };
+  });
 }
 
 function cleanupUnusedInterfaces(document: BlockDesignDocument, candidates: Iterable<string>): void {
@@ -259,8 +285,11 @@ export function applyDesignOperation(
       break;
     }
     case "node/move": {
-      const node = requireNode(requireLevel(next, operation.levelId), operation.nodeId);
-      node.layout = { ...node.layout, position: operation.position, pinned: true };
+      moveNodes(next, [operation]);
+      break;
+    }
+    case "nodes/move": {
+      moveNodes(next, operation.moves);
       break;
     }
     case "node/resize": {

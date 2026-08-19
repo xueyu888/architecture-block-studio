@@ -337,8 +337,8 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
         interactionWidth={data.largeGraph ? 18 : 28}
         className="bd-interface-route"
       />
-      {props.selected && <path className="bd-route-preview" d={routePath} aria-hidden="true" />}
-      {props.selected && !data.boundaryContinuation && endpointGrips.map((point, index) => (
+      {props.selected && data.canEditSelection?.() !== false && <path className="bd-route-preview" d={routePath} aria-hidden="true" />}
+      {props.selected && data.canEditSelection?.() !== false && !data.boundaryContinuation && endpointGrips.map((point, index) => (
         <circle
           key={index === 0 ? "source-grip" : "target-grip"}
           className="bd-route-endpoint-grip"
@@ -348,7 +348,7 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
           aria-hidden="true"
         />
       ))}
-      {props.selected && !data.boundaryContinuation && data.updateRouting && editing.segments.map((segment) => (
+      {props.selected && data.canEditSelection?.() !== false && !data.boundaryContinuation && data.updateRouting && editing.segments.map((segment) => (
         <foreignObject
           key={`segment:${segment.index}:${segment.axis}`}
           className="bd-route-handle-object bd-route-segment-handle-object nodrag nopan"
@@ -376,7 +376,7 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
           />
         </foreignObject>
       ))}
-      {props.selected && !data.boundaryContinuation && data.updateRouting && bends.map((bend) => (
+      {props.selected && data.canEditSelection?.() !== false && !data.boundaryContinuation && data.updateRouting && bends.map((bend) => (
         <foreignObject
           key={`bend:${bend.index}`}
           className="bd-route-handle-object bd-route-bend-handle-object nodrag nopan"

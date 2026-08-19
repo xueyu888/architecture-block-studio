@@ -58,6 +58,7 @@ import {
   uniqueId,
   useDesignEditor,
   type DesignOperation,
+  type NodeMove,
 } from "../editor";
 import {
   loadDesignFromFile,
@@ -402,7 +403,7 @@ export function BlockDesignStudio({
   }, [requireAppliedInspectorDraft]);
 
   const deleteSelection = useCallback(() => {
-    if (!document || selection.kind === "document" || selection.kind === "level") return;
+    if (!document || selection.kind === "document" || selection.kind === "level" || selection.kind === "multiple") return;
     const description = selection.kind === "node"
       ? "Delete this module, its connections, and its exclusively owned child design?"
       : selection.kind === "port"
@@ -540,9 +541,11 @@ export function BlockDesignStudio({
     setChildDesignTarget({ levelId: selectedNode.level.id, nodeId: selectedNode.node.id });
   }, [requireAppliedInspectorDraft, selectedNode]);
 
-  const moveNode = useCallback((levelId: string, nodeId: string, position: { x: number; y: number }) => {
+  const moveNodes = useCallback((moves: readonly NodeMove[]) => {
     if (!requireAppliedInspectorDraft("moving a module")) return false;
-    return Boolean(runOperation({ type: "node/move", levelId, nodeId, position }));
+    return Boolean(runOperation(moves.length === 1
+      ? { type: "node/move", ...moves[0] }
+      : { type: "nodes/move", moves }));
   }, [requireAppliedInspectorDraft, runOperation]);
 
   const resizeNode = useCallback((
@@ -596,6 +599,9 @@ export function BlockDesignStudio({
   }, [requireAppliedInspectorDraft, runOperation]);
 
   const canDelete = selection.kind === "node" || selection.kind === "port" || selection.kind === "connection";
+  const deleteUnavailableReason = selection.kind === "multiple"
+    ? "Batch deletion is unavailable because module cascades require an explicit deletion contract. Select one object first."
+    : "Select a module, port, or interface first.";
   const canAddChildDesign = Boolean(selectedNode && !selectedNode.node.hierarchy);
   const canAddConnection = Boolean(activeLevel && firstConnectablePair(activeLevel));
   const editorDialogOpen = Boolean(
@@ -643,7 +649,7 @@ export function BlockDesignStudio({
     },
     deleteSelection: {
       id: "deleteSelection", label: "Delete Selection", toolbarTitle: "删除所选内容", shortcut: "Del", icon: Trash2,
-      ...commandAvailability(canDelete, "Select a module, port, or interface first."), execute: deleteSelection,
+      ...commandAvailability(canDelete, deleteUnavailableReason), execute: deleteSelection,
     },
     addBlock: {
       id: "addBlock", label: "Add Module...", toolbarTitle: "添加模块", icon: Box,
@@ -718,6 +724,7 @@ export function BlockDesignStudio({
     canAddChildDesign,
     canAddConnection,
     canDelete,
+    deleteUnavailableReason,
     deleteSelection,
     diagramMaximized,
     document,
@@ -829,7 +836,7 @@ export function BlockDesignStudio({
             onSelect={requestSelection}
             onToggleHierarchy={toggleHierarchy}
             onAddModule={openAddBlock}
-            onMoveNode={moveNode}
+            onMoveNodes={moveNodes}
             onResizeNode={resizeNode}
             onCreateConnection={createConnection}
             onRouteConnection={routeConnection}

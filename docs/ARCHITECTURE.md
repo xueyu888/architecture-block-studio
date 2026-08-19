@@ -151,6 +151,8 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 
 模块尺寸变化使用单用途 `node/resize`。操作同时携带设计坐标中的 position 与 size，在一次完整 Schema 校验后提交；这样四边和四角使用同一合同，Undo / Redo 也只记录一个几何状态。Canvas 的 pointer preview、resize control 可见性和一次性焦点恢复都是 UI 状态；草稿保护或 Schema 拒绝时，Canvas 重新投影原文档几何，不产生补偿操作，也不保留局部尺寸。
 
+模块组移动使用单用途 `nodes/move`。它携带去重后的 Level、node 与目标 position 列表，Editor 在同一克隆上逐项验证存在性，全部成立后才一次提交并生成一个历史记录；单模块继续使用 `node/move`。这样 React Flow 的成组拖动不会出现“画面移动多个、JSON 只保存一个”的双状态，任一目标失效时也不会产生部分位移。
+
 线路端点变化使用独立的 `connection/reconnect`：Editor 在同一 Level 内重新校验 source / target 端口存在性与 input / output 方向，保留连接 id、interface id 和接口合同。手动 waypoint 描述的是旧端点几何，因此重连成功时由该操作清除 `routing`，重新进入自动路由；非法目标拒绝整项操作，原端点和原路线都不变。Canvas 只负责把拖拽结果规范化成端点意图，不复制方向规则。
 
 具名对象创建时，`editor` 的 `suggestId` 与 `uniqueId` 是合法化和当前作用域唯一性规则的唯一来源；Studio 提供已有 id，Dialog 只维护“名称仍联动建议 id / 用户已手工定制 id”的临时草稿状态。名称变化只在用户尚未定制 id 时更新建议，提交后仍通过原有创建工厂和 `DesignOperation` 进入文档，联动状态本身不进入 JSON 或历史。
@@ -184,7 +186,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 - MiniMap 是可丢弃的 viewport 导航，不是设计事实。宽屏工作台常驻显示；紧凑桌面默认收起并在 Canvas controls 提供显式 Show / Hide overview map，避免覆盖模块或线路。开关状态不进入 JSON、历史、selection 或 Dock 布局。
 - 路由快路径与 Canvas 视口裁剪是两个独立策略：前者改变派生路径算法，后者只减少压力图的 DOM 挂载。裁剪不得删减 `LayoutResult`、React Flow store、MiniMap、图中总数或保存输出；200 / 400 档继续全量挂载以执行每条路径的几何门禁。
 - 视口导航同样与设计事实正交：默认和 200 / 400 图使用 280 ms 平滑定位；启用视口裁剪的压力图使用单次直接定位，避免插值途中持续换挂载。React Flow MiniMap 会保留首次 `onNodeClick` 闭包，因此 Canvas 暴露稳定回调并从 ref 读取最新规模策略；不能让第三方回调生命周期冻结空布局时期的配置。
-- 用户拖动期间的 position 只是 React Flow 预览；松手时 Canvas 向 Editor 请求一次 `node/move`。只有 Editor 接受后，`node.layout.position` 才成为新位置；若草稿保护或可编辑性规则拒绝操作，Canvas 立即恢复同一 base node 的文档投影，不创建补偿操作、不覆盖错误提示或未应用草稿。ELK 自动位置不写回文档。
+- 用户拖动期间的 position 只是 React Flow 预览；松手时 Canvas 按选中模块数量请求一次 `node/move` 或 `nodes/move`。成组移动保留各模块相对位置并共同接受参考线修正；只有 Editor 接受后，各自的 `node.layout.position` 才成为新位置。若草稿保护、对象存在性或可编辑性规则拒绝操作，Canvas 一次恢复全部 base node 文档投影，不创建补偿操作、不覆盖错误提示或未应用草稿。ELK 自动位置不写回文档。
 - 用户拖动四边 / 四角期间的 position 与 dimensions 同样只是 React Flow 预览；松手只提交一次 `node/resize`。被接受后，布局、端口和线路都从新的文档几何重算；被拒绝后，节点与线路恢复原投影。选中模块上的 Shift + Arrow 按 16 设计像素调整宽或高，并通过一次性 `NodeFocusRequest` 恢复焦点；公告只从被接受的新尺寸派生。
 - 展开子设计时，子节点使用 compound parent 与相对位置，父模块继续提供上下文和边界。
 - 路径从具名源端口开始，在具名目标端口结束。
@@ -207,15 +209,19 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 
 ## 选择与交叉定位
 
-`SelectionRef` 是 `src/studio/selection.ts` 拥有的单一工作区选择协议，区分 document、level、node、port 与 connection。Tree、模块关联接口摘要、接口列表、Canvas、DRC 和 Inspector 通过它同步上下文；`selectionExists`、`selectionForIssue`、`levelForSelection` 和 `hierarchyLevelPath` 等纯查询不封闭在 React 编排组件内。
+`SelectionRef` 是 `src/studio/selection.ts` 拥有的单一工作区选择协议，区分 document、level、node、port、connection 与显式 `multiple`。多选只包含 canonical、去重的 `DiagramSelectionRef`，因此只允许可共同直接操作的 node / connection；document、level 与 port 仍保持单选语义。`diagramSelectionItems`、replace、toggle、contains、exists、key 与上下文查询都由该纯协议拥有，Tree、接口列表、Canvas、DRC 和 Inspector 不各自维护选择集合。
+
+普通点击和框选替换集合，Shift / Ctrl / Cmd 点击或框选切换成员，Esc 回到当前对象所属 Level。左键空白拖动专用于完整包围框选，中键 / 右键拖动和滚轮负责平移；框选矩形与 React Flow 候选只存在于 gesture，结束后立即转换为领域引用。Canvas 只投影选中状态，Sources 同步高亮，Inspector 显示模块、接口和 Level 摘要；多选时隐藏单对象 resize / route 把手，避免控制点互相遮挡。任何选择变化仍先经过 Inspector 草稿保护，被拒绝时恢复权威选择投影。
+
+多选删除没有复用单对象级联规则：模块、接口与跨层对象混合删除的保留 / 级联合同尚未定义，因此统一命令明确禁用并解释原因，要求先收敛到一个对象。该限制防止 UI 顺手拼接多个 delete operation，造成顺序依赖或多个 Undo 记录。
 
 选择事实与视口导航正交：Canvas 内点击只更新 `SelectionRef`，不改变用户正在观察的 viewport；Sources、Messages、Inspector 和 MiniMap 属于交叉定位入口，在选择被草稿保护规则接受后才发出一次性 `revealSelectionRequest`。Canvas 从当前完整布局解析目标节点或接口两端，通过 `fitView` 平滑聚焦；该计数是可丢弃 UI 请求，不进入文档、历史或保存文件。MiniMap 节点直接点击复用相同的选择保护，并聚焦到可读尺寸。
 
 平滑定位同样必须服从新的直接操作。Studio Fit、Sources / Messages / Inspector 交叉定位、MiniMap 和 Canvas 缩放 / Fit 控件都调用同一个 Canvas 导航协调器；它以 generation 标识自己发起的动画。只要 pointer 在动画期间进入画布，当前 transform 就以零时长固定，旧动画的异步完成不能重新宣称导航仍在进行。这样鼠标按下时命中的是用户眼前的模块，而不是动画继续移动后暴露的 pane。中断只结束可丢弃 viewport 动画，不改变 `SelectionRef`、设计坐标、布局或历史。
 
-React Flow 的 Node / Edge wrapper 虽然提供原生 Tab 焦点与 Enter、Space、Escape 键，但库内 selection 不是工作区事实。Canvas 在捕获阶段把这些键转换成同一 `SelectionRef` 请求，并阻止库内平行选择；Enter / Space 选择对象，Escape 回到对象所属 Level。Delete 随后继续调用统一 Studio command，因此键盘选择、Inspector、路由把手和删除看到同一对象。
+React Flow 的 Node / Edge wrapper 虽然提供原生 Tab 焦点与 Enter、Space、Escape 键，但库内 selection 不是工作区事实。Canvas 在捕获阶段把这些键转换成同一 `SelectionRef` 请求，并阻止库内平行选择；Enter / Space 选择对象，Escape 回到对象所属 Level。多选模块的 Arrow 作为一组提交，读屏公告从同一成功结果派生；Delete 随后继续调用统一 Studio command，因此键盘选择、Inspector、路由把手和删除看到同一选择合同。
 
-选中且允许 authored placement 的模块收到 Arrow 时，Canvas 同样阻止 React Flow 只修改临时 position，按 16 × 16 设计网格直接提交一个 `node/move`。Editor 写入 `node.layout.position` 与 pinned，布局再从文档投影画布；一次性 `NodeFocusRequest` 只等待目标设计坐标出现并恢复模块焦点，让连续移动、Undo、保存和重新投影使用同一几何事实。
+选中且允许 authored placement 的模块收到 Arrow 时，Canvas 同样阻止 React Flow 只修改临时 position，按 16 × 16 设计网格提交一个 `node/move` 或 `nodes/move`。Editor 写入各自 `node.layout.position` 与 pinned，布局再从文档投影画布；一次性 `NodeFocusRequest` 只等待焦点模块的目标设计坐标出现，让连续移动、Undo、保存和重新投影使用同一几何事实。
 
 React Flow 的库内键盘位移被阻止后，其内建 aria-live 不再拥有真实移动结果。Canvas 只在 `node/move` 被 Editor 接受时，从同一个目标设计坐标派生 polite 公告；公告表达模块、方向与 x / y，不查询 DOM 反推位置，也不进入文档或历史。
 

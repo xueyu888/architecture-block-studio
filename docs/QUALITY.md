@@ -80,6 +80,8 @@ Iteration 66 对照 draw.io 的 vertex handler 边界，将“内容安全尺寸
 
 Iteration 67 对照 draw.io 的 snapping / guide 职责，把“吸附几何”“gesture 候选”和“临时绘制”拆开：`layout/alignmentGuides` 只按同一父级矩形计算边缘、中心和同宽 / 同高结果；Canvas 仅在 gesture 开始时收集视口附近候选，并把 6 CSS px 容差换算到设计坐标；`AlignmentGuideLayer` 不接收 pointer，也不写 JSON、历史或 selection。Alt 只绕过当前 gesture。压力旅程首次暴露 move / resize 会被旧 geometry signature 误判为需要全图 Fit，使大图选中模块在松手后被裁出视口；现在 `layoutFrameSignature` 只对拓扑、端点、Port 与层级框架变化请求 Fit，直接几何编辑保持 viewport。93 / 93 unit（0.448 秒）、1885-module build（6.81 秒）、完整 Chromium 43 / 43 + Firefox 42 / 42 = 85 / 85（约 2.3 分钟）和 1000 / 2000 压力旅程通过；两张 1680 × 1050 截图人工复核参考线、尺寸括号、文字、端口和线路无遮挡。
 
+Iteration 68 对照 draw.io 的 rubberband / selection handler 职责，把领域选择、框选 gesture 和 React Flow 投影拆开：`SelectionRef.multiple` 只保存 canonical node / connection 引用，普通点击 / 框选替换，Shift / Ctrl / Cmd 切换，Esc 清空；左键空白拖动完整包围模块与真实连线，中键 / 右键与滚轮平移。Sources、Canvas、Properties 共同消费一个选择，Properties 提供模块 / 接口 / Level 摘要；多选和框选期间不显示单对象 resize / route 把手。成组 pointer / Arrow 移动通过一次 `nodes/move` 原子提交，Undo 一次恢复全部；级联合同未定义的批量删除明确禁用而不猜测。96 / 96 unit（0.501 秒）、1885-module build（7.03 秒）、完整 Chromium 45 / 45 + Firefox 44 / 44 = 89 / 89（2.5 分钟）通过；200 / 400 图两模块多选为 877 ms；`box-multi-selection.png` 与 `multi-selection.png` 人工复核选区、卡片、端口、线路、Sources 与 Properties 无遮挡。
+
 ## 每次迭代的最小验证门槛
 
 每个完成的迭代必须留下与风险相称的证据：
@@ -126,6 +128,7 @@ Iteration 67 对照 draw.io 的 snapping / guide 职责，把“吸附几何”�
 - 选中线路必须直接暴露可区分的虚拟线段点、真实折点和端点抓手；视觉图形小于命中区，端点抓手不能与 Port 叠成大双圆环，线路仍不得出现中部标签。
 - 线段 / 折点拖动、键盘微调、折点删除、Reset Auto 和端点重连都必须经具名原子操作进入同一 Undo / Redo 与保存链；预览、焦点恢复和非法拖动不得成为第二份路线或端点事实。
 - 选中且允许 authored placement 的模块必须提供四边 / 四角 resize；控制点视觉小于命中区，不能遮挡 Port。内容安全下限由统一几何 Owner 计算，pointer 与 Shift + Arrow 都只通过 `node/resize` 提交位置和尺寸，拒绝时恢复原文档投影。
+- 多选必须由显式工作区协议拥有，不能把 React Flow 内部 selected 数组或框选矩形当成文档事实；成组移动只提交一次 `nodes/move` 并由一次 Undo 恢复。多选期间隐藏单对象编辑抓手，未定义的批量删除必须给出禁用原因。
 - 空白画布提供清晰的第一步，不迫使新用户猜工具栏图标。
 - 菜单、工具栏、快捷键和命令面板来自同一命令定义，名称、快捷键、禁用与反馈一致；命令面板只能维护查询和当前结果，不能保存动作副本或重新判断可用性。
 - 常驻工具栏只投影启动、连续编辑、建模和审查直接工作流；低频全图动作与已有上下文入口的面板动作必须继续在完整 Menu / Command Palette 可达，不能通过删除命令换取视觉简洁。

@@ -1,7 +1,12 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Box, Cable, ChevronRight, CircuitBoard, Layers3, Search } from "lucide-react";
 import type { BlockDesignDocument } from "../model";
-import type { SelectionRef } from "../studio/selection";
+import {
+  selectionContains,
+  toggleDiagramSelection,
+  type DiagramSelectionRef,
+  type SelectionRef,
+} from "../studio/selection";
 import { projectHierarchyRows } from "./hierarchyRows";
 
 const RESULT_BATCH_SIZE = 40;
@@ -74,6 +79,7 @@ interface HierarchyNodeRowProps {
   childLevelId?: string;
   expanded: boolean;
   selected: boolean;
+  selection: SelectionRef;
   depth: number;
   onToggleLevel: (levelId: string) => void;
   onRevealLevel: (levelId: string) => void;
@@ -87,6 +93,7 @@ const HierarchyNodeRow = memo(function HierarchyNodeRow({
   childLevelId,
   expanded,
   selected,
+  selection,
   depth,
   onToggleLevel,
   onRevealLevel,
@@ -103,8 +110,12 @@ const HierarchyNodeRow = memo(function HierarchyNodeRow({
           className="bd-tree-select"
           data-level-id={levelId}
           data-node-id={nodeId}
-          onClick={() => {
-            if (onSelect({ kind: "node", levelId, nodeId })) onRevealLevel(levelId);
+          onClick={(event) => {
+            const item: DiagramSelectionRef = { kind: "node", levelId, nodeId };
+            const next = event.shiftKey || event.ctrlKey || event.metaKey
+              ? toggleDiagramSelection(selection, [item], levelId)
+              : item;
+            if (onSelect(next)) onRevealLevel(levelId);
           }}
           onDoubleClick={() => childLevelId && onToggleLevel(childLevelId)}
         >
@@ -223,13 +234,17 @@ export function HierarchyTree({
               ariaLabel="Matching modules"
               itemKey={({ level, node }) => `${level.id}:${node.id}`}
               renderItem={({ level, node }) => {
-                const selected = selection.kind === "node" && selection.levelId === level.id && selection.nodeId === node.id;
+                const item: DiagramSelectionRef = { kind: "node", levelId: level.id, nodeId: node.id };
+                const selected = selectionContains(selection, item);
                 return (
                   <button
                     type="button"
                     className={`bd-hierarchy-search-row${selected ? " is-selected" : ""}`}
-                    onClick={() => {
-                      if (onSelect({ kind: "node", levelId: level.id, nodeId: node.id })) onRevealLevel(level.id);
+                    onClick={(event) => {
+                      const next = event.shiftKey || event.ctrlKey || event.metaKey
+                        ? toggleDiagramSelection(selection, [item], level.id)
+                        : item;
+                      if (onSelect(next)) onRevealLevel(level.id);
                     }}
                   >
                     <Box size={12} aria-hidden="true" />
@@ -277,7 +292,8 @@ export function HierarchyTree({
                     </button>
                   );
                 }
-                const selected = selection.kind === "node" && selection.levelId === row.level.id && selection.nodeId === row.node.id;
+                const item: DiagramSelectionRef = { kind: "node", levelId: row.level.id, nodeId: row.node.id };
+                const selected = selectionContains(selection, item);
                 return (
                   <HierarchyNodeRow
                     levelId={row.level.id}
@@ -286,6 +302,7 @@ export function HierarchyTree({
                     childLevelId={row.childLevelId}
                     expanded={row.expanded}
                     selected={selected}
+                    selection={selection}
                     depth={row.depth}
                     onToggleLevel={onToggleLevel}
                     onRevealLevel={onRevealLevel}
@@ -311,13 +328,21 @@ export function HierarchyTree({
             ariaLabel="Declared interfaces"
             itemKey={({ level, connection }) => `${level.id}:${connection.id}`}
             renderItem={({ level, connection, definition }) => {
-              const selected = selection.kind === "connection" && selection.levelId === level.id && selection.connectionId === connection.id;
+              const item: DiagramSelectionRef = {
+                kind: "connection",
+                levelId: level.id,
+                connectionId: connection.id,
+              };
+              const selected = selectionContains(selection, item);
               return (
                 <button
                   type="button"
                   className={`bd-interface-browser-row${selected ? " is-selected" : ""}`}
-                  onClick={() => {
-                    if (onSelect({ kind: "connection", levelId: level.id, connectionId: connection.id })) onRevealLevel(level.id);
+                  onClick={(event) => {
+                    const next = event.shiftKey || event.ctrlKey || event.metaKey
+                      ? toggleDiagramSelection(selection, [item], level.id)
+                      : item;
+                    if (onSelect(next)) onRevealLevel(level.id);
                   }}
                 >
                   <span className={`bd-net-kind bd-net-kind-${definition?.kind ?? "internal"}`}>{definition?.kind ?? "internal"}</span>

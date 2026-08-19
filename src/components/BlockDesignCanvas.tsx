@@ -1,4 +1,14 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { Box, Map as MapIcon, Minus, Plus, Scan } from "lucide-react";
 import {
   Background,
@@ -23,6 +33,7 @@ import {
   type NodeMouseHandler,
 } from "@xyflow/react";
 import { normalizeConnectionEndpoints } from "../model";
+import type { NodeMove } from "../editor";
 import type { BlockDesignDocument, BlockPort, ConnectionRouting } from "../model";
 import {
   BLOCK_NODE_GEOMETRY,
@@ -36,7 +47,13 @@ import {
   type ResizeLimits,
 } from "../layout";
 import { planRouteLaneOffsets } from "../routing";
-import type { SelectionRef } from "../studio/selection";
+import {
+  diagramSelectionItems,
+  replaceDiagramSelection,
+  toggleDiagramSelection,
+  type DiagramSelectionRef,
+  type SelectionRef,
+} from "../studio/selection";
 import { AlignmentGuideLayer } from "./AlignmentGuideLayer";
 import { BlockNodeComponent } from "./BlockNode";
 import { canvasDetailLevel, type CanvasDetailLevel } from "./canvasDetail";
@@ -183,7 +200,7 @@ interface CanvasInnerProps {
   routeRevision: number;
   onSelect: (selection: SelectionRef) => boolean;
   onToggleHierarchy: (levelId: string) => void;
-  onMoveNode: (levelId: string, nodeId: string, position: { x: number; y: number }) => boolean;
+  onMoveNodes: (moves: readonly NodeMove[]) => boolean;
   onResizeNode: (
     levelId: string,
     nodeId: string,
@@ -229,6 +246,18 @@ interface ResizePreview {
   size: { width: number; height: number };
 }
 
+interface BoxSelectionGesture {
+  base: SelectionRef;
+  toggle: boolean;
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  selectedFlowNodeIds: Set<string>;
+}
+
+function hasToggleModifier(event: Pick<MouseEvent, "shiftKey" | "ctrlKey" | "metaKey">): boolean {
+  return event.shiftKey || event.ctrlKey || event.metaKey;
+}
+
 export interface BlockDesignCanvasProps extends Omit<CanvasInnerProps, "entryLevelId"> {
   document: BlockDesignDocument;
   onAddModule: () => void;
@@ -243,7 +272,7 @@ const CanvasInner = memo(function CanvasInner({
   routeRevision,
   onSelect,
   onToggleHierarchy,
-  onMoveNode,
+  onMoveNodes,
   onResizeNode,
   onCreateConnection,
   onRouteConnection,
@@ -253,6 +282,8 @@ const CanvasInner = memo(function CanvasInner({
   const store = useStoreApi();
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
   const [nodeFocusRequest, setNodeFocusRequest] = useState<NodeFocusRequest>();
   const [routeHandleFocusRequest, setRouteHandleFocusRequest] = useState<RouteHandleFocusRequest>();
   const [canvasAnnouncement, setCanvasAnnouncement] = useState("");
@@ -260,7 +291,9 @@ const CanvasInner = memo(function CanvasInner({
   const [resizeRestoreRevision, setResizeRestoreRevision] = useState(0);
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
   const alignmentGestureRef = useRef<AlignmentGesture | undefined>(undefined);
+  const boxSelectionGestureRef = useRef<BoxSelectionGesture | undefined>(undefined);
   const resizePreviewRef = useRef<ResizePreview | undefined>(undefined);
+  const multiSelection = selection.kind === "multiple";
   const largeGraph = layout.nodes.length >= LARGE_GRAPH_NODE_COUNT
     || layout.edges.length >= LARGE_GRAPH_EDGE_COUNT;
   const cullViewportElements = layout.nodes.length >= VIEWPORT_CULL_NODE_COUNT
@@ -308,7 +341,15 @@ const CanvasInner = memo(function CanvasInner({
     viewportNavigationGeneration.current += 1;
     void setViewport(getViewport(), { duration: 0 });
   }, [getViewport, setViewport]);
-  const beginAlignmentGesture = useCallback((nodeId: string): AlignmentGesture | undefined => {
+  const onCanvasPointerMoveCapture = useCallback((event: ReactPointerEvent) => {
+    interruptViewportNavigation();
+    const gesture = boxSelectionGestureRef.current;
+    if (gesture) gesture.end = { x: event.clientX, y: event.clientY };
+  }, [interruptViewportNavigation]);
+  const beginAlignmentGesture = useCallback((
+    nodeId: string,
+    excludedNodeIds: ReadonlySet<string> = new Set([nodeId]),
+  ): AlignmentGesture | undefined => {
     const state = store.getState();
     const subject = state.nodeLookup.get(nodeId);
     const layoutSubject = layout.nodes.find((node) => node.id === nodeId);
@@ -325,7 +366,7 @@ const CanvasInner = memo(function CanvasInner({
     };
     const candidates: AlignmentRect[] = [];
     state.nodeLookup.forEach((candidate, candidateId) => {
-      if (candidateId === nodeId || candidate.parentId !== subject.parentId || candidate.hidden) return;
+      if (excludedNodeIds.has(candidateId) || candidate.parentId !== subject.parentId || candidate.hidden) return;
       const width = candidate.measured.width ?? candidate.width ?? 0;
       const height = candidate.measured.height ?? candidate.height ?? 0;
       const { x, y } = candidate.internals.positionAbsolute;
@@ -409,6 +450,7 @@ const CanvasInner = memo(function CanvasInner({
         data: {
           ...node.data,
           toggleHierarchy: onToggleHierarchy,
+          canEditSelection: () => boxSelectionGestureRef.current === undefined && selectionRef.current.kind !== "multiple",
           inspectPort: (nodeId: string, port: BlockPort) =>
             selectRef.current({ kind: "port", levelId: node.data.levelId, nodeId, portId: port.id }),
           beginResize: node.data.positionEditable && !node.data.expanded
@@ -444,6 +486,7 @@ const CanvasInner = memo(function CanvasInner({
       onResizeNode,
       onToggleHierarchy,
       resizeRestoreRevision,
+      multiSelection,
       snapResizeGeometry,
     ],
   );
@@ -476,6 +519,7 @@ const CanvasInner = memo(function CanvasInner({
           data: {
             ...data,
             largeGraph,
+            canEditSelection: () => selectionRef.current.kind !== "multiple",
             laneOffset: laneOffsets.get(data.connection.id) ?? 0,
             separateSourceEndpoint,
             separateTargetEndpoint,
@@ -489,10 +533,18 @@ const CanvasInner = memo(function CanvasInner({
         };
       });
     },
-    [largeGraph, layout.edges, onRouteConnection],
+    [largeGraph, layout.edges, multiSelection, onRouteConnection],
   );
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasFlowNode>(baseNodes);
   const onCanvasNodesChange = useCallback((changes: NodeChange<CanvasFlowNode>[]) => {
+    const boxGesture = boxSelectionGestureRef.current;
+    if (boxGesture) {
+      changes.forEach((change) => {
+        if (change.type !== "select") return;
+        if (change.selected) boxGesture.selectedFlowNodeIds.add(change.id);
+        else boxGesture.selectedFlowNodeIds.delete(change.id);
+      });
+    }
     const preview = resizePreviewRef.current;
     if (!preview) {
       onNodesChange(changes);
@@ -517,9 +569,12 @@ const CanvasInner = memo(function CanvasInner({
     });
     return result;
   }, [baseNodes]);
-  const selectedNodeIds = selection.kind === "node"
-    ? flowNodeIdsBySelection.get(`${selection.levelId}\u0000${selection.nodeId}`) ?? NO_SELECTED_IDS
-    : NO_SELECTED_IDS;
+  const selectedDiagramItems = diagramSelectionItems(selection);
+  const selectedNodeIds = selectedDiagramItems.length === 0
+    ? NO_SELECTED_IDS
+    : [...new Set(selectedDiagramItems.flatMap((item) => item.kind === "node"
+        ? flowNodeIdsBySelection.get(`${item.levelId}\u0000${item.nodeId}`) ?? []
+        : []))];
   const selectedNodeIdsKey = selectedNodeIds.join("\u0000");
   const selectedNodeIdsRef = useRef<ReadonlySet<string>>(new Set(selectedNodeIds));
   selectedNodeIdsRef.current = new Set(selectedNodeIds);
@@ -540,12 +595,15 @@ const CanvasInner = memo(function CanvasInner({
     });
     return result;
   }, [routedEdges]);
-  const selectedEdgeIds = selection.kind === "connection"
-    ? flowEdgeIdsBySelection.get(`${selection.levelId}\u0000${selection.connectionId}`) ?? NO_SELECTED_IDS
-    : NO_SELECTED_IDS;
+  const selectedEdgeIds = selectedDiagramItems.length === 0
+    ? NO_SELECTED_IDS
+    : [...new Set(selectedDiagramItems.flatMap((item) => item.kind === "connection"
+        ? flowEdgeIdsBySelection.get(`${item.levelId}\u0000${item.connectionId}`) ?? []
+        : []))];
   const selectedEdgeIdsKey = selectedEdgeIds.join("\u0000");
   const selectedEdgeIdsRef = useRef<ReadonlySet<string>>(new Set(selectedEdgeIds));
   selectedEdgeIdsRef.current = new Set(selectedEdgeIds);
+  const [selectionRestoreRevision, setSelectionRestoreRevision] = useState(0);
   const handledRevealSelectionRequest = useRef(0);
   const [edges, setEdges] = useState<CanvasFlowEdge[]>(() =>
     reconcileCanvasSelection(routedEdges, selectedEdgeIdsRef.current),
@@ -599,11 +657,11 @@ const CanvasInner = memo(function CanvasInner({
 
   useEffect(() => {
     setNodes((current) => reconcileCanvasSelection(current, selectedNodeIdsRef.current));
-  }, [selectedNodeIdsKey, setNodes]);
+  }, [selectedNodeIdsKey, selectionRestoreRevision, setNodes]);
 
   useEffect(() => {
     setEdges((current) => reconcileCanvasSelection(current, selectedEdgeIdsRef.current));
-  }, [selectedEdgeIdsKey]);
+  }, [selectedEdgeIdsKey, selectionRestoreRevision]);
 
   useEffect(() => {
     if (!nodeFocusRequest) return;
@@ -693,7 +751,25 @@ const CanvasInner = memo(function CanvasInner({
   useEffect(() => {
     if (revealSelectionRequest <= handledRevealSelectionRequest.current) return;
     const targetNodeIds = new Set<string>();
-    if (selection.kind === "node" || selection.kind === "port") {
+    if (selection.kind === "multiple") {
+      selection.items.forEach((item) => {
+        if (item.kind === "node") {
+          flowNodeIdsBySelection
+            .get(`${item.levelId}\u0000${item.nodeId}`)
+            ?.forEach((id) => targetNodeIds.add(id));
+          return;
+        }
+        flowEdgeIdsBySelection
+          .get(`${item.levelId}\u0000${item.connectionId}`)
+          ?.forEach((id) => {
+            const edge = routedEdges.find((candidate) => candidate.id === id);
+            if (edge) {
+              targetNodeIds.add(edge.source);
+              targetNodeIds.add(edge.target);
+            }
+          });
+      });
+    } else if (selection.kind === "node" || selection.kind === "port") {
       flowNodeIdsBySelection
         .get(`${selection.levelId}\u0000${selection.nodeId}`)
         ?.forEach((id) => targetNodeIds.add(id));
@@ -739,16 +815,92 @@ const CanvasInner = memo(function CanvasInner({
     selection,
   ]);
 
-  const onNodeClick = useCallback<NodeMouseHandler<CanvasFlowNode>>((_, node) => {
-    onSelect({ kind: "node", levelId: node.data.levelId, nodeId: node.data.block.id });
+  const commitCanvasSelection = useCallback((next: SelectionRef, announcement?: string) => {
+    const accepted = onSelect(next);
+    if (!accepted) setSelectionRestoreRevision((revision) => revision + 1);
+    else if (announcement) setCanvasAnnouncement(announcement);
+    return accepted;
   }, [onSelect]);
+  const onNodeClick = useCallback<NodeMouseHandler<CanvasFlowNode>>((event, node) => {
+    const item: DiagramSelectionRef = {
+      kind: "node",
+      levelId: node.data.levelId,
+      nodeId: node.data.block.id,
+    };
+    const next = hasToggleModifier(event)
+      ? toggleDiagramSelection(selectionRef.current, [item], node.data.levelId)
+      : item;
+    commitCanvasSelection(next);
+  }, [commitCanvasSelection]);
   const onNodeDoubleClick = useCallback<NodeMouseHandler<CanvasFlowNode>>((_, node) => {
     if (node.data.block.hierarchy) onToggleHierarchy(node.data.block.hierarchy.childLevelId);
   }, [onToggleHierarchy]);
-  const onEdgeClick = useCallback<EdgeMouseHandler<CanvasFlowEdge>>((_, edge) => {
+  const onEdgeClick = useCallback<EdgeMouseHandler<CanvasFlowEdge>>((event, edge) => {
     if (!edge.data) return;
-    onSelect({ kind: "connection", levelId: edge.data.levelId, connectionId: edge.data.connection.id });
-  }, [onSelect]);
+    const item: DiagramSelectionRef = {
+      kind: "connection",
+      levelId: edge.data.levelId,
+      connectionId: edge.data.connection.id,
+    };
+    const next = hasToggleModifier(event)
+      ? toggleDiagramSelection(selectionRef.current, [item], edge.data.levelId)
+      : item;
+    commitCanvasSelection(next);
+  }, [commitCanvasSelection]);
+  const onSelectionStart = useCallback((event: ReactMouseEvent) => {
+    boxSelectionGestureRef.current = {
+      base: selectionRef.current,
+      toggle: hasToggleModifier(event),
+      start: { x: event.clientX, y: event.clientY },
+      end: { x: event.clientX, y: event.clientY },
+      selectedFlowNodeIds: new Set(),
+    };
+  }, []);
+  const onSelectionEnd = useCallback(() => {
+    const gesture = boxSelectionGestureRef.current;
+    if (!gesture) return;
+    const items = [...gesture.selectedFlowNodeIds].flatMap<DiagramSelectionRef>((flowNodeId) => {
+      const node = baseNodes.find((candidate) => candidate.id === flowNodeId);
+      return node ? [{ kind: "node", levelId: node.data.levelId, nodeId: node.data.block.id }] : [];
+    });
+    const canvasRoot = store.getState().domNode;
+    const renderedSelectionBounds = canvasRoot
+      ?.querySelector<HTMLElement>(".react-flow__selection")
+      ?.getBoundingClientRect();
+    const selectionBounds = renderedSelectionBounds ?? {
+      left: Math.min(gesture.start.x, gesture.end.x),
+      right: Math.max(gesture.start.x, gesture.end.x),
+      top: Math.min(gesture.start.y, gesture.end.y),
+      bottom: Math.max(gesture.start.y, gesture.end.y),
+    };
+    canvasRoot?.querySelectorAll<SVGGElement>(".react-flow__edge").forEach((element) => {
+      const edge = routedEdges.find((candidate) => candidate.id === element.dataset.id);
+      if (!edge?.data || edge.data.boundaryContinuation) return;
+      const route = element.querySelector<SVGPathElement>(".bd-interface-route");
+      if (!route) return;
+      const bounds = route.getBoundingClientRect();
+      if (
+        bounds.left < selectionBounds.left || bounds.right > selectionBounds.right ||
+        bounds.top < selectionBounds.top || bounds.bottom > selectionBounds.bottom
+      ) return;
+      items.push({
+        kind: "connection",
+        levelId: edge.data.levelId,
+        connectionId: edge.data.connection.id,
+      });
+    });
+    const next = gesture.toggle
+      ? toggleDiagramSelection(gesture.base, items, entryLevelId)
+      : replaceDiagramSelection(items, entryLevelId);
+    const count = diagramSelectionItems(next).length;
+    commitCanvasSelection(
+      next,
+      count > 1 ? `${count} diagram objects selected.` : count === 1 ? "1 diagram object selected." : "Selection cleared.",
+    );
+    window.requestAnimationFrame(() => {
+      if (boxSelectionGestureRef.current === gesture) boxSelectionGestureRef.current = undefined;
+    });
+  }, [baseNodes, commitCanvasSelection, entryLevelId, routedEdges, store]);
   const onElementKeyDownCapture = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof Element) || !target.matches(".react-flow__node, .react-flow__edge")) return;
@@ -757,7 +909,10 @@ const CanvasInner = memo(function CanvasInner({
     const node = baseNodes.find((candidate) => candidate.id === flowId);
     const edge = node ? undefined : routedEdges.find((candidate) => candidate.id === flowId);
     const keyboardDelta = NODE_KEYBOARD_DELTAS[event.key];
-    if (node && keyboardDelta && event.shiftKey && node.data.resizeNode && selectedNodeIdsRef.current.has(flowId)) {
+    if (
+      node && keyboardDelta && event.shiftKey && node.data.resizeNode &&
+      node.data.canEditSelection?.() !== false && selectedNodeIdsRef.current.has(flowId)
+    ) {
       event.preventDefault();
       event.stopPropagation();
       const minimum = minimumNodeDimensions(node.data.block);
@@ -800,14 +955,26 @@ const CanvasInner = memo(function CanvasInner({
     if (node && keyboardDelta && !event.shiftKey && node.data.positionEditable && selectedNodeIdsRef.current.has(flowId)) {
       event.preventDefault();
       event.stopPropagation();
-      const designPosition = {
-        x: node.data.designPosition.x + keyboardDelta.x,
-        y: node.data.designPosition.y + keyboardDelta.y,
-      };
-      if (onMoveNode(node.data.levelId, node.data.block.id, designPosition)) {
+      const moves = new Map<string, NodeMove>();
+      baseNodes.forEach((candidate) => {
+        if (!candidate.data.positionEditable || !selectedNodeIdsRef.current.has(candidate.id)) return;
+        const identity = `${candidate.data.levelId}\u0000${candidate.data.block.id}`;
+        moves.set(identity, {
+          levelId: candidate.data.levelId,
+          nodeId: candidate.data.block.id,
+          position: {
+            x: candidate.data.designPosition.x + keyboardDelta.x,
+            y: candidate.data.designPosition.y + keyboardDelta.y,
+          },
+        });
+      });
+      const designPosition = moves.get(`${node.data.levelId}\u0000${node.data.block.id}`)?.position;
+      if (designPosition && onMoveNodes([...moves.values()])) {
         setNodeFocusRequest({ flowNodeId: flowId, designPosition });
         setCanvasAnnouncement(
-          `Moved ${node.data.block.title} ${keyboardDelta.direction}. Position x ${designPosition.x}, y ${designPosition.y}.`,
+          moves.size > 1
+            ? `Moved ${moves.size} modules ${keyboardDelta.direction}.`
+            : `Moved ${node.data.block.title} ${keyboardDelta.direction}. Position x ${designPosition.x}, y ${designPosition.y}.`,
         );
       }
       return;
@@ -825,7 +992,7 @@ const CanvasInner = memo(function CanvasInner({
     if (selectRef.current(nextSelection) && event.key === "Escape") {
       (target as Element & { blur?: () => void }).blur?.();
     }
-  }, [baseNodes, onMoveNode, onResizeNode, routedEdges]);
+  }, [baseNodes, onMoveNodes, onResizeNode, routedEdges]);
 
   const resolveEndpoint = useCallback((flowNodeId: string | null, handleId: string | null | undefined) => {
     if (!flowNodeId || !handleId) return undefined;
@@ -871,17 +1038,28 @@ const CanvasInner = memo(function CanvasInner({
       guides: snapped.guides,
     };
   }, [beginAlignmentGesture]);
-  const onNodeDragStart = useCallback<OnNodeDrag<CanvasFlowNode>>((_, node) => {
-    beginAlignmentGesture(node.id);
+  const onNodeDragStart = useCallback<OnNodeDrag<CanvasFlowNode>>((_, node, draggedNodes) => {
+    beginAlignmentGesture(node.id, new Set([node.id, ...draggedNodes.map((candidate) => candidate.id)]));
   }, [beginAlignmentGesture]);
-  const onNodeDrag = useCallback<OnNodeDrag<CanvasFlowNode>>((event, node) => {
+  const onNodeDrag = useCallback<OnNodeDrag<CanvasFlowNode>>((event, node, draggedNodes) => {
     const snapped = snapMovingNode(node, event.altKey);
-    if (snapped.position.x === node.position.x && snapped.position.y === node.position.y) return;
-    setNodes((current) => current.map((candidate) => candidate.id === node.id
-      ? { ...candidate, position: snapped.position }
+    const correction = {
+      x: snapped.position.x - node.position.x,
+      y: snapped.position.y - node.position.y,
+    };
+    if (correction.x === 0 && correction.y === 0) return;
+    const movingIds = new Set([node.id, ...draggedNodes.map((candidate) => candidate.id)]);
+    setNodes((current) => current.map((candidate) => movingIds.has(candidate.id)
+      ? {
+          ...candidate,
+          position: {
+            x: candidate.position.x + correction.x,
+            y: candidate.position.y + correction.y,
+          },
+        }
       : candidate));
   }, [setNodes, snapMovingNode]);
-  const onNodeDragStop = useCallback<OnNodeDrag<CanvasFlowNode>>((event, node) => {
+  const onNodeDragStop = useCallback<OnNodeDrag<CanvasFlowNode>>((event, node, draggedNodes) => {
     const original = baseNodes.find((candidate) => candidate.id === node.id);
     if (!original) {
       alignmentGestureRef.current = undefined;
@@ -889,17 +1067,38 @@ const CanvasInner = memo(function CanvasInner({
       return;
     }
     const snapped = snapMovingNode(node, event.altKey);
+    const correction = {
+      x: snapped.position.x - node.position.x,
+      y: snapped.position.y - node.position.y,
+    };
     alignmentGestureRef.current = undefined;
     setAlignmentGuides([]);
-    const accepted = node.data.positionEditable && onMoveNode(node.data.levelId, node.data.block.id, {
-      x: Math.round(node.data.designPosition.x + snapped.position.x - original.position.x),
-      y: Math.round(node.data.designPosition.y + snapped.position.y - original.position.y),
+    const movedById = new Map(draggedNodes.map((candidate) => [candidate.id, candidate]));
+    movedById.set(node.id, node);
+    const moves = new Map<string, NodeMove>();
+    movedById.forEach((moved, flowId) => {
+      const baseline = baseNodes.find((candidate) => candidate.id === flowId);
+      if (!baseline?.data.positionEditable) return;
+      moves.set(`${baseline.data.levelId}\u0000${baseline.data.block.id}`, {
+        levelId: baseline.data.levelId,
+        nodeId: baseline.data.block.id,
+        position: {
+          x: baseline.data.designPosition.x + moved.position.x + correction.x - baseline.position.x,
+          y: baseline.data.designPosition.y + moved.position.y + correction.y - baseline.position.y,
+        },
+      });
     });
-    if (accepted) return;
-    setNodes((current) => current.map((candidate) => candidate.id === node.id
-      ? { ...candidate, position: { ...original.position }, dragging: false }
-      : candidate));
-  }, [baseNodes, onMoveNode, setNodes, snapMovingNode]);
+    const accepted = moves.size > 0 && onMoveNodes([...moves.values()]);
+    if (accepted) {
+      setCanvasAnnouncement(moves.size > 1 ? `Moved ${moves.size} modules.` : `Moved ${node.data.block.title}.`);
+      return;
+    }
+    setNodes((current) => current.map((candidate) => {
+      if (!movedById.has(candidate.id)) return candidate;
+      const baseline = baseNodes.find((item) => item.id === candidate.id);
+      return baseline ? { ...candidate, position: { ...baseline.position }, dragging: false } : candidate;
+    }));
+  }, [baseNodes, onMoveNodes, setNodes, snapMovingNode]);
   const onConnect = useCallback((connection: Connection) => {
     const normalized = normalizedConnection(connection);
     if (normalized) onCreateConnection(normalized);
@@ -923,9 +1122,9 @@ const CanvasInner = memo(function CanvasInner({
       alignmentGestureRef.current = undefined;
       resizePreviewRef.current = undefined;
       setAlignmentGuides([]);
-      onSelect({ kind: "level", levelId: entryLevelId });
+      commitCanvasSelection({ kind: "level", levelId: entryLevelId });
     },
-    [entryLevelId, onSelect],
+    [commitCanvasSelection, entryLevelId],
   );
   const onMiniMapNodeClick = useCallback<NonNullable<MiniMapProps<CanvasFlowNode>["onNodeClick"]>>(
     (event, node) => {
@@ -961,7 +1160,9 @@ const CanvasInner = memo(function CanvasInner({
       onNodeClick={onNodeClick}
       onNodeDoubleClick={onNodeDoubleClick}
       onEdgeClick={onEdgeClick}
-      onPointerMoveCapture={interruptViewportNavigation}
+      onSelectionStart={onSelectionStart}
+      onSelectionEnd={onSelectionEnd}
+      onPointerMoveCapture={onCanvasPointerMoveCapture}
       onKeyDownCapture={onElementKeyDownCapture}
       onConnect={onConnect}
       onReconnect={onReconnect}
@@ -976,7 +1177,9 @@ const CanvasInner = memo(function CanvasInner({
       minZoom={MIN_ZOOM}
       maxZoom={MAX_ZOOM}
       panOnScroll
+      panOnDrag={[1, 2]}
       selectionOnDrag
+      multiSelectionKeyCode={["Shift", "Control", "Meta"]}
       fitView
       fitViewOptions={FIT_VIEW_OPTIONS}
       onlyRenderVisibleElements={cullViewportElements}
@@ -1023,7 +1226,7 @@ export function BlockDesignCanvas(props: BlockDesignCanvasProps) {
         routeRevision={props.routeRevision}
         onSelect={props.onSelect}
         onToggleHierarchy={props.onToggleHierarchy}
-        onMoveNode={props.onMoveNode}
+        onMoveNodes={props.onMoveNodes}
         onResizeNode={props.onResizeNode}
         onCreateConnection={props.onCreateConnection}
         onRouteConnection={props.onRouteConnection}

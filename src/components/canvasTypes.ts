@@ -8,6 +8,7 @@ export interface CanvasBlockNodeData extends LayoutBlockNodeData {
   beginResize?: () => void;
   previewResize?: (geometry: NodeResizeGeometry, disableSnap: boolean) => void;
   resizeNode?: (geometry: NodeResizeGeometry, disableSnap: boolean) => boolean;
+  canEditSelection?: () => boolean;
 }
 
 export interface NodeResizeGeometry {
@@ -21,6 +22,7 @@ export interface CanvasInterfaceEdgeData extends LayoutInterfaceEdgeData {
   laneOffset?: number;
   separateSourceEndpoint?: boolean;
   separateTargetEndpoint?: boolean;
+  canEditSelection?: () => boolean;
   updateRouting?: (routing: ConnectionRouting | undefined) => boolean;
   requestRouteHandleFocus?: (handle: RouteHandleFocusTarget) => void;
 }

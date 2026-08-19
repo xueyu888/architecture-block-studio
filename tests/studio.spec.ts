@@ -1554,6 +1554,18 @@ test("protects unapplied Inspector changes across review navigation and save", a
   await cancelledNavigation;
   await expect(inspector.getByLabel("Title")).toHaveValue("Agent UI draft");
 
+  const modifierDialogPromise = page.waitForEvent("dialog");
+  const rejectedModifierSelection = flowNode(page, "system::project").click({
+    force: true,
+    modifiers: ["Shift"],
+  });
+  const modifierDialog = await modifierDialogPromise;
+  await modifierDialog.dismiss();
+  await rejectedModifierSelection;
+  await expect(flowAgentUi).toHaveClass(/selected/);
+  await expect(flowNode(page, "system::project")).not.toHaveClass(/selected/);
+  await expect(inspector.getByLabel("Title")).toHaveValue("Agent UI draft");
+
   const acceptDialogPromise = page.waitForEvent("dialog");
   const acceptedNavigation = project.click({ force: true });
   const acceptDialog = await acceptDialogPromise;
@@ -1894,6 +1906,23 @@ test("expands Core inline and preserves the parent context and boundary continui
   await clickReachableEdgePoint(page, continuation);
   await expect(page.locator(".react-flow__edge.selected")).toHaveCount(2);
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("Session Command RPC");
+});
+
+test("keeps a mixed-level selection reviewable after hierarchy expansion", async ({ page }) => {
+  await expandHierarchy(page, "Rust Agent Core");
+  const parent = flowNode(page, "system::rust-agent-core");
+  const child = flowNode(page, "system/rust-agent-core:core::session-api");
+  await page.locator(
+    '.bd-tree-select[data-level-id="system"][data-node-id="rust-agent-core"]',
+  ).click({ force: true });
+  await child.click({ force: true, modifiers: ["Shift"] });
+
+  const inspector = page.getByRole("region", { name: "Properties" });
+  await expect(parent).toHaveClass(/selected/);
+  await expect(child).toHaveClass(/selected/);
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("2 objects selected");
+  await expect(inspector.locator(".bd-multi-metrics dd")).toHaveText(["2", "0", "2"]);
+  await expect(page.locator(".bd-tree-row.is-selected")).toHaveCount(2);
 });
 
 test("shows and cross-probes all 40 declared interfaces", async ({ page }) => {
@@ -2340,6 +2369,18 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   metrics.selectModuleViewportMotionDurationMs = selectionTiming.viewportMotionDurationMs;
   metrics.selectModuleViewportTransformChanges = selectionTiming.viewportTransformChanges;
   metrics.selectModuleViewportMaxTransformGapMs = selectionTiming.viewportMaxTransformGapMs;
+  const multiSelectionStarted = performance.now();
+  const secondModuleButton = page.locator(
+    '.bd-tree-select[data-level-id="system"][data-node-id="module-001"]',
+  );
+  await secondModuleButton.click({ force: true, modifiers: ["Shift"] });
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("2 objects selected");
+  await expect(flowNode(page, "system::module-000")).toHaveClass(/selected/, { timeout: 30_000 });
+  await expect(flowNode(page, "system::module-001")).toHaveClass(/selected/, { timeout: 30_000 });
+  await expect(page.locator(".bd-node-resize-handle")).toHaveCount(0);
+  metrics.multiSelectTwoModulesMs = Math.round(performance.now() - multiSelectionStarted);
+  await secondModuleButton.click({ force: true, modifiers: ["ControlOrMeta"] });
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("Module 000");
   if (stress) {
     const selectedBox = await selectedFlowNode.boundingBox();
     expect(selectedBox).not.toBeNull();
@@ -2948,6 +2989,118 @@ test("aligns a pointer-moved module and lets Alt bypass guides for one gesture",
     (candidate: { id: string }) => candidate.id === "project",
   );
   expect(savedNode.layout.position.y).not.toBe(650);
+});
+
+test("box-selects, toggles, and moves modules as one professional selection", async ({ page, browserName }) => {
+  const project = flowNode(page, "system::project");
+  const knowledge = flowNode(page, "system::knowledge");
+  const inspector = page.getByRole("region", { name: "Properties" });
+  await project.click({ force: true });
+  await knowledge.click({ force: true, modifiers: ["Shift"] });
+
+  await expect(project).toHaveClass(/selected/);
+  await expect(knowledge).toHaveClass(/selected/);
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("2 objects selected");
+  await expect(inspector.locator(".bd-multi-metrics dd")).toHaveText(["2", "0", "1"]);
+  await expect(page.locator(".bd-tree-row.is-selected")).toHaveCount(2);
+  await expect(page.locator(".bd-node-resize-handle")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Batch deletion is unavailable/ })).toBeDisabled();
+
+  const projectBefore = await project.boundingBox();
+  const knowledgeBefore = await knowledge.boundingBox();
+  expect(projectBefore).not.toBeNull();
+  expect(knowledgeBefore).not.toBeNull();
+  const viewportBefore = await canvasViewportTransform(page);
+  const dragStart = {
+    x: projectBefore!.x + projectBefore!.width / 2,
+    y: projectBefore!.y + projectBefore!.height * 0.62,
+  };
+  await page.mouse.move(dragStart.x, dragStart.y);
+  await page.mouse.down();
+  await page.mouse.move(dragStart.x + 48, dragStart.y + 32, { steps: 10 });
+  await page.mouse.up();
+  await waitForEditorIdle(page);
+  const projectMoved = await project.boundingBox();
+  const knowledgeMoved = await knowledge.boundingBox();
+  expect(projectMoved).not.toBeNull();
+  expect(knowledgeMoved).not.toBeNull();
+  expect(projectMoved!.x - projectBefore!.x).toBeCloseTo(knowledgeMoved!.x - knowledgeBefore!.x, 0);
+  expect(projectMoved!.y - projectBefore!.y).toBeCloseTo(knowledgeMoved!.y - knowledgeBefore!.y, 0);
+  expect(await canvasViewportTransform(page)).toBe(viewportBefore);
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect.poll(async () => {
+    const [projectBox, knowledgeBox] = await Promise.all([project.boundingBox(), knowledge.boundingBox()]);
+    return projectBox && knowledgeBox
+      ? [Math.round(projectBox.x), Math.round(projectBox.y), Math.round(knowledgeBox.x), Math.round(knowledgeBox.y)]
+      : null;
+  }).toEqual([
+    Math.round(projectBefore!.x),
+    Math.round(projectBefore!.y),
+    Math.round(knowledgeBefore!.x),
+    Math.round(knowledgeBefore!.y),
+  ]);
+
+  await project.click({ force: true, modifiers: ["ControlOrMeta"] });
+  await expect(project).not.toHaveClass(/selected/);
+  await expect(knowledge).toHaveClass(/selected/);
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("Knowledge");
+
+  await knowledge.focus();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("System Overview");
+
+  const [projectBox, knowledgeBox] = await Promise.all([project.boundingBox(), knowledge.boundingBox()]);
+  expect(projectBox).not.toBeNull();
+  expect(knowledgeBox).not.toBeNull();
+  const start = {
+    x: Math.min(projectBox!.x, knowledgeBox!.x) - 12,
+    y: Math.min(projectBox!.y, knowledgeBox!.y) - 12,
+  };
+  const end = {
+    x: Math.max(projectBox!.x + projectBox!.width, knowledgeBox!.x + knowledgeBox!.width) + 12,
+    y: Math.max(projectBox!.y + projectBox!.height, knowledgeBox!.y + knowledgeBox!.height) + 12,
+  };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 10 });
+  await expect(page.locator(".react-flow__selection")).toBeVisible();
+  if (process.env.CAPTURE_MULTI_SELECTION === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/box-multi-selection.png");
+  }
+  await page.mouse.up();
+  await expect(project).toHaveClass(/selected/);
+  await expect(knowledge).toHaveClass(/selected/);
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText(/objects selected/);
+  if (process.env.CAPTURE_MULTI_SELECTION === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/multi-selection.png");
+  }
+
+  await page.locator(".bd-tree-level-row").filter({ hasText: "System Overview" }).click({ force: true });
+  const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
+  const edgeRoute = edge.locator(".bd-interface-route");
+  const [edgeBox, sourceBox, targetBox] = await Promise.all([
+    edgeRoute.boundingBox(),
+    flowNode(page, "system::agent-ui").boundingBox(),
+    flowNode(page, "system::rust-agent-core").boundingBox(),
+  ]);
+  expect(edgeBox).not.toBeNull();
+  expect(sourceBox).not.toBeNull();
+  expect(targetBox).not.toBeNull();
+  const edgeSelectionStart = {
+    x: edgeBox!.x - 8,
+    y: Math.min(sourceBox!.y, targetBox!.y) - 10,
+  };
+  await page.mouse.move(edgeSelectionStart.x, edgeSelectionStart.y);
+  await page.mouse.down();
+  await page.mouse.move(edgeBox!.x + edgeBox!.width + 8, edgeBox!.y + edgeBox!.height + 10, { steps: 8 });
+  await expect(page.locator(".react-flow__selection")).toBeVisible();
+  await page.mouse.up();
+  await expect(edge).toHaveClass(/selected/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("Session Command RPC");
 });
 
 test("resizes a selected module from a corner and persists one atomic geometry change", async ({ page, browserName }) => {
