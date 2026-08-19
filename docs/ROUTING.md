@@ -199,7 +199,15 @@ J(P)=\operatorname{lexmin}(U,Q,X,D_{max},D_{sum},B,H,T)
 
 线桥只改变 SVG path 的绘制命令，不改变 `RoutingScene`、`PlannedRoute.points`、目标向量、命中区、箭头或 JSON。浏览器审计要求每个严格交叉都恰好可被某个线桥解释，并拒绝无对应交点的孤立桥；因此“可以相交”和“看不清哪条线穿过哪条线”不是同一件事。
 
-## 10. 与 draw.io 和研究实现的关系
+## 10. 线路编辑与视口边缘平移
+
+手工线路的 points 始终属于设计坐标，viewport 只决定这些 points 如何投影到屏幕。拖动线段或折点进入 Canvas 四周 40 CSS px 区域后，`ViewportAutoPanController` 按边缘压力连续改变同一个 React Flow transform；每次实际移动后，Edge 用最新 `screenToFlowPosition` 重新计算当前预览。因此屏幕上的 live handle 继续贴住静止 pointer，而 committed route 在 gesture 期间隐藏，避免旧路径、预览线和静态把手叠成三套视觉。松手后只把最后一组正交 points 交给既有 `connection/route`；自动平移没有 waypoint，也不能触发额外历史。
+
+模块移动、连接预览、框选、route edit 和 resize 使用同一 40 px / 12 px policy。模块移动、框选、route edit 和 resize 共享一个 generation lease controller；节点拖动在每次成功 pan 后重放第三方 drag pointer，使多选与 Ctrl/⌘ clone 也在同一 frame 消费最新 viewport。连接创建 / 重连保留 React Flow 的 canonical document gesture，但取消必须在本地 guard 建立后显式完成第三方 mouseup 生命周期，否则清空预览仍可能遗留它的 auto-pan RAF。这个复用只统一 viewport 运动，不统一各工具的业务结束：pointerup 仍由所属 gesture 决定选择、提交或 no-op，controller 只确保 pointercancel、Escape、window blur、过期 owner 和组件卸载后不再滚动画布。独立浏览器门禁必须同时检查持续位移、pointer / preview 贴合、组内相对位置、结束后 transform 静止、正交性和文档 dirty 语义，不能用 animation frame 计数代替用户可见结果。
+
+draw.io 的 `scrollPointToVisible` 同样在约 40 px 边界内将一次 edge pressure 交给 `mxPanningManager`；manager 通过持续 timer 与 damper 更新 view，rubberband 在 PAN 事件后重绘选框（[`mxGraph.scrollPointToVisible`](https://github.com/jgraph/drawio/blob/a1f615b7f5a5237da71de2ce2f057b5fa70b0aeb/src/main/webapp/mxgraph/src/view/mxGraph.js#L2843-L2947)、[`mxPanningManager`](https://github.com/jgraph/drawio/blob/a1f615b7f5a5237da71de2ce2f057b5fa70b0aeb/src/main/webapp/mxgraph/src/util/mxPanningManager.js)、[`mxRubberband`](https://github.com/jgraph/drawio/blob/a1f615b7f5a5237da71de2ce2f057b5fa70b0aeb/src/main/webapp/mxgraph/src/handler/mxRubberband.js)）。本项目吸收“边缘意图持续驱动 viewport、gesture 再跟随重绘”的职责划分，但使用 requestAnimationFrame、显式 lease 和 React Flow 单一 transform，不复制 mxGraph timer 或全局 graph state。
+
+## 11. 与 draw.io 和研究实现的关系
 
 draw.io 的新 `LibavoidRouting` 绑定同样把编辑器适配与路由核心分开，收集全部 vertex 障碍物、固定端点约束和 jetty，再把 bends 写回 geometry；手工 waypoint 会接管自动路线。当前源码的一次连接拖拽只注册一次障碍、只移动临时端点并求一个 connector，resolved target 再走与 commit 相同的 fresh path。其所谓约 30ms throttle 的实际判别还要求拖动坐标和 pinned 状态完全相同，因此变化中的 pointer 并不会被合并成滞后路线（[`LibavoidRouting.js`](https://github.com/jgraph/drawio/blob/a1f615b7f5a5237da71de2ce2f057b5fa70b0aeb/src/main/webapp/js/diagramly/LibavoidRouting.js#L1586-L1616)、[`duplicate request guard`](https://github.com/jgraph/drawio/blob/a1f615b7f5a5237da71de2ce2f057b5fa70b0aeb/src/main/webapp/js/diagramly/LibavoidRouting.js#L1888-L1924)、[`session registration`](https://github.com/jgraph/drawio/blob/a1f615b7f5a5237da71de2ce2f057b5fa70b0aeb/src/main/webapp/js/diagramly/LibavoidRouting.js#L2078-L2125)）。本项目吸收 Owner 分离、固定端点、gesture session、静态障碍注册、同请求短时复用、live single-connector preview 和手工优先原则，但使用自己的场景、层级 Gate、目标向量、确定性协调与证书，不复制 draw.io 文件格式、WASM 绑定或编辑器 glue。
 

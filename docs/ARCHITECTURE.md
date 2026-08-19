@@ -37,7 +37,7 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 | `src/io` | 拥有外部 JSON 与已校验文档之间的转换 | `loadDesignFromObject/File/Url`、`serializeDesign`、`downloadDesign` | 不解释模块业务；加载失败保留已安装文档 |
 | `src/layout` | 从文档与展开状态派生纯复合节点、边和位置投影，定义布局真正消费的签名，并提供不持有交互状态的吸附与多选编排几何 | `layoutBlockDesign`、`layoutFrameSignature`、`layoutProjectionSignature`、`snapMovingRect`、`snapResizingRect`、`alignSelection`、`distributeSelection`、`LayoutResult`、`PlacementMode` | 不依赖 Studio 或 React 交互回调，不修改源文档；没有合法吸附候选时原样返回预览几何，非法编排输入或布局失败上抛给 Studio |
 | `src/routing` | 从绝对布局几何和锁定 waypoint 构造 `RoutingScene`，统一拥有版本化正交多连接策略、规模资源预算、确定性求解、证明等级与独立验证；同一布局投影还向 pointer preview 提供只读障碍、规范端口和层级域，另提供手工路线编辑几何与线桥 | `createRoutingLayoutProjectionFromLayout`、`createRoutingSceneFromLayout`、`solveConnectionPreview`、`routingPolicyForScene`、`solveRoutingScene`、`verifyRoutingResult`、`planRouteJumps`、`RoutingScene`、`RoutingPolicy`、`RoutingResult` | 设计坐标是路由事实；不移动模块、不改文档、不持有 gesture；preview 只解一条可丢弃 leg，不参与多线 lane 协调；规模只收紧同一策略的有界资源，不改变几何与失败语义。失败返回明确无解，不调用第二套自动 fallback。完整合同见 [`ROUTING.md`](ROUTING.md) |
-| `src/components` | 将纯布局投影组合为可交互 Canvas，拥有选中几何的 viewport framing 与具名缩放请求投影，并展示用户视图、发出用户意图 | `CanvasBlockNodeData`、`CanvasInterfaceEdgeData`、`CanvasViewportActionRequest`、`canvasGeometryBounds`、Canvas、Node、Edge、Tree、Inspector、Dialogs、Dock、Messages | 交互回调只存在于 Canvas 投影；viewport 只消费节点矩形、线路点集和可丢弃动作请求，不直接深改文档，局部表单草稿不得伪装成已提交事实 |
+| `src/components` | 将纯布局投影组合为可交互 Canvas，拥有选中几何的 viewport framing、具名缩放请求投影与直接手势的持续边缘平移，并展示用户视图、发出用户意图 | `CanvasBlockNodeData`、`CanvasInterfaceEdgeData`、`CanvasViewportActionRequest`、`ViewportAutoPanController`、`canvasGeometryBounds`、Canvas、Node、Edge、Tree、Inspector、Dialogs、Dock、Messages | 交互回调只存在于 Canvas 投影；viewport 只消费节点矩形、线路点集、指针压力和可丢弃动作请求，不直接深改文档，自动平移不得提交设计操作，局部表单草稿不得伪装成已提交事实 |
 | `src/studio` | 组合公开能力，拥有工作区选择协议、临时设计剪贴板与无碰撞粘贴位置投影 | `BlockDesignStudio`、`BlockDesignStudioProps`、`SelectionRef`、`selectAllInLevel`、`findDesignFragmentPlacement` 及纯选择查询 | 不重新定义 Schema、片段引用、布局或编辑规则；系统剪贴板失败时同源退化，组合失败应可见、可恢复 |
 | `src/App.tsx` | 提供独立应用的默认装配 | 默认示例 URL 与查询参数入口 | 示例不是核心依赖，不拥有设计内容 |
 | `tests/performance` + `scripts/performance-baseline.mjs` | 拥有压力观测样本合同与重复聚合入口 | `performance-sample v1`、`performance-trend-report v1`、`pnpm performance:baseline` | 只验证产品合同，不被运行时代码依赖，不写回设计 JSON；环境或样本漂移时停止生成可信报告 |
@@ -273,6 +273,21 @@ Zoom In、Zoom Out 与 Actual Size 由 Studio 发送具名、递增 revision 的
 Canvas 明确声明互不重叠的 gesture：左键空白拖动为 selection，`panOnDrag=[middle,right]`，`panActivationKeyCode=Space` 让 Space + 左拖平移，`panOnScroll` 让普通滚轮平移，`zoomActivationKeyCode=[Control,Meta]` 让 modifier + wheel 缩放。节点 / 连线的 Space 键盘选择只阻止默认浏览器行为，不再截断事件传播，因此对象有焦点时仍可进入 Space-pan。`spacePanActive` 与 PAN MODE pill 只是按键期间的可丢弃反馈；表单、按钮、链接、Dialog 与 Menu 不进入该模式，keyup、窗口失焦或卸载都会清理。
 
 平滑定位同样必须服从新的直接操作。Studio Fit、Sources / Messages / Inspector 交叉定位、MiniMap 和 Canvas 缩放 / Fit 控件都调用同一个 Canvas 导航协调器；它以 generation 标识自己发起的动画。只要 pointer 在动画期间进入画布，当前 transform 就以零时长固定，旧动画的异步完成不能重新宣称导航仍在进行。这样鼠标按下时命中的是用户眼前的模块，而不是动画继续移动后暴露的 pane。中断只结束可丢弃 viewport 动画，不改变 `SelectionRef`、设计坐标、布局或历史。
+
+持续边缘平移与一次性导航是两个正交协议。`ViewportAutoPanController` 从 Canvas client bounds、最新 pointer 与统一 policy 计算 40 CSS px 边缘带内的线性压力，每个 animation frame 最多移动 12 CSS px，并用 generation lease 保证同一时刻只有一个直接手势能驱动 viewport；旧 lease 的迟到 update / stop 均无效。正常 pointerup 仍由 node drag、box selection、route edit 或 resize 自己完成业务结束，controller 只统一兜底 pointercancel、Escape 与 window blur，因此不会越权决定位置、waypoint、模块尺寸或选择结果。节点拖动关闭 React Flow 内建 auto-pan，在每次 viewport frame 后向第三方 drag owner 重放同一 pointer；这样单模块、多模块和 Ctrl/⌘ clone 都使用同一受控节点投影，不会因第三方 RAF 与 React state 相差一帧而脱锚。框选期间第三方会暂时关闭普通 `panBy`，Canvas 只把同一个 pan/zoom 实例和 store transform 同步到新值；线路和 resize 在成功 pan 后用最新 screen-to-design 映射重放 pointer preview。连接创建 / 重连仍使用 React Flow 的 canonical document gesture；取消路径先立 cancelled guard，再发送一次 owner-document mouseup 完成第三方 listener 与 RAF 清理，迟到 commit 仍被 guard 拒绝。无边缘压力、gesture 结束、组件卸载或无可用 bounds 时循环停止，不写 JSON、历史、selection 或 authored geometry。
+
+```text
+Node drag / Box select / Route edit / Resize ─ lease ─┐
+                                                      ├─► ViewportAutoPan ─► one React Flow viewport transform
+                                                      │       │
+Connect / Reconnect ─ React Flow gesture + cancel ────┘       ├─ edge pressure / frames / safety
+                                                              └─► gesture live preview recompute
+                                                                          │ pointerup only
+                                                                          ▼
+                                                               existing DesignOperation
+
+Failure: stale lease / blur / Escape / pointercancel ─► stop viewport motion; no design write
+```
 
 React Flow 的 Node / Edge wrapper 虽然提供默认 Tab 焦点与 Enter、Space、Escape 键，但库内 DOM 顺序和 selection 都不是工作区事实。`canvasSelectionTraversal` 从完整 `LayoutResult` 构造稳定的深度优先 canonical 顺序：模块保持布局 / 文档顺序，每个 Level 的连接跟在所属模块之后，同一连接的 hierarchy continuation 只保留一个 selection key；只有一个明确容器投影时才提供 Level → parent module 映射，复用同一子 Level 的多个容器不会武断选择父级。Canvas 捕获 Tab / Shift + Tab 并把目标转换成既有 `SelectionRef`，Alt + Tab 使用明确 parent 映射，多选没有隐藏 primary，向前 / 向后分别收敛到首项 / 末项。首尾允许原生焦点离开画布，Inspector 输入、菜单和 Dialog 始终保留浏览器 Tab。
 

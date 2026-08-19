@@ -14,6 +14,8 @@ import {
   type RoutePoint,
 } from "../routing";
 import type { CanvasFlowEdge } from "./canvasTypes";
+import { useViewportAutoPan } from "./ViewportAutoPanContext";
+import type { ViewportAutoPanGesture, ViewportAutoPanPoint } from "./viewportAutoPan";
 
 type RouteDrag = {
   kind: "segment";
@@ -23,6 +25,8 @@ type RouteDrag = {
   points: RoutePoint[];
   group: SVGGElement;
   preview: SVGPathElement;
+  liveHandle: SVGCircleElement;
+  autoPan: ViewportAutoPanGesture;
   initialCoordinate: number;
 } | {
   kind: "bend";
@@ -31,6 +35,8 @@ type RouteDrag = {
   points: RoutePoint[];
   group: SVGGElement;
   preview: SVGPathElement;
+  liveHandle: SVGCircleElement;
+  autoPan: ViewportAutoPanGesture;
   initialPoint: RoutePoint;
 };
 
@@ -53,6 +59,7 @@ function endpointGripPosition(point: RoutePoint, position: EdgeProps<CanvasFlowE
 export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
   const store = useStoreApi();
   const { screenToFlowPosition } = useReactFlow();
+  const viewportAutoPan = useViewportAutoPan();
   const data = props.data;
   const routingGeometry = useMemo(() => {
     const nodeLookup = store.getState().nodeLookup;
@@ -114,7 +121,8 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
   const dragElements = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const group = event.currentTarget.closest<SVGGElement>("[data-connection-id]");
     const preview = group?.querySelector<SVGPathElement>(".bd-route-preview");
-    return group && preview ? { group, preview } : undefined;
+    const liveHandle = group?.querySelector<SVGCircleElement>(".bd-route-live-handle");
+    return group && preview && liveHandle ? { group, preview, liveHandle } : undefined;
   };
 
   const listenForDrag = () => {
@@ -123,53 +131,10 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
     window.addEventListener("pointercancel", finishDrag, { once: true });
   };
 
-  const beginSegmentDrag = (event: ReactPointerEvent<HTMLButtonElement>, segment: EditableRouteSegment) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const elements = dragElements(event);
-    if (!elements) return;
-    const { group, preview } = elements;
-    group.classList.add("is-routing");
-    preview.setAttribute("d", plainRoutePath);
-    drag.current = {
-      kind: "segment",
-      pointerId: event.pointerId,
-      segmentIndex: segment.index,
-      axis: segment.axis,
-      points: editing.points.map((point) => ({ ...point })),
-      group,
-      preview,
-      initialCoordinate: segment.axis === "h"
-        ? editing.points[segment.index].y
-        : editing.points[segment.index].x,
-    };
-    listenForDrag();
-  };
-
-  const beginBendDrag = (event: ReactPointerEvent<HTMLButtonElement>, bend: EditableRouteBend) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const elements = dragElements(event);
-    if (!elements) return;
-    const { group, preview } = elements;
-    group.classList.add("is-routing");
-    preview.setAttribute("d", plainRoutePath);
-    drag.current = {
-      kind: "bend",
-      pointerId: event.pointerId,
-      bendIndex: bend.index,
-      points: routePoints.map((point) => ({ ...point })),
-      group,
-      preview,
-      initialPoint: { ...bend.point },
-    };
-    listenForDrag();
-  };
-
-  const continueDrag = (event: globalThis.PointerEvent) => {
+  const updateDragAtPointer = (pointer: ViewportAutoPanPoint) => {
     const active = drag.current;
-    if (!active || active.pointerId !== event.pointerId) return;
-    const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    if (!active) return;
+    const position = screenToFlowPosition({ x: pointer.clientX, y: pointer.clientY });
     const next = active.kind === "segment"
       ? moveRouteSegment(
           active.points,
@@ -182,6 +147,73 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
         });
     drag.current = { ...active, points: next };
     active.preview.setAttribute("d", drawOrthogonalRoute(next));
+    const handlePoint = active.kind === "bend"
+      ? next[active.bendIndex]
+      : {
+          x: (next[active.segmentIndex].x + next[active.segmentIndex + 1].x) / 2,
+          y: (next[active.segmentIndex].y + next[active.segmentIndex + 1].y) / 2,
+        };
+    active.liveHandle.setAttribute("cx", String(handlePoint.x));
+    active.liveHandle.setAttribute("cy", String(handlePoint.y));
+  };
+
+  const beginSegmentDrag = (event: ReactPointerEvent<HTMLButtonElement>, segment: EditableRouteSegment) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const elements = dragElements(event);
+    if (!elements) return;
+    const { group, preview, liveHandle } = elements;
+    group.classList.add("is-routing");
+    preview.setAttribute("d", plainRoutePath);
+    const pointer = { clientX: event.clientX, clientY: event.clientY };
+    const autoPan = viewportAutoPan.start(pointer, updateDragAtPointer);
+    drag.current = {
+      kind: "segment",
+      pointerId: event.pointerId,
+      segmentIndex: segment.index,
+      axis: segment.axis,
+      points: editing.points.map((point) => ({ ...point })),
+      group,
+      preview,
+      liveHandle,
+      autoPan,
+      initialCoordinate: segment.axis === "h"
+        ? editing.points[segment.index].y
+        : editing.points[segment.index].x,
+    };
+    listenForDrag();
+  };
+
+  const beginBendDrag = (event: ReactPointerEvent<HTMLButtonElement>, bend: EditableRouteBend) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const elements = dragElements(event);
+    if (!elements) return;
+    const { group, preview, liveHandle } = elements;
+    group.classList.add("is-routing");
+    preview.setAttribute("d", plainRoutePath);
+    const pointer = { clientX: event.clientX, clientY: event.clientY };
+    const autoPan = viewportAutoPan.start(pointer, updateDragAtPointer);
+    drag.current = {
+      kind: "bend",
+      pointerId: event.pointerId,
+      bendIndex: bend.index,
+      points: routePoints.map((point) => ({ ...point })),
+      group,
+      preview,
+      liveHandle,
+      autoPan,
+      initialPoint: { ...bend.point },
+    };
+    listenForDrag();
+  };
+
+  const continueDrag = (event: globalThis.PointerEvent) => {
+    const active = drag.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    const pointer = { clientX: event.clientX, clientY: event.clientY };
+    updateDragAtPointer(pointer);
+    active.autoPan.update(pointer);
   };
 
   const finishDrag = (event: globalThis.PointerEvent) => {
@@ -192,6 +224,7 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
     window.removeEventListener("pointermove", continueDrag);
     window.removeEventListener("pointerup", finishDrag);
     window.removeEventListener("pointercancel", finishDrag);
+    active.autoPan.stop();
     active.group.classList.remove("is-routing");
     drag.current = undefined;
     const changed = active.kind === "segment"
@@ -284,6 +317,9 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
         className="bd-interface-route"
       />
       {props.selected && data.canEditSelection?.() !== false && <path className="bd-route-preview" d={plainRoutePath} aria-hidden="true" />}
+      {props.selected && data.canEditSelection?.() !== false && (
+        <circle className="bd-route-live-handle" cx={0} cy={0} r={6} aria-hidden="true" />
+      )}
       {props.selected && data.canEditSelection?.() !== false && !data.boundaryContinuation && endpointGrips.map((point, index) => (
         <circle
           key={index === 0 ? "source-grip" : "target-grip"}

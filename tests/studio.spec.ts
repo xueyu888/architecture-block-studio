@@ -6,6 +6,7 @@ import { performanceDesignDocument } from "./fixtures/performanceDesign";
 import { fiveLevelRoutingDesignDocument } from "./fixtures/fiveLevelRoutingDesign";
 import { routingStressDesignDocument } from "./fixtures/routingStressDesign";
 import { connectionPreviewDesignDocument } from "./fixtures/connectionPreviewDesign";
+import { viewportAutoPanDesignDocument } from "./fixtures/viewportAutoPanDesign";
 import { createPerformanceSample, emitPerformanceSample } from "./performance/performanceSample";
 
 const examplePath = fileURLToPath(
@@ -5036,6 +5037,421 @@ test("keeps selection, Space pan, button pan, wheel pan, and modifier zoom ortho
   await expect(page.locator(".bd-canvas-pan-mode")).toHaveCount(0);
   await page.keyboard.up("Space");
   await moduleFilter.fill("");
+});
+
+test("keeps a dragged module under a stationary viewport-edge pointer", async ({ page }) => {
+  const node = flowNode(page, "system::platform-provider");
+  const before = await node.boundingBox();
+  const canvas = await page.locator(".bd-react-flow").boundingBox();
+  expect(before && canvas).not.toBeNull();
+  const start = {
+    x: before!.x + Math.min(90, before!.width * 0.4),
+    y: before!.y + 16,
+  };
+  const target = {
+    x: canvas!.x + canvas!.width - 5,
+    y: Math.max(canvas!.y + 80, Math.min(canvas!.y + canvas!.height - 80, start.y)),
+  };
+  const pointerOffset = { x: start.x - before!.x, y: start.y - before!.y };
+
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(target.x, target.y, { steps: 10 });
+  await page.waitForTimeout(40);
+  const atArrival = await canvasTransform(page);
+  await page.waitForTimeout(220);
+  const afterHold = await canvasTransform(page);
+  expect(afterHold.x).toBeLessThan(atArrival.x - 12);
+  const live = await node.boundingBox();
+  expect(live).not.toBeNull();
+  // One 12 px auto-pan frame plus the 16 px design grid is the maximum
+  // visible anchor error before the next drag frame reconciles the node.
+  expect(Math.abs(target.x - live!.x - pointerOffset.x)).toBeLessThan(32);
+  expect(Math.abs(target.y - live!.y - pointerOffset.y)).toBeLessThan(32);
+  await page.mouse.up();
+  await waitForEditorIdle(page);
+  await expect(page.locator(".bd-statusbar")).toContainText("Unsaved changes");
+});
+
+test("keeps a selected module group together while edge auto-panning", async ({ page }) => {
+  const project = flowNode(page, "system::project");
+  const knowledge = flowNode(page, "system::knowledge");
+  await project.click({ force: true });
+  await knowledge.click({ force: true, modifiers: ["Shift"] });
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
+  const projectBefore = await project.boundingBox();
+  const knowledgeBefore = await knowledge.boundingBox();
+  const groupLocalPositions = () => page.locator(
+    '.react-flow__node[data-id="system::project"], .react-flow__node[data-id="system::knowledge"]',
+  ).evaluateAll((elements) => Object.fromEntries(elements.map((element) => {
+    const transform = (element as HTMLElement).style.transform;
+    const match = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(transform);
+    if (!match) throw new Error(`Unexpected node transform ${transform}`);
+    return [element.getAttribute("data-id"), { x: Number(match[1]), y: Number(match[2]) }];
+  })) as Record<string, { x: number; y: number }>);
+  const localBefore = await groupLocalPositions();
+  const canvas = await page.locator(".bd-react-flow").boundingBox();
+  expect(projectBefore && knowledgeBefore && canvas).not.toBeNull();
+  const start = {
+    x: projectBefore!.x + Math.min(90, projectBefore!.width * 0.4),
+    y: projectBefore!.y + 16,
+  };
+  const target = {
+    x: canvas!.x + canvas!.width - 5,
+    y: Math.max(canvas!.y + 80, Math.min(canvas!.y + canvas!.height - 80, start.y)),
+  };
+
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(target.x, target.y, { steps: 12 });
+  await page.waitForTimeout(40);
+  const atArrival = await canvasTransform(page);
+  await page.waitForTimeout(220);
+  const afterHold = await canvasTransform(page);
+  expect(afterHold.x).toBeLessThan(atArrival.x - 12);
+  const localLive = await groupLocalPositions();
+  expect(Math.abs(
+    (localLive["system::project"].x - localBefore["system::project"].x) -
+      (localLive["system::knowledge"].x - localBefore["system::knowledge"].x),
+  )).toBeLessThan(0.01);
+  expect(Math.abs(
+    (localLive["system::project"].y - localBefore["system::project"].y) -
+      (localLive["system::knowledge"].y - localBefore["system::knowledge"].y),
+  )).toBeLessThan(0.01);
+  await page.mouse.up();
+  await waitForEditorIdle(page);
+  await expect(page.locator(".bd-statusbar")).toContainText("Unsaved changes");
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
+});
+
+test("clones a selected module group at a stationary viewport-edge pointer", async ({ page }) => {
+  const agent = flowNode(page, "system::agent-ui");
+  const core = flowNode(page, "system::rust-agent-core");
+  await agent.click({ force: true });
+  await core.click({ force: true, modifiers: ["Shift"] });
+  const before = await agent.boundingBox();
+  const canvas = await page.locator(".bd-react-flow").boundingBox();
+  expect(before && canvas).not.toBeNull();
+  const start = {
+    x: before!.x + Math.min(90, before!.width * 0.4),
+    y: before!.y + 16,
+  };
+  const target = {
+    x: canvas!.x + canvas!.width - 5,
+    y: Math.max(canvas!.y + 80, Math.min(canvas!.y + canvas!.height - 80, start.y)),
+  };
+
+  await page.keyboard.down("Control");
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(target.x, target.y, { steps: 12 });
+  await page.waitForTimeout(40);
+  const atArrival = await canvasTransform(page);
+  await page.waitForTimeout(220);
+  const afterHold = await canvasTransform(page);
+  expect(afterHold.x).toBeLessThan(atArrival.x - 12);
+  await page.mouse.up();
+  await page.keyboard.up("Control");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(9);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(12);
+  await expect(page.locator(".bd-command-notice")).toContainText("Cloned 2 modules at the dragged position.");
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(7);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(10);
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
+});
+
+test("keeps a connection preview endpoint under a stationary viewport-edge pointer", async ({ page }) => {
+  const source = flowNode(page, "system::agent-ui")
+    .locator('.bd-port-handle-outer[data-handleid="session-command"]');
+  const sourceBox = await source.boundingBox();
+  const canvas = await page.locator(".bd-react-flow").boundingBox();
+  expect(sourceBox && canvas).not.toBeNull();
+  const start = {
+    x: sourceBox!.x + sourceBox!.width / 2,
+    y: sourceBox!.y + sourceBox!.height / 2,
+  };
+  const target = {
+    x: canvas!.x + canvas!.width - 4,
+    y: Math.max(canvas!.y + 80, Math.min(canvas!.y + canvas!.height - 80, start.y)),
+  };
+  const edgeCount = await page.locator(".react-flow__edge").count();
+
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(target.x, target.y, { steps: 12 });
+  await expect(page.locator('.bd-connection-gesture-panel[data-connection-mode="create"]')).toBeVisible();
+  await page.waitForTimeout(40);
+  const atArrival = await canvasTransform(page);
+  await page.waitForTimeout(220);
+  const afterHold = await canvasTransform(page);
+  expect(afterHold.x).toBeLessThan(atArrival.x - 12);
+  const pointerDistance = await page.locator(".bd-connection-preview-pointer").evaluate((circle, point) => {
+    const marker = circle as SVGCircleElement;
+    const matrix = marker.getScreenCTM();
+    if (!matrix) return Number.POSITIVE_INFINITY;
+    const screen = new DOMPoint(marker.cx.baseVal.value, marker.cy.baseVal.value).matrixTransform(matrix);
+    return Math.hypot(screen.x - point.x, screen.y - point.y);
+  }, target);
+  expect(pointerDistance).toBeLessThan(12);
+  await page.mouse.up();
+  await expect(page.locator(".bd-connection-gesture-panel")).toHaveCount(0);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(edgeCount);
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
+});
+
+test("keeps a reconnect preview attached while edge auto-panning at 100 percent", async ({ page }) => {
+  await runMenuCommand(page, "View", /^Actual Size \(100%\)/);
+  await expect.poll(() => canvasZoom(page)).toBeCloseTo(1, 3);
+  const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
+  await clickReachableEdgePoint(page, edge);
+  const updater = edge.locator(".react-flow__edgeupdater-target");
+  const updaterBox = await updater.boundingBox();
+  const canvas = await page.locator(".bd-react-flow").boundingBox();
+  expect(updaterBox && canvas).not.toBeNull();
+  const start = {
+    x: updaterBox!.x + updaterBox!.width / 2,
+    y: updaterBox!.y + updaterBox!.height / 2,
+  };
+  const target = {
+    x: canvas!.x + canvas!.width - 4,
+    y: Math.max(canvas!.y + 80, Math.min(canvas!.y + canvas!.height - 80, start.y)),
+  };
+
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(target.x, target.y, { steps: 12 });
+  await expect(page.locator('.bd-connection-gesture-panel[data-connection-mode="reconnect"]')).toBeVisible();
+  await page.waitForTimeout(40);
+  const atArrival = await canvasTransform(page);
+  await page.waitForTimeout(220);
+  const afterHold = await canvasTransform(page);
+  expect(afterHold.x).toBeLessThan(atArrival.x - 12);
+  const pointerDistance = await page.locator(".bd-connection-preview-pointer").evaluate((circle, point) => {
+    const marker = circle as SVGCircleElement;
+    const matrix = marker.getScreenCTM();
+    if (!matrix) return Number.POSITIVE_INFINITY;
+    const screen = new DOMPoint(marker.cx.baseVal.value, marker.cy.baseVal.value).matrixTransform(matrix);
+    return Math.hypot(screen.x - point.x, screen.y - point.y);
+  }, target);
+  expect(pointerDistance).toBeLessThan(12);
+
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".bd-connection-gesture-panel")).toHaveCount(0);
+  const atEscape = await canvasTransform(page);
+  await page.waitForTimeout(120);
+  const afterEscape = await canvasTransform(page);
+  expect(afterEscape.x).toBeCloseTo(atEscape.x, 1);
+  expect(afterEscape.y).toBeCloseTo(atEscape.y, 1);
+  await page.mouse.up();
+  await expect(page.locator(".bd-inspector-title code")).toContainText(
+    "agent-ui.session-command → rust-agent-core.session-command",
+  );
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
+});
+
+test("continues box selection at all four viewport edges and stops on release", async ({ page }) => {
+  const canvasLocator = page.locator(".bd-react-flow");
+  await expect(canvasLocator).toHaveAttribute("data-auto-pan-edge-threshold", "40");
+  await expect(canvasLocator).toHaveAttribute("data-auto-pan-maximum-frame-distance", "12");
+
+  const directions = ["right", "left", "bottom", "top"] as const;
+  for (const direction of directions) {
+    await page.keyboard.press("ControlOrMeta+Shift+A");
+    await page.keyboard.press("ControlOrMeta+Shift+H");
+    await page.waitForTimeout(350);
+    const canvas = await canvasLocator.boundingBox();
+    expect(canvas).not.toBeNull();
+    const start = {
+      x: canvas!.x + canvas!.width * 0.5,
+      y: canvas!.y + canvas!.height * 0.87,
+    };
+    const edge = direction === "right"
+      ? { x: canvas!.x + canvas!.width - 3, y: start.y }
+      : direction === "left"
+        ? { x: canvas!.x + 3, y: start.y }
+        : direction === "bottom"
+          ? { x: start.x, y: canvas!.y + canvas!.height - 3 }
+          : { x: start.x, y: canvas!.y + 3 };
+
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(edge.x, edge.y, { steps: 8 });
+    await expect(page.locator(".react-flow__selection")).toBeVisible();
+    await page.waitForTimeout(40);
+    const atArrival = await canvasTransform(page);
+    const framesAtArrival = Number(await canvasLocator.getAttribute("data-auto-pan-frame-count"));
+    await expect(canvasLocator).toHaveAttribute("data-auto-pan-active", "true");
+    await expect(canvasLocator).toHaveAttribute("data-auto-pan-pressured", "true");
+    await page.waitForTimeout(220);
+    const afterHold = await canvasTransform(page);
+    const framesAfterHold = Number(await canvasLocator.getAttribute("data-auto-pan-frame-count"));
+    const movedFramesAfterHold = Number(await canvasLocator.getAttribute("data-auto-pan-moved-frame-count"));
+    expect(framesAfterHold).toBeGreaterThan(framesAtArrival + 2);
+    expect(movedFramesAfterHold).toBeGreaterThan(2);
+    if (direction === "right") expect(afterHold.x).toBeLessThan(atArrival.x - 12);
+    if (direction === "left") expect(afterHold.x).toBeGreaterThan(atArrival.x + 12);
+    if (direction === "bottom") expect(afterHold.y).toBeLessThan(atArrival.y - 12);
+    if (direction === "top") expect(afterHold.y).toBeGreaterThan(atArrival.y + 12);
+
+    await page.mouse.up();
+    const atRelease = await canvasTransform(page);
+    await page.waitForTimeout(100);
+    const afterRelease = await canvasTransform(page);
+    expect(afterRelease.x).toBeCloseTo(atRelease.x, 1);
+    expect(afterRelease.y).toBeCloseTo(atRelease.y, 1);
+  }
+
+  await page.keyboard.press("ControlOrMeta+Shift+A");
+  await page.keyboard.press("ControlOrMeta+Shift+H");
+  await page.waitForTimeout(350);
+  const canvas = await canvasLocator.boundingBox();
+  expect(canvas).not.toBeNull();
+  const start = {
+    x: canvas!.x + canvas!.width * 0.5,
+    y: canvas!.y + canvas!.height * 0.87,
+  };
+  const edge = { x: canvas!.x + canvas!.width - 3, y: start.y };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(edge.x, edge.y, { steps: 8 });
+  await expect(canvasLocator).toHaveAttribute("data-auto-pan-active", "true");
+  await page.waitForTimeout(100);
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await expect(canvasLocator).toHaveAttribute("data-auto-pan-active", "false");
+  const atBlur = await canvasTransform(page);
+  await page.waitForTimeout(120);
+  const afterBlur = await canvasTransform(page);
+  expect(afterBlur.x).toBeCloseTo(atBlur.x, 1);
+  expect(afterBlur.y).toBeCloseTo(atBlur.y, 1);
+  await page.mouse.up();
+});
+
+test("keeps a route segment under a stationary edge pointer while auto-panning", async ({ page, browserName }) => {
+  await openDesignDialog(page);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "viewport-auto-pan-proof.block-design.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(viewportAutoPanDesignDocument())),
+  });
+  await expect(page.locator(".bd-document-title span")).toHaveText("Viewport Edge Auto-Pan");
+  await expect(page.locator(".react-flow__node")).toHaveCount(2);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+  await expect(page.locator(".bd-canvas-busy")).toHaveCount(0);
+  await page.waitForTimeout(350);
+
+  const edge = page.locator('.react-flow__edge[data-id="system::review-flow"]');
+  await clickReachableEdgePoint(page, edge);
+  const segment = edge.locator('.bd-route-segment-handle[data-route-axis="v"]').first();
+  const segmentBox = await segment.boundingBox();
+  const canvas = await page.locator(".bd-react-flow").boundingBox();
+  expect(segmentBox && canvas).not.toBeNull();
+  const pointerId = 87;
+  const start = { x: segmentBox!.x + segmentBox!.width / 2, y: segmentBox!.y + segmentBox!.height / 2 };
+  const target = {
+    x: canvas!.x + canvas!.width - 16,
+    y: Math.max(canvas!.y + 80, Math.min(canvas!.y + canvas!.height - 80, start.y)),
+  };
+  await segment.dispatchEvent("pointerdown", {
+    pointerId,
+    button: 0,
+    buttons: 1,
+    clientX: start.x,
+    clientY: start.y,
+  });
+  await page.evaluate(({ pointerId: id, target: point }) => {
+    window.dispatchEvent(new PointerEvent("pointermove", {
+      bubbles: true,
+      pointerId: id,
+      buttons: 1,
+      clientX: point.x,
+      clientY: point.y,
+    }));
+  }, { pointerId, target });
+  await page.waitForTimeout(40);
+  const atArrival = await canvasTransform(page);
+  await page.waitForTimeout(220);
+  const afterHold = await canvasTransform(page);
+  expect(afterHold.x).toBeLessThan(atArrival.x - 12);
+
+  const pointerDistance = await edge.locator(".bd-route-preview").evaluate((path, point) => {
+    const route = path as SVGPathElement;
+    const matrix = route.getScreenCTM();
+    if (!matrix) return Number.POSITIVE_INFINITY;
+    const length = route.getTotalLength();
+    let closest = Number.POSITIVE_INFINITY;
+    for (let index = 0; index <= 120; index += 1) {
+      const sample = route.getPointAtLength((length * index) / 120);
+      const screen = new DOMPoint(sample.x, sample.y).matrixTransform(matrix);
+      closest = Math.min(closest, Math.hypot(screen.x - point.x, screen.y - point.y));
+    }
+    return closest;
+  }, target);
+  expect(pointerDistance).toBeLessThan(16);
+  const liveHandleDistance = await edge.locator(".bd-route-live-handle").evaluate((circle, point) => {
+    const handle = circle as SVGCircleElement;
+    const matrix = handle.getScreenCTM();
+    if (!matrix) return Number.POSITIVE_INFINITY;
+    const screen = new DOMPoint(handle.cx.baseVal.value, handle.cy.baseVal.value).matrixTransform(matrix);
+    return Math.hypot(screen.x - point.x, screen.y - point.y);
+  }, target);
+  expect(liveHandleDistance).toBeLessThan(16);
+  if (process.env.CAPTURE_VIEWPORT_AUTO_PAN === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/viewport-edge-auto-pan.png");
+  }
+
+  await page.evaluate(({ pointerId: id, target: point }) => {
+    window.dispatchEvent(new PointerEvent("pointerup", {
+      bubbles: true,
+      pointerId: id,
+      button: 0,
+      clientX: point.x,
+      clientY: point.y,
+    }));
+  }, { pointerId, target });
+  await waitForEditorIdle(page);
+  await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
+});
+
+test("keeps a resize corner under a stationary edge pointer while auto-panning", async ({ page }) => {
+  const node = flowNode(page, "system::platform-provider");
+  await node.click({ force: true });
+  const handle = node.locator(".bd-node-resize-handle.bottom.right");
+  const before = await node.boundingBox();
+  const handleBox = await handle.boundingBox();
+  const canvas = await page.locator(".bd-react-flow").boundingBox();
+  expect(before && handleBox && canvas).not.toBeNull();
+  const start = {
+    x: handleBox!.x + handleBox!.width / 2,
+    y: handleBox!.y + handleBox!.height / 2,
+  };
+  const target = {
+    x: canvas!.x + canvas!.width - 4,
+    y: Math.max(canvas!.y + 80, Math.min(canvas!.y + canvas!.height - 80, start.y)),
+  };
+
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(target.x, target.y, { steps: 10 });
+  await page.waitForTimeout(40);
+  const atArrival = await canvasTransform(page);
+  await page.waitForTimeout(220);
+  const afterHold = await canvasTransform(page);
+  expect(afterHold.x).toBeLessThan(atArrival.x - 12);
+  const liveHandle = await handle.boundingBox();
+  expect(liveHandle).not.toBeNull();
+  expect(Math.abs(liveHandle!.x + liveHandle!.width / 2 - target.x)).toBeLessThan(18);
+  await page.mouse.up();
+  await waitForEditorIdle(page);
+
+  const after = await node.boundingBox();
+  expect(after).not.toBeNull();
+  expect(after!.width).toBeGreaterThan(before!.width + 80);
+  await expect(page.locator(".bd-statusbar")).toContainText("Unsaved changes");
 });
 
 test("resizes a selected module from a corner and persists one atomic geometry change", async ({ page, browserName }) => {

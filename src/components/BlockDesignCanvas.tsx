@@ -100,6 +100,12 @@ import {
 import type { CanvasFlowEdge, CanvasFlowNode, RouteHandleFocusTarget } from "./canvasTypes";
 import { InterfaceEdgeComponent } from "./InterfaceEdge";
 import { Tooltip } from "./Tooltip";
+import { ViewportAutoPanProvider } from "./ViewportAutoPanContext";
+import {
+  CANVAS_VIEWPORT_AUTO_PAN_POLICY,
+  createViewportAutoPanController,
+  type ViewportAutoPanGesture,
+} from "./viewportAutoPan";
 
 const nodeTypes = { block: BlockNodeComponent };
 const edgeTypes = { interface: InterfaceEdgeComponent };
@@ -326,6 +332,7 @@ interface BoxSelectionGesture {
   mode: CanvasBoundsSelectionMode;
   start: { x: number; y: number };
   end: { x: number; y: number };
+  autoPan: ViewportAutoPanGesture;
 }
 
 interface AltClickGesture {
@@ -393,6 +400,36 @@ const CanvasInner = memo(function CanvasInner({
 }: CanvasInnerProps) {
   const { fitBounds, fitView, getViewport, setViewport, zoomIn, zoomOut, zoomTo } = useReactFlow();
   const store = useStoreApi();
+  const viewportAutoPan = useMemo(() => createViewportAutoPanController({
+    bounds: () => store.getState().domNode?.getBoundingClientRect(),
+    panBy: (delta) => {
+      const state = store.getState();
+      if (!state.userSelectionActive) return state.panBy(delta);
+      if (!state.panZoom) return false;
+      // React Flow deliberately disables its pan/zoom behavior while the
+      // selection rectangle owns the pane. Synchronize the same canonical
+      // viewport state explicitly so the marquee and canvas can still travel
+      // together under sustained edge pressure.
+      const next = {
+        x: state.transform[0] + delta.x,
+        y: state.transform[1] + delta.y,
+        zoom: state.transform[2],
+      };
+      state.panZoom.syncViewport(next);
+      store.setState({ transform: [next.x, next.y, next.zoom] });
+      return true;
+    },
+    report: (snapshot) => {
+      const root = store.getState().domNode;
+      if (!root) return;
+      root.dataset.autoPanActive = snapshot.active ? "true" : "false";
+      root.dataset.autoPanPressured = snapshot.pressured ? "true" : "false";
+      root.dataset.autoPanStartCount = String(snapshot.startCount);
+      root.dataset.autoPanStopCount = String(snapshot.stopCount);
+      root.dataset.autoPanFrameCount = String(snapshot.frameCount);
+      root.dataset.autoPanMovedFrameCount = String(snapshot.movedFrameCount);
+    },
+  }), [store]);
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
   const selectionRef = useRef(selection);
@@ -409,6 +446,8 @@ const CanvasInner = memo(function CanvasInner({
   const [resizeRestoreRevision, setResizeRestoreRevision] = useState(0);
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
   const alignmentGestureRef = useRef<AlignmentGesture | undefined>(undefined);
+  const nodeDragAutoPanRef = useRef<ViewportAutoPanGesture | undefined>(undefined);
+  const nodeDragModifiersRef = useRef({ altKey: false, ctrlKey: false, metaKey: false, shiftKey: false });
   const boxSelectionStartRef = useRef<{
     x: number;
     y: number;
@@ -520,6 +559,7 @@ const CanvasInner = memo(function CanvasInner({
     if (gesture) {
       gesture.end = { x: event.clientX, y: event.clientY };
       if (event.altKey) gesture.mode = "intersecting";
+      gesture.autoPan.update({ clientX: event.clientX, clientY: event.clientY });
     }
   }, [interruptViewportNavigation]);
   const onCanvasPointerDownCapture = useCallback((event: ReactPointerEvent) => {
@@ -922,7 +962,14 @@ const CanvasInner = memo(function CanvasInner({
       connectionGestureCommitRef.current = undefined;
       pendingReconnectGestureRef.current = false;
       connectionGestureRef.current = undefined;
-      store.getState().cancelConnection();
+      const state = store.getState();
+      // React Flow's public cancelConnection only clears its store projection;
+      // its document-owned drag listeners and auto-pan frame are released by
+      // the same mouseup path as a physical gesture end. Complete that
+      // third-party interaction after installing our cancellation guard so a
+      // legal handle under the pointer still cannot commit on Escape / blur.
+      state.domNode?.ownerDocument.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      state.cancelConnection();
       setConnectionGesture(undefined);
       publishConnectionFeedback(
         "warning",
@@ -1390,6 +1437,7 @@ const CanvasInner = memo(function CanvasInner({
     event.preventDefault();
     event.stopPropagation();
     boxSelectionStartRef.current = undefined;
+    boxSelectionGestureRef.current?.autoPan.stop();
     boxSelectionGestureRef.current = undefined;
     suppressAltClickRef.current = true;
     window.requestAnimationFrame(() => { suppressAltClickRef.current = false; });
@@ -1435,6 +1483,8 @@ const CanvasInner = memo(function CanvasInner({
   const onCanvasPointerCancelCapture = useCallback(() => {
     altClickGestureRef.current = undefined;
     suppressAltClickRef.current = false;
+    boxSelectionGestureRef.current?.autoPan.stop();
+    boxSelectionGestureRef.current = undefined;
   }, []);
   const onNodeClick = useCallback<NodeMouseHandler<CanvasFlowNode>>((event, node) => {
     const item: DiagramSelectionRef = {
@@ -1471,12 +1521,14 @@ const CanvasInner = memo(function CanvasInner({
       mode: capturedStart?.mode ?? (event.altKey ? "intersecting" : "full"),
       start,
       end: { x: event.clientX, y: event.clientY },
+      autoPan: viewportAutoPan.start({ clientX: event.clientX, clientY: event.clientY }),
     };
     boxSelectionStartRef.current = undefined;
-  }, []);
+  }, [viewportAutoPan]);
   const onSelectionEnd = useCallback((event: ReactMouseEvent) => {
     const gesture = boxSelectionGestureRef.current;
     if (!gesture) return;
+    gesture.autoPan.stop();
     if (event.altKey) gesture.mode = "intersecting";
     const items: DiagramSelectionRef[] = [];
     const canvasRoot = store.getState().domNode;
@@ -1863,28 +1915,62 @@ const CanvasInner = memo(function CanvasInner({
       guides: snapped.guides,
     };
   }, [beginAlignmentGesture]);
-  const onNodeDragStart = useCallback<OnNodeDrag<CanvasFlowNode>>((_, node, draggedNodes) => {
+  const replayNodeDragPointer = useCallback((pointer: { clientX: number; clientY: number }) => {
+    window.dispatchEvent(new MouseEvent("mousemove", {
+      bubbles: true,
+      buttons: 1,
+      clientX: pointer.clientX,
+      clientY: pointer.clientY,
+      ...nodeDragModifiersRef.current,
+      view: window,
+    }));
+  }, []);
+  const onNodeDragStart = useCallback<OnNodeDrag<CanvasFlowNode>>((event, node, draggedNodes) => {
     beginAlignmentGesture(node.id, new Set([node.id, ...draggedNodes.map((candidate) => candidate.id)]));
-  }, [beginAlignmentGesture]);
+    nodeDragModifiersRef.current = {
+      altKey: event.altKey,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      shiftKey: event.shiftKey,
+    };
+    nodeDragAutoPanRef.current?.stop();
+    nodeDragAutoPanRef.current = viewportAutoPan.start(
+      { clientX: event.clientX, clientY: event.clientY },
+      replayNodeDragPointer,
+    );
+  }, [beginAlignmentGesture, replayNodeDragPointer, viewportAutoPan]);
   const onNodeDrag = useCallback<OnNodeDrag<CanvasFlowNode>>((event, node, draggedNodes) => {
+    nodeDragModifiersRef.current = {
+      altKey: event.altKey,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      shiftKey: event.shiftKey,
+    };
+    nodeDragAutoPanRef.current?.update({ clientX: event.clientX, clientY: event.clientY });
     const snapped = snapMovingNode(node, event.altKey);
     const correction = {
       x: snapped.position.x - node.position.x,
       y: snapped.position.y - node.position.y,
     };
     if (correction.x === 0 && correction.y === 0) return;
-    const movingIds = new Set([node.id, ...draggedNodes.map((candidate) => candidate.id)]);
-    setNodes((current) => current.map((candidate) => movingIds.has(candidate.id)
-      ? {
-          ...candidate,
-          position: {
-            x: candidate.position.x + correction.x,
-            y: candidate.position.y + correction.y,
-          },
-        }
-      : candidate));
+    const movedById = new Map(draggedNodes.map((candidate) => [candidate.id, candidate]));
+    movedById.set(node.id, node);
+    setNodes((current) => current.map((candidate) => {
+      const moved = movedById.get(candidate.id);
+      return moved
+        ? {
+            ...candidate,
+            position: {
+              x: moved.position.x + correction.x,
+              y: moved.position.y + correction.y,
+            },
+          }
+        : candidate;
+    }));
   }, [setNodes, snapMovingNode]);
   const onNodeDragStop = useCallback<OnNodeDrag<CanvasFlowNode>>((event, node, draggedNodes) => {
+    nodeDragAutoPanRef.current?.stop();
+    nodeDragAutoPanRef.current = undefined;
     const original = baseNodes.find((candidate) => candidate.id === node.id);
     if (!original) {
       alignmentGestureRef.current = undefined;
@@ -1985,12 +2071,13 @@ const CanvasInner = memo(function CanvasInner({
 
   return (
     <>
-      <ConnectionGesturePreviewProvider
-        environment={routingProjection.layoutProjection.previewEnvironment}
-        policy={routingProjection.policy}
-        gesture={connectionGesture}
-      >
-        <ReactFlow<CanvasFlowNode, CanvasFlowEdge>
+      <ViewportAutoPanProvider controller={viewportAutoPan}>
+        <ConnectionGesturePreviewProvider
+          environment={routingProjection.layoutProjection.previewEnvironment}
+          policy={routingProjection.policy}
+          gesture={connectionGesture}
+        >
+          <ReactFlow<CanvasFlowNode, CanvasFlowEdge>
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
@@ -2028,6 +2115,9 @@ const CanvasInner = memo(function CanvasInner({
           snapGrid={SNAP_GRID}
           minZoom={MIN_ZOOM}
           maxZoom={MAX_ZOOM}
+          autoPanOnConnect
+          autoPanOnNodeDrag={false}
+          autoPanSpeed={CANVAS_VIEWPORT_AUTO_PAN_POLICY.maximumFrameDistancePx}
           panOnScroll
           panOnDrag={[1, 2]}
           panActivationKeyCode="Space"
@@ -2041,7 +2131,9 @@ const CanvasInner = memo(function CanvasInner({
           proOptions={REACT_FLOW_OPTIONS}
           deleteKeyCode={null}
           className="bd-react-flow"
-        >
+          data-auto-pan-edge-threshold={CANVAS_VIEWPORT_AUTO_PAN_POLICY.edgeThresholdPx}
+          data-auto-pan-maximum-frame-distance={CANVAS_VIEWPORT_AUTO_PAN_POLICY.maximumFrameDistancePx}
+          >
           {CANVAS_BACKGROUND}
           {spacePanActive ? (
             <Panel className="bd-canvas-pan-mode nokey" position="top-right" aria-live="polite">
@@ -2086,8 +2178,9 @@ const CanvasInner = memo(function CanvasInner({
             maskColor="var(--minimap-mask)"
             onNodeClick={onMiniMapNodeClick}
           />
-        </ReactFlow>
-      </ConnectionGesturePreviewProvider>
+          </ReactFlow>
+        </ConnectionGesturePreviewProvider>
+      </ViewportAutoPanProvider>
       <div className="bd-visually-hidden bd-canvas-announcement" role="status" aria-live="polite" aria-atomic="true">
         {canvasAnnouncement}
       </div>

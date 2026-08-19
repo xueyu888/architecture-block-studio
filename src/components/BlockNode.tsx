@@ -1,6 +1,6 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { Box, Minus, Pin, Plus } from "lucide-react";
-import { useRef, type CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import {
   BLOCK_NODE_GEOMETRY,
   bindingPortId,
@@ -15,6 +15,8 @@ import {
 } from "../layout";
 import type { BlockPort, PortSide } from "../model";
 import type { CanvasFlowNode } from "./canvasTypes";
+import { useViewportAutoPan } from "./ViewportAutoPanContext";
+import type { ViewportAutoPanGesture, ViewportAutoPanPoint } from "./viewportAutoPan";
 
 type GeometryStyle = CSSProperties & Record<`--${string}`, string>;
 
@@ -28,6 +30,33 @@ function resizeShiftKey(event: { sourceEvent?: Event }): boolean {
   return event.sourceEvent instanceof MouseEvent || event.sourceEvent instanceof PointerEvent
     ? event.sourceEvent.shiftKey
     : false;
+}
+
+function resizePointer(event: { sourceEvent?: Event }): ViewportAutoPanPoint | undefined {
+  const source = event.sourceEvent;
+  if (source instanceof MouseEvent || source instanceof PointerEvent) {
+    return { clientX: source.clientX, clientY: source.clientY };
+  }
+  if (source instanceof TouchEvent && source.touches.length > 0) {
+    return { clientX: source.touches[0].clientX, clientY: source.touches[0].clientY };
+  }
+  return undefined;
+}
+
+function replayResizePointer(event: { sourceEvent?: Event }, pointer: ViewportAutoPanPoint): void {
+  const source = event.sourceEvent;
+  if (!(source instanceof MouseEvent || source instanceof PointerEvent)) return;
+  window.dispatchEvent(new MouseEvent("mousemove", {
+    bubbles: true,
+    buttons: 1,
+    clientX: pointer.clientX,
+    clientY: pointer.clientY,
+    altKey: source.altKey,
+    ctrlKey: source.ctrlKey,
+    metaKey: source.metaKey,
+    shiftKey: source.shiftKey,
+    view: window,
+  }));
 }
 
 const positionBySide: Record<PortSide, Position> = {
@@ -189,6 +218,9 @@ function PortRail({
 
 export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowNode>) {
   const resizeGestureRef = useRef<{ original: NodeResizeRect; direction: NodeResizeDirection } | undefined>(undefined);
+  const resizeAutoPanRef = useRef<ViewportAutoPanGesture | undefined>(undefined);
+  const viewportAutoPan = useViewportAutoPan();
+  useEffect(() => () => resizeAutoPanRef.current?.stop(), []);
   const { block } = data;
   const hierarchy = block.hierarchy;
   const portsBySide = Object.fromEntries(
@@ -233,14 +265,24 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
         autoScale
         handleClassName="bd-node-resize-handle"
         lineClassName="bd-node-resize-line"
-        onResizeStart={(_, geometry) => {
+        onResizeStart={(event, geometry) => {
           resizeGestureRef.current = {
             original: { x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height },
             direction: { x: 0, y: 0 },
           };
           data.beginResize?.();
+          const pointer = resizePointer(event);
+          if (pointer) {
+            resizeAutoPanRef.current?.stop();
+            resizeAutoPanRef.current = viewportAutoPan.start(
+              pointer,
+              (latestPointer) => replayResizePointer(event, latestPointer),
+            );
+          }
         }}
         onResize={(event, geometry) => {
+          const pointer = resizePointer(event);
+          if (pointer) resizeAutoPanRef.current?.update(pointer);
           const gesture = resizeGestureRef.current;
           const direction = {
             x: Math.sign(geometry.direction[0]) as -1 | 0 | 1,
@@ -262,6 +304,8 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
           }, resizeAltKey(event) || resizeShiftKey(event));
         }}
         onResizeEnd={(event, geometry) => {
+          resizeAutoPanRef.current?.stop();
+          resizeAutoPanRef.current = undefined;
           const gesture = resizeGestureRef.current;
           const requested = { x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height };
           const resolved = resizeShiftKey(event) && gesture
