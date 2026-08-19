@@ -51,7 +51,7 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 
 ![双层展开后的场景级正交布线局部](docs/screenshots/scene-routing-core-detail.png)
 
-卡片尺寸不是画布临时效果。拖动四边 / 四角或使用 **Shift + 方向键** 调整后，位置、宽高、端口和线路作为一组原子几何保存；内容安全下限会避免端口文字被压坏。
+卡片尺寸不是画布临时效果。拖动四边 / 四角或使用 **Ctrl/⌘ + Shift + 方向键** 调整后，位置、宽高、端口和线路作为一组原子几何保存；内容安全下限会避免端口文字被压坏。
 
 ![模块四边与四角尺寸编辑](docs/screenshots/node-resize.png)
 

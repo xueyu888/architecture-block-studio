@@ -4122,17 +4122,28 @@ test("matches a sibling size while resizing and lets Alt bypass size snapping", 
   await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("256 × 145");
 });
 
-test("resizes a focused module by grid increments from the keyboard", async ({ page }) => {
+test("resizes a focused module only with the draw.io keyboard chord", async ({ page }) => {
   const node = flowNode(page, "system::agent-ui");
   await node.click({ force: true });
   await node.focus();
   await expect(node).toBeFocused();
 
+  const initialBounds = await node.boundingBox();
+  expect(initialBounds).not.toBeNull();
   await page.keyboard.press("Shift+ArrowRight");
   await waitForEditorIdle(page);
   await expect(node).toBeFocused();
+  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("250 × 175");
+  const shiftOnlyBounds = await node.boundingBox();
+  expect(shiftOnlyBounds).not.toBeNull();
+  expect(shiftOnlyBounds!.x).toBeCloseTo(initialBounds!.x, 4);
+  expect(shiftOnlyBounds!.y).toBeCloseTo(initialBounds!.y, 4);
+
+  await page.keyboard.press("ControlOrMeta+Shift+ArrowRight");
+  await waitForEditorIdle(page);
+  await expect(node).toBeFocused();
   await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("266 × 175");
-  await page.keyboard.press("Shift+ArrowDown");
+  await page.keyboard.press("ControlOrMeta+Shift+ArrowDown");
   await waitForEditorIdle(page);
   await expect(node).toBeFocused();
   await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("266 × 191");

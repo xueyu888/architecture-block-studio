@@ -227,7 +227,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 - 布线资源边界与 Canvas 视口裁剪是两个独立策略：大型场景只减少同一 `orthogonal-scene-v1` 策略的候选顶点、相关障碍物和迭代数，后者只减少压力图的 DOM 挂载。两者都不得删减 `LayoutResult`、React Flow store、MiniMap、图中总数或保存输出；200 / 400 档继续全量挂载以执行每条路径的几何门禁。
 - 视口导航同样与设计事实正交：默认和 200 / 400 图使用 280 ms 平滑定位；启用视口裁剪的压力图使用单次直接定位，避免插值途中持续换挂载。React Flow MiniMap 会保留首次 `onNodeClick` 闭包，因此 Canvas 暴露稳定回调并从 ref 读取最新规模策略；不能让第三方回调生命周期冻结空布局时期的配置。
 - 用户拖动期间的 position 只是 React Flow 预览；松手时 Canvas 按选中模块数量请求一次 `node/move` 或 `nodes/move`。成组移动保留各模块相对位置并共同接受参考线修正；多选对齐 / 分布同样只生成一次 `nodes/move`，不能按节点拆成多次提交。只有 Editor 接受后，各自的 `node.layout.position` 才成为新位置。若草稿保护、对象存在性或可编辑性规则拒绝操作，Canvas 一次恢复全部 base node 文档投影，不创建补偿操作、不覆盖错误提示或未应用草稿。ELK 自动位置不写回文档。
-- 用户拖动四边 / 四角期间的 position 与 dimensions 同样只是 React Flow 预览；松手只提交一次 `node/resize`。被接受后，布局、端口和线路都从新的文档几何重算；被拒绝后，节点与线路恢复原投影。选中模块上的 Shift + Arrow 按 16 设计像素调整宽或高，并通过一次性 `NodeFocusRequest` 恢复焦点；公告只从被接受的新尺寸派生。
+- 用户拖动四边 / 四角期间的 position 与 dimensions 同样只是 React Flow 预览；松手只提交一次 `node/resize`。被接受后，布局、端口和线路都从新的文档几何重算；被拒绝后，节点与线路恢复原投影。选中模块上的 Ctrl/Cmd + Shift + Arrow 按 16 设计像素调整宽或高；Shift + Arrow 单独按下由 Canvas 拦截且不得产生第三方临时位移或尺寸副本。成功提交后通过一次性 `NodeFocusRequest` 恢复焦点，公告只从被接受的新尺寸派生。
 - 展开子设计时，子节点使用 compound parent 与相对位置，父模块继续提供上下文和边界。
 - 路径从具名源端口开始，在具名目标端口结束。
 - 每条可见逻辑连接只在真实 target 显示一个语义箭头；内部 hierarchy continuation 不重复显示箭头，Port Handle 不承担方向表达。

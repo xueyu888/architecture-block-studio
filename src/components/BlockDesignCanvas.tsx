@@ -1047,12 +1047,11 @@ const CanvasInner = memo(function CanvasInner({
     const node = baseNodes.find((candidate) => candidate.id === flowId);
     const edge = node ? undefined : routedEdges.find((candidate) => candidate.id === flowId);
     const keyboardDelta = NODE_KEYBOARD_DELTAS[event.key];
-    if (
-      node && keyboardDelta && event.shiftKey && node.data.resizeNode &&
-      node.data.canEditSelection?.() !== false && selectedNodeIdsRef.current.has(flowId)
-    ) {
+    if (node && keyboardDelta && event.shiftKey && selectedNodeIdsRef.current.has(flowId)) {
       event.preventDefault();
       event.stopPropagation();
+      const resizeModifier = (event.ctrlKey || event.metaKey) && !event.altKey;
+      if (!resizeModifier || !node.data.resizeNode || node.data.canEditSelection?.() === false) return;
       const minimum = minimumNodeDimensions(node.data.block);
       const currentWidth = node.width ?? minimum.width;
       const currentHeight = node.height ?? minimum.height;
