@@ -1,8 +1,18 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Box, Minus, Pin, Plus } from "lucide-react";
-import { bindingPortId, innerPortId } from "../layout";
+import type { CSSProperties } from "react";
+import {
+  BLOCK_NODE_GEOMETRY,
+  bindingPortId,
+  innerPortId,
+  portLabelWidth,
+  portRailOffset,
+  portsForSide,
+} from "../layout";
 import type { BlockPort, PortSide } from "../model";
 import type { CanvasFlowNode } from "./canvasTypes";
+
+type GeometryStyle = CSSProperties & Record<`--${string}`, string>;
 
 const positionBySide: Record<PortSide, Position> = {
   left: Position.Left,
@@ -25,25 +35,24 @@ function handleType(port: BlockPort): "source" | "target" {
 function Port({
   port,
   index,
-  count,
+  sidePorts,
   nodeId,
   inspect,
   expanded,
 }: {
   port: BlockPort;
   index: number;
-  count: number;
+  sidePorts: readonly BlockPort[];
   nodeId: string;
   inspect?: (nodeId: string, port: BlockPort) => void;
   expanded: boolean;
 }) {
-  const offset = `${((index + 1) / (count + 1)) * 100}%`;
   const vertical = port.side === "left" || port.side === "right";
-  const style = vertical ? { top: offset } : { left: offset };
+  const offset = ((index + 1) / (sidePorts.length + 1)) * 100;
   return (
     <div
       className={`bd-port bd-port-${port.side}`}
-      style={style}
+      style={vertical ? { top: `${offset}%` } : { left: `${offset}%` }}
       title={`${port.label} · ${port.direction}${port.dataType ? ` · ${port.dataType}` : ""}`}
     >
       <Handle
@@ -70,30 +79,105 @@ function Port({
           className={`bd-port-handle bd-port-handle-inner bd-port-handle-anchor-${port.side} bd-port-handle-${port.direction}`}
         />
       )}
-      <button
-        type="button"
-        className="bd-port-label nodrag nopan"
-        onClick={(event) => {
-          event.stopPropagation();
-          inspect?.(nodeId, port);
-        }}
-      >
-        <span>{port.label}</span>
-        {port.dataType && <small>{port.dataType}</small>}
-      </button>
     </div>
   );
 }
 
-function portsForSide(ports: BlockPort[], side: PortSide): BlockPort[] {
-  return ports
-    .filter((port) => port.side === side)
-    .sort((left, right) => (left.order ?? 999) - (right.order ?? 999) || left.label.localeCompare(right.label));
+function PortLabel({
+  port,
+  index,
+  sidePorts,
+  nodeId,
+  inspect,
+}: {
+  port: BlockPort;
+  index: number;
+  sidePorts: readonly BlockPort[];
+  nodeId: string;
+  inspect?: (nodeId: string, port: BlockPort) => void;
+}) {
+  const vertical = port.side === "left" || port.side === "right";
+  const offset = vertical
+    ? ((index + 1) / (sidePorts.length + 1)) * 100
+    : portRailOffset(sidePorts, index);
+  return (
+    <button
+      type="button"
+      className={`bd-port-label bd-port-label-${port.side} nodrag nopan`}
+      style={{
+        ...(vertical ? { top: `${offset}%` } : { left: `${offset}%` }),
+        "--port-label-width": `${portLabelWidth(port.label)}px`,
+      } as GeometryStyle}
+      title={`${port.label} · ${port.direction}${port.dataType ? ` · ${port.dataType}` : ""}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        inspect?.(nodeId, port);
+      }}
+    >
+      <span>{port.label}</span>
+      {port.dataType && <small>{port.dataType}</small>}
+    </button>
+  );
+}
+
+function PortRail({
+  side,
+  ports,
+  nodeId,
+  inspect,
+  expanded,
+}: {
+  side: PortSide;
+  ports: readonly BlockPort[];
+  nodeId: string;
+  inspect?: (nodeId: string, port: BlockPort) => void;
+  expanded: boolean;
+}) {
+  if (ports.length === 0) return null;
+  return (
+    <div className={`bd-port-rail bd-port-rail-${side}`} data-port-side={side}>
+      {ports.map((port, index) => (
+        <Port
+          key={port.id}
+          port={port}
+          index={index}
+          sidePorts={ports}
+          nodeId={nodeId}
+          inspect={inspect}
+          expanded={expanded}
+        />
+      ))}
+      {ports.map((port, index) => (
+        <PortLabel
+          key={`label:${port.id}`}
+          port={port}
+          index={index}
+          sidePorts={ports}
+          nodeId={nodeId}
+          inspect={inspect}
+        />
+      ))}
+    </div>
+  );
 }
 
 export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowNode>) {
   const { block } = data;
   const hierarchy = block.hierarchy;
+  const portsBySide = Object.fromEntries(
+    (["left", "right", "top", "bottom"] as PortSide[])
+      .map((side) => [side, portsForSide(block.ports, side)] as const),
+  ) as Record<PortSide, BlockPort[]>;
+  const widestLabel = (side: PortSide) => portsBySide[side]
+    .reduce((width, port) => Math.max(width, portLabelWidth(port.label)), 0);
+  const geometryStyle = {
+    "--block-header-height": `${BLOCK_NODE_GEOMETRY.headerHeight}px`,
+    "--block-owner-band-height": `${BLOCK_NODE_GEOMETRY.ownerBandHeight}px`,
+    "--port-top-rail-height": `${portsBySide.top.length > 0 ? BLOCK_NODE_GEOMETRY.horizontalRailHeight : 0}px`,
+    "--port-bottom-rail-height": `${portsBySide.bottom.length > 0 ? BLOCK_NODE_GEOMETRY.horizontalRailHeight : 0}px`,
+    "--port-left-label-width": `${widestLabel("left")}px`,
+    "--port-right-label-width": `${widestLabel("right")}px`,
+  } as GeometryStyle;
 
   return (
     <article
@@ -103,6 +187,7 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
       data-hierarchy-depth={data.hierarchyDepth}
       data-expanded={data.expanded ? "true" : "false"}
       data-tone={block.tone}
+      style={geometryStyle}
     >
       <header className="bd-block-header">
         {hierarchy ? (
@@ -140,20 +225,16 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
         </div>
       )}
 
-      {(["left", "right", "top", "bottom"] as PortSide[]).flatMap((side) => {
-        const ports = portsForSide(block.ports, side);
-        return ports.map((port, index) => (
-          <Port
-            key={port.id}
-            port={port}
-            index={index}
-            count={ports.length}
-            nodeId={block.id}
-            inspect={data.inspectPort}
-            expanded={data.expanded}
-          />
-        ));
-      })}
+      {(["left", "right", "top", "bottom"] as PortSide[]).map((side) => (
+        <PortRail
+          key={side}
+          side={side}
+          ports={portsBySide[side]}
+          nodeId={block.id}
+          inspect={data.inspectPort}
+          expanded={data.expanded}
+        />
+      ))}
     </article>
   );
 }

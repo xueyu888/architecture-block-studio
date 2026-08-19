@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Box, Minus, Plus, Scan } from "lucide-react";
+import { Box, Map as MapIcon, Minus, Plus, Scan } from "lucide-react";
 import {
   Background,
   BackgroundVariant,
@@ -78,10 +78,14 @@ function CanvasViewportControls({
   onZoomIn,
   onZoomOut,
   onFit,
+  overviewMapOpen,
+  onToggleOverviewMap,
 }: {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFit: () => void;
+  overviewMapOpen: boolean;
+  onToggleOverviewMap: () => void;
 }) {
   const zoom = useStore((state) => state.transform[2]);
   return (
@@ -123,6 +127,17 @@ function CanvasViewportControls({
           onClick={onFit}
         >
           <Scan aria-hidden="true" size={13} />
+        </ControlButton>
+      </Tooltip>
+      <Tooltip label={overviewMapOpen ? "Hide overview map" : "Show overview map"} side="right">
+        <ControlButton
+          type="button"
+          className="bd-minimap-toggle"
+          aria-label={overviewMapOpen ? "Hide overview map" : "Show overview map"}
+          aria-pressed={overviewMapOpen}
+          onClick={onToggleOverviewMap}
+        >
+          <MapIcon aria-hidden="true" size={13} />
         </ControlButton>
       </Tooltip>
     </Controls>
@@ -200,6 +215,7 @@ const CanvasInner = memo(function CanvasInner({
   const [nodeFocusRequest, setNodeFocusRequest] = useState<NodeFocusRequest>();
   const [routeHandleFocusRequest, setRouteHandleFocusRequest] = useState<RouteHandleFocusRequest>();
   const [canvasAnnouncement, setCanvasAnnouncement] = useState("");
+  const [compactOverviewMapOpen, setCompactOverviewMapOpen] = useState(false);
   const largeGraph = layout.nodes.length >= LARGE_GRAPH_NODE_COUNT
     || layout.edges.length >= LARGE_GRAPH_EDGE_COUNT;
   const cullViewportElements = layout.nodes.length >= VIEWPORT_CULL_NODE_COUNT
@@ -685,8 +701,11 @@ const CanvasInner = memo(function CanvasInner({
         onZoomIn={zoomInViewport}
         onZoomOut={zoomOutViewport}
         onFit={fitCanvasViewport}
+        overviewMapOpen={compactOverviewMapOpen}
+        onToggleOverviewMap={() => setCompactOverviewMapOpen((open) => !open)}
       />
       <MiniMap<CanvasFlowNode>
+        className={`bd-canvas-minimap${compactOverviewMapOpen ? " is-compact-open" : ""}`}
         position="bottom-right"
         pannable
         zoomable

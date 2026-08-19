@@ -7,6 +7,7 @@ import type {
   DesignLevel,
   PortSide,
 } from "../model";
+import { baseNodeDimensions, type NodeDimensions } from "./nodeGeometry";
 import type { LayoutFlowEdge, LayoutFlowNode, LayoutResult } from "./types";
 
 let elkPromise: Promise<ELK> | undefined;
@@ -18,16 +19,11 @@ function getElk(): Promise<ELK> {
   return elkPromise;
 }
 
-const DEFAULT_NODE_WIDTH = 242;
-const DEFAULT_NODE_HEIGHT = 144;
 const CONTAINER_PADDING_X = 72;
 const CONTAINER_PADDING_TOP = 68;
 const CONTAINER_PADDING_BOTTOM = 54;
 
-interface Dimensions {
-  width: number;
-  height: number;
-}
+type Dimensions = NodeDimensions;
 
 interface Bounds extends Dimensions {
   minX: number;
@@ -87,21 +83,6 @@ function elkSide(side: PortSide): "WEST" | "EAST" | "NORTH" | "SOUTH" {
     top: "NORTH",
     bottom: "SOUTH",
   }[side] as "WEST" | "EAST" | "NORTH" | "SOUTH";
-}
-
-export function baseNodeDimensions(node: BlockNode): Dimensions {
-  const verticalPortCount = Math.max(
-    node.ports.filter((port) => port.side === "left").length,
-    node.ports.filter((port) => port.side === "right").length,
-  );
-  const horizontalPortCount = Math.max(
-    node.ports.filter((port) => port.side === "top").length,
-    node.ports.filter((port) => port.side === "bottom").length,
-  );
-  return {
-    width: node.layout.width ?? Math.max(DEFAULT_NODE_WIDTH, 170 + horizontalPortCount * 48),
-    height: node.layout.height ?? Math.max(DEFAULT_NODE_HEIGHT, 92 + verticalPortCount * 28),
-  };
 }
 
 function sortedPorts(ports: BlockPort[]): BlockPort[] {

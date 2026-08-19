@@ -537,30 +537,54 @@ button { color: inherit; }
   text-align: center;
 }
 
-.bd-port {
+.bd-port-rail {
   position: absolute;
   z-index: 3;
+  pointer-events: none;
+}
+
+.bd-port-rail > .bd-port,
+.bd-port-rail > .bd-port-label { pointer-events: auto; }
+.bd-port-rail-left,
+.bd-port-rail-right {
+  top: 0;
+  bottom: 0;
+  width: 0;
+}
+.bd-port-rail-left { left: 0; }
+.bd-port-rail-right { right: 0; }
+.bd-port-rail-top,
+.bd-port-rail-bottom { right: 0; left: 0; height: 0; }
+.bd-port-rail-top { top: 0; }
+.bd-port-rail-bottom { bottom: 0; }
+
+.bd-port {
+  position: absolute;
+  z-index: 2;
   display: flex;
   align-items: center;
+  isolation: isolate;
 }
 
 .bd-port-left { left: 0; transform: translateY(-50%); }
 .bd-port-right { right: 0; flex-direction: row-reverse; transform: translateY(-50%); }
-.bd-port-top { top: 0; flex-direction: column; transform: translateX(-50%); }
-.bd-port-bottom { bottom: 0; flex-direction: column-reverse; transform: translateX(-50%); }
+.bd-port-top { top: 0; transform: translateX(-50%); }
+.bd-port-bottom { bottom: 0; transform: translateX(-50%); }
 
 .bd-port-label {
   display: grid;
   gap: 1px;
+  width: var(--port-label-width);
   border: 0;
   cursor: pointer;
   font: 9px/1.1 "SFMono-Regular", Consolas, monospace;
   text-align: left;
 }
 
-.bd-port-right .bd-port-label { text-align: right; }
-.bd-port-top .bd-port-label,
-.bd-port-bottom .bd-port-label { max-width: 84px; text-align: center; }
+.bd-port-label-left { left: 7px; transform: translateY(-50%); }
+.bd-port-label-right { right: 7px; transform: translateY(-50%); text-align: right; }
+.bd-port-label-top { top: 4px; transform: translateX(-50%); text-align: center; }
+.bd-port-label-bottom { bottom: 4px; transform: translateX(-50%); text-align: center; }
 
 .bd-port-label span,
 .bd-port-label small {
@@ -579,6 +603,7 @@ button { color: inherit; }
 .react-flow__controls.bd-canvas-controls { overflow: visible; }
 .bd-canvas-controls .bd-tooltip-trigger { display: flex; }
 .bd-canvas-controls .bd-tooltip-trigger:last-child .react-flow__controls-button { border-bottom-color: transparent; }
+.bd-minimap-toggle { display: none; }
 
 .react-flow__controls-button {
   width: 26px;
@@ -1105,7 +1130,7 @@ button { color: inherit; }
 .bd-block.is-expanded { pointer-events: none; }
 
 .bd-block.is-expanded > .bd-block-header,
-.bd-block.is-expanded > .bd-port { pointer-events: auto; }
+.bd-block.is-expanded > .bd-port-rail { pointer-events: auto; }
 
 .bd-block.is-expanded::after {
   position: absolute;
@@ -1116,9 +1141,10 @@ button { color: inherit; }
 }
 
 .bd-block-header {
-  height: 32px;
+  height: var(--block-header-height);
   justify-content: flex-start;
   gap: 6px;
+  margin-top: var(--port-top-rail-height);
   padding: 0 7px;
   color: var(--ink);
   border-bottom: 1px solid color-mix(in srgb, var(--block-color) 28%, var(--divider-soft));
@@ -1141,14 +1167,23 @@ button { color: inherit; }
   color: var(--block-color);
 }
 
-.bd-block-body { padding: 13px 24px 28px; text-align: center; }
+.bd-block-body {
+  padding: 13px max(20px, calc(var(--port-right-label-width) + 7px))
+    calc(var(--block-owner-band-height) + var(--port-bottom-rail-height) + 8px)
+    max(20px, calc(var(--port-left-label-width) + 7px));
+  text-align: center;
+}
 .bd-block-body p { margin: 0; color: var(--text-muted); font-size: 9px; line-height: 1.4; }
-.bd-block-owner { inset: auto 8px 6px; color: var(--text-subtle); font-size: 8px; }
+.bd-block-owner {
+  inset: auto 8px calc(var(--port-bottom-rail-height) + 6px);
+  color: var(--text-subtle);
+  font-size: 8px;
+}
 
 .bd-hierarchy-watermark {
   position: absolute;
   right: 14px;
-  bottom: 11px;
+  bottom: calc(var(--port-bottom-rail-height) + 11px);
   display: flex;
   align-items: baseline;
   gap: 7px;
@@ -1161,30 +1196,60 @@ button { color: inherit; }
 .bd-hierarchy-watermark span { font-size: 8px; text-transform: uppercase; }
 
 .bd-port-label {
-  max-width: 124px;
-  padding: 2px 5px;
+  position: absolute;
+  z-index: 1;
+  min-height: 18px;
+  padding: 3px 5px;
+  border-radius: 3px;
   background: transparent;
   color: #263544;
   font-size: 8px;
   font-weight: 700;
 }
 
-.bd-block.is-expanded > .bd-port .bd-port-label {
+.bd-block.is-expanded > .bd-port-rail .bd-port-label {
   color: #18231d;
   background: color-mix(in srgb, var(--block-fill) 84%, #fff);
 }
 
-.bd-port-label small { color: var(--text-subtle); font-size: 7px; font-weight: 400; }
+.bd-port-label:hover,
+.bd-port-label:focus-visible {
+  background: color-mix(in srgb, var(--block-fill) 76%, #fff);
+}
+
+.bd-port-label small {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 3px);
+  left: 0;
+  display: none;
+  width: max-content;
+  max-width: 180px;
+  padding: 3px 5px;
+  border: 1px solid color-mix(in srgb, var(--block-color) 28%, var(--divider-soft));
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(31, 43, 55, 0.14);
+  color: var(--text-muted);
+  font-size: 7px;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+.bd-port-label-right small { right: 0; left: auto; }
+.bd-port-label-bottom small { top: auto; bottom: calc(100% + 3px); }
+.bd-react-flow:not([data-detail-level="overview"]) .bd-port-label:hover small,
+.bd-react-flow:not([data-detail-level="overview"]) .bd-port-label:focus-visible small { display: block; }
 
 .bd-react-flow[data-detail-level="overview"] .bd-block-heading span,
 .bd-react-flow[data-detail-level="overview"] .bd-block-body p,
 .bd-react-flow[data-detail-level="overview"] .bd-block-owner,
-.bd-react-flow[data-detail-level="overview"] .bd-port-label small,
 .bd-react-flow[data-detail-level="overview"] .bd-hierarchy-watermark span {
   display: none;
 }
 
 .bd-port-handle.react-flow__handle {
+  z-index: 2;
   width: 10px;
   height: 10px;
   border: 2px solid var(--block-color);
@@ -1354,6 +1419,11 @@ div.bd-tree-row { display: flex; gap: 2px; margin: 1px 0; padding-top: 0; paddin
 
 @media (max-width: 1320px) {
   .bd-studio { min-width: 1024px; grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 1399px), (max-height: 799px) {
+  .bd-minimap-toggle { display: grid; }
+  .bd-canvas-minimap:not(.is-compact-open) { display: none; }
 }
 
 /* Structured editor controls. Design facts flow through editor operations; these styles own presentation only. */

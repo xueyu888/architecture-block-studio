@@ -58,6 +58,8 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 
 连接方向与连接点是两个正交的视觉角色。Canvas 只对非 hierarchy continuation 的真实连接投影一个 target marker，marker 的方向完全来自 `BlockConnection.source -> target` 路径末段；Port Handle 只表达“这里可以连接”，使用中性圆点，不用输入 / 输出三角形冒充数据流箭头。接口类型颜色由 edge 上的 `--interface-color` 统一提供给普通路径、React Flow 选中态和 `context-stroke` marker；第三方默认 selected stroke 不能成为第二颜色源。marker、Handle hover 和选中描边都属于可重建展示，不进入 JSON 或历史。
 
+端口连接点几何与标签排版同样正交。`layout/nodeGeometry` 是节点安全尺寸、标签估算宽度和水平 label rail 位置的唯一计算 Owner；`BlockNode` 从同一组已排序 Port 分别投影稳定 Handle 和独立标签按钮，不能为了排文字移动 source / target。left / right 标签沿各自侧边，top / bottom 标签在 Header / Owner 之外的内部轨道分配空间；常态只显示端口名，dataType 只在可读缩放下通过 hover / focus 渐进显示，完整事实仍可由 Properties 查看。已有 authored width / height 满足标签合同时必须原样保留；只有外部 JSON 或后续 resize 小于内容安全下限时，布局投影才钳制到可读尺寸，不能把展示修正反写 JSON。
+
 ```text
 BlockDesignDocument ─► model / editor / layout / routing ─► Studio ─► UI components
 StudioCommands ───────────────────────────► Menu / Keyboard / Command Palette（完整）
@@ -171,6 +173,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 - Level 标题覆盖层与重型 React Flow 图分开渲染；工作区命令回调通过稳定边界读取最新事实，普通属性编辑不能因 callback identity 变化重映射全部节点和边。
 - Canvas selection 只在受影响的前后节点 / 边对象上投影 `selected`，未受影响的 Flow 元素保持引用稳定；React Flow 事件、配置对象和静态控件同样保持稳定，选择不能借回调或 JSX identity 触发全图协调。
 - Canvas detail level 只从 React Flow viewport 的 zoom 派生，并以根节点展示属性投影给 CSS；低缩放隐藏不可读的 process、摘要、Owner 和 data type，但始终保留模块标题、端口名、端口把手与线路。节点不分别订阅 viewport，这个展示策略不进入文档、历史或布局结果。
+- MiniMap 是可丢弃的 viewport 导航，不是设计事实。宽屏工作台常驻显示；紧凑桌面默认收起并在 Canvas controls 提供显式 Show / Hide overview map，避免覆盖模块或线路。开关状态不进入 JSON、历史、selection 或 Dock 布局。
 - 路由快路径与 Canvas 视口裁剪是两个独立策略：前者改变派生路径算法，后者只减少压力图的 DOM 挂载。裁剪不得删减 `LayoutResult`、React Flow store、MiniMap、图中总数或保存输出；200 / 400 档继续全量挂载以执行每条路径的几何门禁。
 - 视口导航同样与设计事实正交：默认和 200 / 400 图使用 280 ms 平滑定位；启用视口裁剪的压力图使用单次直接定位，避免插值途中持续换挂载。React Flow MiniMap 会保留首次 `onNodeClick` 闭包，因此 Canvas 暴露稳定回调并从 ref 读取最新规模策略；不能让第三方回调生命周期冻结空布局时期的配置。
 - 用户拖动期间的 position 只是 React Flow 预览；松手时 Canvas 向 Editor 请求一次 `node/move`。只有 Editor 接受后，`node.layout.position` 才成为新位置；若草稿保护或可编辑性规则拒绝操作，Canvas 立即恢复同一 base node 的文档投影，不创建补偿操作、不覆盖错误提示或未应用草稿。ELK 自动位置不写回文档。

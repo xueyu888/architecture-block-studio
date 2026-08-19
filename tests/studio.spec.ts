@@ -732,7 +732,12 @@ test("loads the bundled v2 design without DRC or viewport failures", async ({ pa
   await page.locator(".react-flow__controls-zoomin").click({ force: true });
   await expect(canvas).toHaveAttribute("data-detail-level", "full");
   await expect(agentUi.locator(".bd-block-heading span")).toBeVisible();
+  await expect(agentUi.locator(".bd-port-label small").first()).toBeHidden();
+  await page.waitForTimeout(350);
+  await agentUi.locator(".bd-port-label").first().hover();
   await expect(agentUi.locator(".bd-port-label small").first()).toBeVisible();
+  await agentUi.locator(".bd-block-header").hover();
+  await expect(agentUi.locator(".bd-port-label small").first()).toBeHidden();
   expect(await geometryIssues(page)).toEqual({
     collisions: [],
     labelOverlaps: [],
@@ -768,6 +773,11 @@ test("keeps the compact desktop workbench operable without panel or route obstru
 
   await runMenuCommand(page, "View", "Toggle Messages");
   await expect(page.locator(".bd-messages")).toBeVisible();
+  const overviewMapToggle = page.getByRole("button", { name: "Show overview map", exact: true });
+  await expect(overviewMapToggle).toBeVisible();
+  await expect(page.locator(".react-flow__minimap")).toBeHidden();
+  await overviewMapToggle.click();
+  await expect(page.locator(".react-flow__minimap")).toBeVisible();
   const geometry = await page.evaluate(() => {
     const box = (selector: string) => {
       const element = document.querySelector(selector);
@@ -810,6 +820,8 @@ test("keeps the compact desktop workbench operable without panel or route obstru
   expect(geometry.inspectorActions.bottom).toBeLessThanOrEqual(geometry.statusbar.top);
   expect(geometry.statusbar.bottom).toBeLessThanOrEqual(geometry.viewport.height);
   expect(geometry.edgeLabelCount).toBe(0);
+  await page.getByRole("button", { name: "Hide overview map", exact: true }).click();
+  await expect(page.locator(".react-flow__minimap")).toBeHidden();
 
   if (process.env.CAPTURE_COMPACT_WORKBENCH === "1") {
     await captureStudioScreenshot(page, "docs/screenshots/compact-workbench.png");
@@ -1781,6 +1793,72 @@ test("renders one semantic target arrow per connection and neutral port affordan
   for (let index = 0; index < await expandedActualRoutes.count(); index += 1) {
     await expect(expandedActualRoutes.nth(index).locator(".bd-interface-route"))
       .toHaveAttribute("marker-end", /url\(.+arrowclosed.+\)/);
+  }
+});
+
+test("reserves collision-free four-side port label rails", async ({ page, browserName }) => {
+  const railGeometry = await page.evaluate(() => {
+    const failures: string[] = [];
+    document.querySelectorAll<HTMLElement>(".bd-block:not(.is-expanded)").forEach((block) => {
+      const blockId = block.dataset.blockId ?? "unknown";
+      const blockRect = block.getBoundingClientRect();
+      const headerRect = block.querySelector<HTMLElement>(".bd-block-header")?.getBoundingClientRect();
+      const ownerRect = block.querySelector<HTMLElement>(".bd-block-owner")?.getBoundingClientRect();
+      const labels = [...block.querySelectorAll<HTMLElement>(".bd-port-label")].map((label) => ({
+        label,
+        rect: label.getBoundingClientRect(),
+        side: label.closest<HTMLElement>("[data-port-side]")?.dataset.portSide ?? "unknown",
+      }));
+      labels.forEach(({ label, rect, side }) => {
+        if (
+          rect.left < blockRect.left - 1 || rect.right > blockRect.right + 1 ||
+          rect.top < blockRect.top - 1 || rect.bottom > blockRect.bottom + 1
+        ) failures.push(`${blockId}:${label.innerText}:outside`);
+        if (side === "top" && headerRect && rect.bottom > headerRect.top + 1) {
+          failures.push(`${blockId}:${label.innerText}:header`);
+        }
+        if (side === "bottom" && ownerRect && rect.top < ownerRect.bottom - 1) {
+          failures.push(`${blockId}:${label.innerText}:owner`);
+        }
+      });
+      labels.forEach((left, index) => labels.slice(index + 1).forEach((right) => {
+        const overlap = left.rect.left < right.rect.right - 1
+          && left.rect.right > right.rect.left + 1
+          && left.rect.top < right.rect.bottom - 1
+          && left.rect.bottom > right.rect.top + 1;
+        if (overlap) failures.push(`${blockId}:${left.label.innerText}<->${right.label.innerText}`);
+      }));
+    });
+    return failures;
+  });
+  expect(railGeometry).toEqual([]);
+
+  const project = flowNode(page, "system::project");
+  const core = flowNode(page, "system::rust-agent-core");
+  await expect(project.locator('.bd-port-rail-top .bd-port-label span')).toHaveText("session.lifecycle");
+  await expect(core.locator('.bd-port-rail-bottom .bd-port-label span')).toHaveCount(2);
+  await expect(page.locator(".bd-port-label small").first()).toBeHidden();
+
+  await page.locator(".react-flow__controls-zoomin").click({ force: true });
+  await expect(page.locator(".bd-react-flow")).toHaveAttribute("data-detail-level", "full");
+  await page.waitForTimeout(350);
+  const projectLabel = project.locator('.bd-port-rail-top .bd-port-label');
+  await projectLabel.hover();
+  await expect(projectLabel.locator("small")).toHaveText("Integration RPC");
+  await expect(projectLabel.locator("small")).toBeVisible();
+  await project.locator(".bd-block-header").hover();
+  await expect(projectLabel.locator("small")).toBeHidden();
+
+  if (process.env.CAPTURE_PORT_RAILS === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/port-label-rails.png");
+    await page.locator(".bd-tree-select").filter({ hasText: "Project" }).click({ force: true });
+    await page.waitForTimeout(450);
+    await captureStudioScreenshot(page, "docs/screenshots/port-label-rails-detail.png");
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.waitForTimeout(300);
+    await page.getByRole("button", { name: "Fit design", exact: true }).click({ force: true });
+    await page.waitForTimeout(500);
+    await captureStudioScreenshot(page, "docs/screenshots/port-label-rails-compact.png");
   }
 });
 
