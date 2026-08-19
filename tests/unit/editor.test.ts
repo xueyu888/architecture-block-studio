@@ -343,6 +343,39 @@ describe("reference cleanup", () => {
     expect(next.interfaceDefinitions).toEqual({});
   });
 
+  test("deletes a mixed module and connection selection as one normalized operation", () => {
+    const document = connectedDesign();
+    const before = serializeDesign(document);
+
+    const next = applyDesignOperation(document, {
+      type: "objects/delete",
+      targets: [
+        { kind: "connection", levelId: "system", connectionId: "source-to-target" },
+        { kind: "node", levelId: "system", nodeId: "source" },
+      ],
+    });
+
+    expect(next.levels[0].nodes.map((node) => node.id)).toEqual(["target"]);
+    expect(next.levels[0].connections).toEqual([]);
+    expect(next.interfaceDefinitions).toEqual({});
+    expect(serializeDesign(document)).toBe(before);
+  });
+
+  test("deletes selected descendants before an exclusively owned hierarchy parent", () => {
+    const document = hierarchicalDesign();
+
+    const next = applyDesignOperation(document, {
+      type: "objects/delete",
+      targets: [
+        { kind: "node", levelId: "system", nodeId: "parent" },
+        { kind: "node", levelId: "parent-internal", nodeId: "child" },
+      ],
+    });
+
+    expect(next.levels.map((level) => level.id)).toEqual(["system"]);
+    expect(next.levels[0].nodes).toEqual([]);
+  });
+
   test("deleting one connection keeps a definition referenced by another", () => {
     const document = connectedDesign();
     document.levels[0].connections.push({
@@ -428,6 +461,43 @@ describe("reference cleanup", () => {
     expect(next.levels.map((level) => level.id)).toEqual(["system", "parent-internal"]);
     expect(next.levels[0].nodes[0].id).toBe("second-parent");
   });
+
+  test("keeps a shared child level while deleting its selected child and one owner", () => {
+    let document = hierarchicalDesign();
+    const secondParent = createBlock({ id: "second-parent", title: "Second Parent" });
+    secondParent.ports.push(createPort({
+      id: "public",
+      label: "Public",
+      side: "right",
+      direction: "output",
+      required: false,
+    }));
+    secondParent.hierarchy = {
+      childLevelId: "parent-internal",
+      portBindings: [{
+        parentPortId: "public",
+        childEndpoint: { nodeId: "child", portId: "out" },
+      }],
+    };
+    document = applyDesignOperation(document, {
+      type: "node/add",
+      levelId: "system",
+      node: secondParent,
+    });
+
+    const next = applyDesignOperation(document, {
+      type: "objects/delete",
+      targets: [
+        { kind: "node", levelId: "system", nodeId: "parent" },
+        { kind: "node", levelId: "parent-internal", nodeId: "child" },
+      ],
+    });
+
+    expect(next.levels.map((level) => level.id)).toEqual(["system", "parent-internal"]);
+    expect(next.levels[0].nodes.map((node) => node.id)).toEqual(["second-parent"]);
+    expect(next.levels[0].nodes[0].hierarchy?.portBindings).toEqual([]);
+    expect(next.levels[1].nodes).toEqual([]);
+  });
 });
 
 describe("atomic editing failures", () => {
@@ -440,6 +510,27 @@ describe("atomic editing failures", () => {
       levelId: "system",
       nodeId: "missing",
     })).toThrow(DesignEditError);
+    expect(serializeDesign(document)).toBe(before);
+  });
+
+  test("rejects missing or duplicate objects before a batch deletion mutates anything", () => {
+    const document = connectedDesign();
+    const before = serializeDesign(document);
+
+    expect(() => applyDesignOperation(document, {
+      type: "objects/delete",
+      targets: [
+        { kind: "node", levelId: "system", nodeId: "source" },
+        { kind: "connection", levelId: "system", connectionId: "missing" },
+      ],
+    })).toThrow("does not exist");
+    expect(() => applyDesignOperation(document, {
+      type: "objects/delete",
+      targets: [
+        { kind: "node", levelId: "system", nodeId: "source" },
+        { kind: "node", levelId: "system", nodeId: "source" },
+      ],
+    })).toThrow("can only be deleted once");
     expect(serializeDesign(document)).toBe(before);
   });
 });

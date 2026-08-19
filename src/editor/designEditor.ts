@@ -54,6 +54,10 @@ export interface NodeMove {
   position: { x: number; y: number };
 }
 
+export type DiagramDeleteTarget =
+  | { kind: "node"; levelId: string; nodeId: string }
+  | { kind: "connection"; levelId: string; connectionId: string };
+
 export type DesignOperation =
   | {
       type: "document/update";
@@ -82,6 +86,7 @@ export type DesignOperation =
       size: { width: number; height: number };
     }
   | { type: "node/delete"; levelId: string; nodeId: string }
+  | { type: "objects/delete"; targets: readonly DiagramDeleteTarget[] }
   | { type: "port/add"; levelId: string; nodeId: string; port: BlockPort }
   | {
       type: "port/update";
@@ -235,6 +240,89 @@ function removeUnreferencedLevelTree(document: BlockDesignDocument, rootLevelId:
   cleanupUnusedInterfaces(document, removedInterfaceIds);
 }
 
+function deleteNode(document: BlockDesignDocument, levelId: string, nodeId: string): void {
+  const level = requireLevel(document, levelId);
+  const node = requireNode(level, nodeId);
+  const childLevelId = node.hierarchy?.childLevelId;
+  level.nodes = level.nodes.filter((candidate) => candidate.id !== node.id);
+  removeConnections(document, (connection, candidateLevel) =>
+    candidateLevel.id === level.id &&
+    (connection.source.nodeId === node.id || connection.target.nodeId === node.id),
+  );
+  document.levels.forEach((parentLevel) => {
+    parentLevel.nodes.forEach((parentNode) => {
+      if (parentNode.hierarchy?.childLevelId !== level.id) return;
+      parentNode.hierarchy.portBindings = parentNode.hierarchy.portBindings.filter(
+        (binding) => binding.childEndpoint.nodeId !== node.id,
+      );
+    });
+  });
+  if (childLevelId) removeUnreferencedLevelTree(document, childLevelId);
+}
+
+function deleteConnection(document: BlockDesignDocument, levelId: string, connectionId: string): void {
+  const level = requireLevel(document, levelId);
+  const connection = level.connections.find((candidate) => candidate.id === connectionId) ??
+    editError(`Connection ${connectionId} does not exist in ${level.title}.`);
+  level.connections = level.connections.filter((candidate) => candidate.id !== connection.id);
+  cleanupUnusedInterfaces(document, [connection.interfaceId]);
+}
+
+function deleteTargetKey(target: DiagramDeleteTarget): string {
+  return target.kind === "node"
+    ? `node:${target.levelId}:${target.nodeId}`
+    : `connection:${target.levelId}:${target.connectionId}`;
+}
+
+function levelDepths(document: BlockDesignDocument): Map<string, number> {
+  const depths = new Map<string, number>();
+  const depth = (levelId: string, visiting = new Set<string>()): number => {
+    const cached = depths.get(levelId);
+    if (cached !== undefined) return cached;
+    if (visiting.has(levelId)) editError(`Level parent cycle reaches ${levelId}.`);
+    const level = requireLevel(document, levelId);
+    const nextVisiting = new Set(visiting).add(levelId);
+    const value = level.parentLevelId ? depth(level.parentLevelId, nextVisiting) + 1 : 0;
+    depths.set(levelId, value);
+    return value;
+  };
+  document.levels.forEach((level) => depth(level.id));
+  return depths;
+}
+
+function deleteObjects(document: BlockDesignDocument, targets: readonly DiagramDeleteTarget[]): void {
+  if (targets.length === 0) editError("At least one diagram object is required for a delete operation.");
+  const seen = new Set<string>();
+  targets.forEach((target) => {
+    const key = deleteTargetKey(target);
+    if (seen.has(key)) editError(`Diagram object ${key} can only be deleted once per operation.`);
+    seen.add(key);
+    const level = requireLevel(document, target.levelId);
+    if (target.kind === "node") requireNode(level, target.nodeId);
+    else if (!level.connections.some((connection) => connection.id === target.connectionId)) {
+      editError(`Connection ${target.connectionId} does not exist in ${level.title}.`);
+    }
+  });
+
+  const depths = levelDepths(document);
+  targets
+    .filter((target): target is Extract<DiagramDeleteTarget, { kind: "connection" }> =>
+      target.kind === "connection")
+    .sort((left, right) => deleteTargetKey(left).localeCompare(deleteTargetKey(right)))
+    .forEach((target) => deleteConnection(document, target.levelId, target.connectionId));
+  targets
+    .filter((target): target is Extract<DiagramDeleteTarget, { kind: "node" }> =>
+      target.kind === "node")
+    .sort((left, right) =>
+      (depths.get(right.levelId) ?? 0) - (depths.get(left.levelId) ?? 0)
+      || deleteTargetKey(left).localeCompare(deleteTargetKey(right)))
+    .forEach((target) => {
+      const level = document.levels.find((candidate) => candidate.id === target.levelId);
+      if (!level?.nodes.some((node) => node.id === target.nodeId)) return;
+      deleteNode(document, target.levelId, target.nodeId);
+    });
+}
+
 function validateConnectionEndpoints(
   level: DesignLevel,
   connection: BlockConnection,
@@ -314,23 +402,11 @@ export function applyDesignOperation(
       break;
     }
     case "node/delete": {
-      const level = requireLevel(next, operation.levelId);
-      const node = requireNode(level, operation.nodeId);
-      const childLevelId = node.hierarchy?.childLevelId;
-      level.nodes = level.nodes.filter((candidate) => candidate.id !== node.id);
-      removeConnections(next, (connection, candidateLevel) =>
-        candidateLevel.id === level.id &&
-        (connection.source.nodeId === node.id || connection.target.nodeId === node.id),
-      );
-      next.levels.forEach((parentLevel) => {
-        parentLevel.nodes.forEach((parentNode) => {
-          if (parentNode.hierarchy?.childLevelId !== level.id) return;
-          parentNode.hierarchy.portBindings = parentNode.hierarchy.portBindings.filter(
-            (binding) => binding.childEndpoint.nodeId !== node.id,
-          );
-        });
-      });
-      if (childLevelId) removeUnreferencedLevelTree(next, childLevelId);
+      deleteNode(next, operation.levelId, operation.nodeId);
+      break;
+    }
+    case "objects/delete": {
+      deleteObjects(next, operation.targets);
       break;
     }
     case "port/add": {
@@ -473,11 +549,7 @@ export function applyDesignOperation(
       break;
     }
     case "connection/delete": {
-      const level = requireLevel(next, operation.levelId);
-      const connection = level.connections.find((candidate) => candidate.id === operation.connectionId) ??
-        editError(`Connection ${operation.connectionId} does not exist in ${level.title}.`);
-      level.connections = level.connections.filter((candidate) => candidate.id !== connection.id);
-      cleanupUnusedInterfaces(next, [connection.interfaceId]);
+      deleteConnection(next, operation.levelId, operation.connectionId);
       break;
     }
   }

@@ -4800,7 +4800,7 @@ test("box-selects, toggles, and moves modules as one professional selection", as
   await expect(inspector.locator(".bd-multi-metrics dd")).toHaveText(["2", "0", "1"]);
   await expect(page.locator(".bd-tree-row.is-selected")).toHaveCount(2);
   await expect(page.locator(".bd-node-resize-handle")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Batch deletion is unavailable/ })).toBeDisabled();
+  await expect(toolbarButton(page, "删除所选内容")).toBeEnabled();
 
   const projectBefore = await project.boundingBox();
   const knowledgeBefore = await knowledge.boundingBox();
@@ -5244,6 +5244,88 @@ test("selects and clears every object in the current level with standard edit co
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("17 objects selected");
   await runMenuCommand(page, "Edit", /^Clear Selection/);
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("System Overview");
+});
+
+test("deletes a mixed module and interface selection as one atomic cascade", async ({ page, browserName }) => {
+  const agent = flowNode(page, "system::agent-ui");
+  const core = flowNode(page, "system::rust-agent-core");
+  const selectedEdge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
+  await clickReachableEdgePoint(page, selectedEdge);
+  await agent.click({ force: true, modifiers: ["ControlOrMeta"] });
+  await core.click({ force: true, modifiers: ["ControlOrMeta"] });
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(1);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("3 objects selected");
+  await expect(page.getByText("Delete removes once", { exact: false })).toBeVisible();
+
+  let dialogPromise = page.waitForEvent("dialog");
+  let deletion = page.keyboard.press("Delete");
+  let dialog = await dialogPromise;
+  expect(dialog.message()).toContain("Delete 3 selected diagram objects?");
+  expect(dialog.message()).toContain("exclusively owned child designs");
+  await dialog.dismiss();
+  await deletion;
+  await expect(page.locator(".react-flow__node")).toHaveCount(7);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(10);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("3 objects selected");
+
+  dialogPromise = page.waitForEvent("dialog");
+  deletion = page.keyboard.press("Delete");
+  dialog = await dialogPromise;
+  await dialog.accept();
+  await deletion;
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(5);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("System Overview");
+  await expect(page.locator(".bd-statusbar")).toContainText("Unsaved changes");
+  expect(await routeNodeCollisions(page)).toEqual([]);
+  if (process.env.CAPTURE_BATCH_DELETE === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/batch-delete-after.png");
+  }
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await downloadPromise).path();
+  expect(savedPath).not.toBeNull();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  expect(saved.levels.map((level: { id: string }) => level.id)).toEqual(["system", "tool"]);
+  expect(saved.levels[0].nodes.map((node: { id: string }) => node.id)).toEqual([
+    "tool-system",
+    "project",
+    "knowledge",
+    "plugin",
+    "platform-provider",
+  ]);
+  expect(saved.levels[0].connections.map((connection: { id: string }) => connection.id)).toEqual([
+    "plugin-tool-registration",
+    "platform-tool-registration",
+  ]);
+  const referencedInterfaceIds = [...new Set(saved.levels.flatMap(
+    (level: { connections: Array<{ interfaceId: string }> }) =>
+      level.connections.map((connection) => connection.interfaceId),
+  ))].sort();
+  expect(Object.keys(saved.interfaceDefinitions).sort()).toEqual(referencedInterfaceIds);
+  expect(saved.interfaceDefinitions["session.command"]).toBeUndefined();
+  expect(saved.interfaceDefinitions["core.command.dispatch"]).toBeUndefined();
+  expect(saved.interfaceDefinitions["tool.registration"]).toBeDefined();
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(7);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(10);
+  await page.keyboard.press("ControlOrMeta+Shift+Z");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(5);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
+
+  await openDesignDialog(page);
+  await page.locator('input[type="file"]').setInputFiles(savedPath!);
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(5);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
+  expect(await routeNodeCollisions(page)).toEqual([]);
 });
 
 test("fits a selected interface and its endpoint modules for focused route review", async ({ page, browserName }) => {

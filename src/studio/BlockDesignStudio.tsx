@@ -503,22 +503,30 @@ export function BlockDesignStudio({
   }, [requireAppliedInspectorDraft]);
 
   const deleteSelection = useCallback(() => {
-    if (!document || selection.kind === "document" || selection.kind === "level" || selection.kind === "multiple") return;
-    const description = selection.kind === "node"
-      ? "Delete this module, its connections, and its exclusively owned child design?"
-      : selection.kind === "port"
-        ? "Delete this port and all attached connections?"
-        : "Delete this connection and its unused interface definition?";
+    if (!document || selection.kind === "document" || selection.kind === "level") return;
+    const description = selection.kind === "multiple"
+      ? `Delete ${selection.items.length} selected diagram objects? Modules also remove attached interfaces and exclusively owned child designs.`
+      : selection.kind === "node"
+        ? "Delete this module, its connections, and its exclusively owned child design?"
+        : selection.kind === "port"
+          ? "Delete this port and all attached connections?"
+          : "Delete this connection and its unused interface definition?";
     const draftWarning = inspectorDraftDirty ? " Unapplied Inspector changes will also be discarded." : "";
     if (!window.confirm(`${description}${draftWarning}`)) return;
-    const operation: DesignOperation = selection.kind === "node"
-      ? { type: "node/delete", levelId: selection.levelId, nodeId: selection.nodeId }
-      : selection.kind === "port"
-        ? { type: "port/delete", levelId: selection.levelId, nodeId: selection.nodeId, portId: selection.portId }
-        : { type: "connection/delete", levelId: selection.levelId, connectionId: selection.connectionId };
-    if (runOperation(operation)) {
+    const operation: DesignOperation = selection.kind === "multiple"
+      ? { type: "objects/delete", targets: selection.items }
+      : selection.kind === "node"
+        ? { type: "node/delete", levelId: selection.levelId, nodeId: selection.nodeId }
+        : selection.kind === "port"
+          ? { type: "port/delete", levelId: selection.levelId, nodeId: selection.nodeId, portId: selection.portId }
+          : { type: "connection/delete", levelId: selection.levelId, connectionId: selection.connectionId };
+    const next = runOperation(operation);
+    if (next) {
       setInspectorDraftDirty(false);
-      setSelection({ kind: "level", levelId: selection.levelId });
+      setSelection({
+        kind: "level",
+        levelId: selection.kind === "multiple" ? next.entryLevelId : selection.levelId,
+      });
     }
   }, [document, inspectorDraftDirty, runOperation, selection]);
 
@@ -982,10 +990,9 @@ export function BlockDesignStudio({
     }) ? "changed" : "rejected";
   }, [requireAppliedInspectorDraft, runOperation]);
 
-  const canDelete = selection.kind === "node" || selection.kind === "port" || selection.kind === "connection";
-  const deleteUnavailableReason = selection.kind === "multiple"
-    ? "Batch deletion is unavailable because module cascades require an explicit deletion contract. Select one object first."
-    : "Select a module, port, or interface first.";
+  const canDelete = selection.kind === "node" || selection.kind === "port" ||
+    selection.kind === "connection" || selection.kind === "multiple";
+  const deleteUnavailableReason = "Select a module, port, or interface first.";
   const canAddChildDesign = Boolean(selectedNode && !selectedNode.node.hierarchy);
   const canAddConnection = Boolean(activeLevel && firstConnectablePair(activeLevel));
   const canAlignSelection = arrangementSelection.available && !inspectorDraftDirty;
