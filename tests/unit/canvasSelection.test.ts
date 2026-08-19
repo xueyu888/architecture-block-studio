@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
+  canvasBoundsSelectBounds,
+  canvasBoundsSelectRoute,
   canvasClientBounds,
   canvasGeometryBounds,
   reconcileCanvasSelection,
@@ -13,6 +15,45 @@ describe("canvas selection projection", () => {
       top: 90,
       bottom: 180,
     });
+  });
+
+  test("distinguishes fully enclosed and intersecting module bounds", () => {
+    const selection = { left: 100, right: 300, top: 80, bottom: 240 };
+    expect(canvasBoundsSelectBounds(
+      selection,
+      { left: 120, right: 280, top: 100, bottom: 220 },
+      "full",
+    )).toBe(true);
+    expect(canvasBoundsSelectBounds(
+      selection,
+      { left: 280, right: 420, top: 120, bottom: 200 },
+      "full",
+    )).toBe(false);
+    expect(canvasBoundsSelectBounds(
+      selection,
+      { left: 280, right: 420, top: 120, bottom: 200 },
+      "intersecting",
+    )).toBe(true);
+    expect(canvasBoundsSelectBounds(
+      selection,
+      { left: 320, right: 420, top: 120, bottom: 200 },
+      "intersecting",
+    )).toBe(false);
+  });
+
+  test("selects only routes whose actual segments enter the selection bounds", () => {
+    const selection = { left: 100, right: 160, top: 90, bottom: 150 };
+    const crossingRoute = [{ x: 40, y: 120 }, { x: 220, y: 120 }, { x: 220, y: 260 }];
+    const routeAroundEmptyBoundingSpace = [{ x: 40, y: 40 }, { x: 220, y: 40 }, { x: 220, y: 260 }];
+
+    expect(canvasBoundsSelectRoute(selection, crossingRoute, "full")).toBe(false);
+    expect(canvasBoundsSelectRoute(selection, crossingRoute, "intersecting")).toBe(true);
+    expect(canvasBoundsSelectRoute(selection, routeAroundEmptyBoundingSpace, "intersecting")).toBe(false);
+    expect(canvasBoundsSelectRoute(
+      { left: 20, right: 240, top: 20, bottom: 280 },
+      crossingRoute,
+      "full",
+    )).toBe(true);
   });
 
   test("unifies selected module rectangles and complete route points into one fit bound", () => {

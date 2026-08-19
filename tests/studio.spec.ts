@@ -183,6 +183,12 @@ function flowNode(page: Page, id: string): Locator {
   return page.locator(`.react-flow__node[data-id="${id}"]`);
 }
 
+function diagramNode(page: Page, levelId: string, blockId: string): Locator {
+  return page.locator(".react-flow__node").filter({
+    has: page.locator(`.bd-block[data-level-id="${levelId}"][data-block-id="${blockId}"]`),
+  });
+}
+
 function toolbarButton(page: Page, name: string): Locator {
   return page
     .getByRole("toolbar", { name: "Architecture design tools" })
@@ -204,6 +210,53 @@ async function clickWithPointer(page: Page, locator: Locator): Promise<void> {
   const box = await locator.boundingBox();
   expect(box).not.toBeNull();
   await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+}
+
+async function altSelectIntersectingNode(page: Page, target: Locator): Promise<void> {
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    const viewport = document.querySelector<HTMLElement>(".react-flow__viewport");
+    if (!viewport) throw new Error("Canvas viewport is not mounted.");
+    let lastTransform = viewport.style.transform;
+    let lastChangeAt = performance.now();
+    const sample = () => {
+      const transform = viewport.style.transform;
+      if (transform !== lastTransform) {
+        lastTransform = transform;
+        lastChangeAt = performance.now();
+      }
+      if (performance.now() - lastChangeAt >= 250) resolve();
+      else requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  }));
+  await expect(target).toBeVisible({ timeout: 30_000 });
+  const before = await target.boundingBox();
+  expect(before).not.toBeNull();
+  const selectionStart = {
+    x: before!.x + before!.width * 0.08,
+    y: before!.y + before!.height * 0.34,
+  };
+  const selectionEnd = {
+    x: before!.x + Math.min(44, Math.max(18, before!.width * 0.28)),
+    y: before!.y + before!.height * 0.66,
+  };
+
+  await page.keyboard.press("ControlOrMeta+Shift+A");
+  await expect(target).not.toHaveClass(/selected/);
+  await page.keyboard.down("Alt");
+  await page.mouse.move(selectionStart.x, selectionStart.y);
+  await page.mouse.down();
+  await page.mouse.move(selectionEnd.x, selectionEnd.y, { steps: 6 });
+  await expect(page.locator(".react-flow__selection")).toBeVisible();
+  await page.mouse.up();
+  await page.keyboard.up("Alt");
+
+  await expect(target).toHaveClass(/selected/);
+  const after = await target.boundingBox();
+  expect(after).not.toBeNull();
+  expect(after!.x).toBeCloseTo(before!.x, 4);
+  expect(after!.y).toBeCloseTo(before!.y, 4);
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
 }
 
 async function canvasViewportTransform(page: Page): Promise<string> {
@@ -2474,6 +2527,11 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
     await page.waitForTimeout(500);
     await captureStudioScreenshot(page, "docs/screenshots/routing-stress-hub-detail.png");
   }
+
+  await page.locator(
+    '.bd-tree-select[data-level-id="system"][data-node-id="satellite-left-00"]',
+  ).click({ force: true });
+  await altSelectIntersectingNode(page, flowNode(page, "system::satellite-left-00"));
 });
 
 test("expands five hierarchy layers and audits every visible route and pair", async ({ page, browserName }) => {
@@ -2525,6 +2583,10 @@ test("expands five hierarchy layers and audits every visible route and pair", as
     await page.waitForTimeout(500);
     await captureStudioScreenshot(page, "docs/screenshots/routing-five-level-detail.png");
   }
+  await page.locator(
+    '.bd-tree-select[data-level-id="level-5"][data-node-id="target-00"]',
+  ).click({ force: true });
+  await altSelectIntersectingNode(page, diagramNode(page, "level-5", "target-00"));
 });
 
 test("resizes, collapses, maximizes, floats and resets dock panels", async ({ page }) => {
@@ -2720,6 +2782,7 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   metrics.multiSelectTwoModulesMs = Math.round(performance.now() - multiSelectionStarted);
   await secondModuleButton.click({ force: true, modifiers: ["ControlOrMeta"] });
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("Module 000");
+  await altSelectIntersectingNode(page, selectedFlowNode);
   if (stress) {
     const selectedBox = await selectedFlowNode.boundingBox();
     expect(selectedBox).not.toBeNull();
@@ -3276,9 +3339,9 @@ test("aligns a pointer-moved module and lets Alt bypass guides for one gesture",
     const box = await node.boundingBox();
     expect(box).not.toBeNull();
     const start = { x: box!.x + box!.width / 2, y: box!.y + box!.height * 0.62 };
-    if (disableSnap) await page.keyboard.down("Alt");
     await page.mouse.move(start.x, start.y);
     await page.mouse.down();
+    if (disableSnap) await page.keyboard.down("Alt");
     await page.mouse.move(start.x + deltaX, start.y, { steps: 10 });
     await page.waitForTimeout(120);
   };
@@ -3745,6 +3808,112 @@ test("box-selects, toggles, and moves modules as one professional selection", as
   await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("Session Command RPC");
 });
 
+test("forces an intersecting module and route selection box with Alt", async ({ page, browserName }) => {
+  const project = flowNode(page, "system::project");
+  const knowledge = flowNode(page, "system::knowledge");
+  const inspector = page.getByRole("region", { name: "Properties" });
+  const [projectBounds, knowledgeBounds] = await Promise.all([project.boundingBox(), knowledge.boundingBox()]);
+  expect(projectBounds).not.toBeNull();
+  expect(knowledgeBounds).not.toBeNull();
+
+  const projectPartialStart = {
+    x: projectBounds!.x - 12,
+    y: projectBounds!.y + projectBounds!.height * 0.3,
+  };
+  const projectPartialEnd = {
+    x: projectBounds!.x + 28,
+    y: projectBounds!.y + projectBounds!.height * 0.7,
+  };
+  await page.mouse.move(projectPartialStart.x, projectPartialStart.y);
+  await page.mouse.down();
+  await page.mouse.move(projectPartialEnd.x, projectPartialEnd.y, { steps: 6 });
+  await page.mouse.up();
+  await expect(project).not.toHaveClass(/selected/);
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("System Overview");
+
+  await page.keyboard.down("Alt");
+  await page.mouse.move(
+    projectBounds!.x + projectBounds!.width / 2,
+    projectBounds!.y + projectBounds!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    knowledgeBounds!.x + knowledgeBounds!.width / 2,
+    knowledgeBounds!.y + knowledgeBounds!.height / 2 + 24,
+    { steps: 8 },
+  );
+  await expect(page.locator(".react-flow__selection")).toBeVisible();
+  await page.mouse.up();
+  await page.keyboard.up("Alt");
+  await expect(project).toHaveClass(/selected/);
+  await expect(knowledge).toHaveClass(/selected/);
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("2 objects selected");
+  const [projectAfterForcedBox, knowledgeAfterForcedBox] = await Promise.all([
+    project.boundingBox(),
+    knowledge.boundingBox(),
+  ]);
+  expect(projectAfterForcedBox).not.toBeNull();
+  expect(knowledgeAfterForcedBox).not.toBeNull();
+  expect(projectAfterForcedBox!.x).toBeCloseTo(projectBounds!.x, 4);
+  expect(projectAfterForcedBox!.y).toBeCloseTo(projectBounds!.y, 4);
+  expect(knowledgeAfterForcedBox!.x).toBeCloseTo(knowledgeBounds!.x, 4);
+  expect(knowledgeAfterForcedBox!.y).toBeCloseTo(knowledgeBounds!.y, 4);
+  if (process.env.CAPTURE_INTERSECTING_SELECTION === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/intersecting-selection.png");
+  }
+
+  await page.keyboard.down("Alt");
+  await page.keyboard.down("Shift");
+  await page.mouse.move(projectPartialStart.x, projectPartialStart.y);
+  await page.mouse.down();
+  await page.mouse.move(projectPartialEnd.x, projectPartialEnd.y, { steps: 6 });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+  await page.keyboard.up("Alt");
+  await expect(project).not.toHaveClass(/selected/);
+  await expect(knowledge).toHaveClass(/selected/);
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("Knowledge");
+
+  await page.keyboard.press("ControlOrMeta+Shift+A");
+  const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
+  const segment = await edge.locator("[data-route-points]").evaluate((group) => {
+    const points = JSON.parse((group as SVGGElement).dataset.routePoints ?? "[]") as Array<{ x: number; y: number }>;
+    const matrix = (group as SVGGElement).getScreenCTM();
+    if (!matrix || points.length < 2) return undefined;
+    const candidates = points.slice(1).map((point, index) => ({
+      start: points[index],
+      end: point,
+      length: Math.abs(point.x - points[index].x) + Math.abs(point.y - points[index].y),
+    })).sort((left, right) => right.length - left.length);
+    const longest = candidates[0];
+    const midpoint = new DOMPoint(
+      (longest.start.x + longest.end.x) / 2,
+      (longest.start.y + longest.end.y) / 2,
+    ).matrixTransform(matrix);
+    return { x: midpoint.x, y: midpoint.y };
+  });
+  expect(segment).toBeDefined();
+  const routeBox = {
+    start: { x: segment!.x - 14, y: segment!.y - 10 },
+    end: { x: segment!.x + 14, y: segment!.y + 10 },
+  };
+  await page.mouse.move(routeBox.start.x, routeBox.start.y);
+  await page.mouse.down();
+  await page.mouse.move(routeBox.end.x, routeBox.end.y, { steps: 5 });
+  await page.mouse.up();
+  await expect(edge).not.toHaveClass(/selected/);
+
+  await page.keyboard.down("Alt");
+  await page.mouse.move(routeBox.start.x, routeBox.start.y);
+  await page.mouse.down();
+  await page.mouse.move(routeBox.end.x, routeBox.end.y, { steps: 5 });
+  await page.mouse.up();
+  await page.keyboard.up("Alt");
+  await expect(edge).toHaveClass(/selected/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("Session Command RPC");
+});
+
 test("selects and clears every object in the current level with standard edit commands", async ({ page, browserName }) => {
   const viewportBefore = await canvasViewportTransform(page);
 
@@ -4076,10 +4245,10 @@ test("matches a sibling size while resizing and lets Alt bypass size snapping", 
     const handle = node.locator(".bd-node-resize-line.right");
     const box = await handle.boundingBox();
     expect(box).not.toBeNull();
-    if (disableSnap) await page.keyboard.down("Alt");
     const start = { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
     await page.mouse.move(start.x, start.y);
     await page.mouse.down();
+    if (disableSnap) await page.keyboard.down("Alt");
     await page.mouse.move(start.x + deltaX, start.y, { steps: 8 });
     await page.waitForTimeout(120);
   };

@@ -113,7 +113,7 @@ function MultiSelectionSummary({ document, selection, onSelect }: {
       {visibleRows.length < rows.length && (
         <p className="bd-multi-overflow">Showing 60 of {rows.length} selected objects.</p>
       )}
-      <p className="bd-multi-help">Ctrl/⌘ A selects this Level · Shift/Ctrl/⌘ click toggles objects · Drag to move · Ctrl/⌘ drag clones · Arrange or Ctrl/⌘ K aligns same-level modules · Ctrl/⌘ Shift+H fits the selection · Esc clears.</p>
+      <p className="bd-multi-help">Drag empty canvas to enclose · Alt-drag intersects, even over objects · Shift/Ctrl/⌘ toggles · Drag moves · Ctrl/⌘ drag clones · Arrange aligns · Ctrl/⌘ Shift+H fits · Esc clears.</p>
     </div>
   );
 }
@@ -411,7 +411,7 @@ function NodeEditor({ document, level, node, onOperation, onDelete, onDraftChang
             ? `${node.layout.width} × ${node.layout.height}`
             : "Automatic"}</strong>
         </div>
-        <p>Drag an edge or corner handle to resize; hold Shift to preserve the original proportions, taking priority over sibling-size snapping. Alignment and equal-size guides snap nearby geometry; hold Alt during a pointer gesture to bypass them. With the module focused, Ctrl/Cmd + Shift + Arrow changes width or height by 16 design pixels. Apply current property changes first.</p>
+        <p>Drag an edge or corner handle to resize; hold Shift to preserve the original proportions, taking priority over sibling-size snapping. Alignment and equal-size guides snap nearby geometry; start the direct gesture, then hold Alt to bypass them. Alt held before pointerdown forces a selection box instead. With the module focused, Ctrl/Cmd + Shift + Arrow changes width or height by 16 design pixels. Apply current property changes first.</p>
       </section>
       <ConnectedInterfaces document={document} level={level} node={node} onSelect={onSelect} />
       <ContractFields value={inspector} onChange={setInspector} />

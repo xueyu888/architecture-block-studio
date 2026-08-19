@@ -15,6 +15,8 @@ export interface CanvasClientBounds {
   bottom: number;
 }
 
+export type CanvasBoundsSelectionMode = "full" | "intersecting";
+
 export interface CanvasGeometryRect {
   x: number;
   y: number;
@@ -37,6 +39,64 @@ export function canvasClientBounds(
     top: Math.min(start.y, end.y),
     bottom: Math.max(start.y, end.y),
   };
+}
+
+function canvasBoundsContainPoint(bounds: CanvasClientBounds, point: CanvasClientPoint): boolean {
+  return point.x >= bounds.left && point.x <= bounds.right
+    && point.y >= bounds.top && point.y <= bounds.bottom;
+}
+
+export function canvasBoundsSelectBounds(
+  selection: CanvasClientBounds,
+  candidate: CanvasClientBounds,
+  mode: CanvasBoundsSelectionMode,
+): boolean {
+  if (mode === "full") {
+    return candidate.left >= selection.left && candidate.right <= selection.right
+      && candidate.top >= selection.top && candidate.bottom <= selection.bottom;
+  }
+  return candidate.right >= selection.left && candidate.left <= selection.right
+    && candidate.bottom >= selection.top && candidate.top <= selection.bottom;
+}
+
+function canvasSegmentIntersectsBounds(
+  start: CanvasClientPoint,
+  end: CanvasClientPoint,
+  bounds: CanvasClientBounds,
+): boolean {
+  if (canvasBoundsContainPoint(bounds, start) || canvasBoundsContainPoint(bounds, end)) return true;
+  const deltaX = end.x - start.x;
+  const deltaY = end.y - start.y;
+  let minimum = 0;
+  let maximum = 1;
+  for (const [direction, distance] of [
+    [-deltaX, start.x - bounds.left],
+    [deltaX, bounds.right - start.x],
+    [-deltaY, start.y - bounds.top],
+    [deltaY, bounds.bottom - start.y],
+  ] as const) {
+    if (direction === 0) {
+      if (distance < 0) return false;
+      continue;
+    }
+    const ratio = distance / direction;
+    if (direction < 0) minimum = Math.max(minimum, ratio);
+    else maximum = Math.min(maximum, ratio);
+    if (minimum > maximum) return false;
+  }
+  return true;
+}
+
+export function canvasBoundsSelectRoute(
+  selection: CanvasClientBounds,
+  points: readonly CanvasClientPoint[],
+  mode: CanvasBoundsSelectionMode,
+): boolean {
+  if (points.length === 0) return false;
+  if (mode === "full") return points.every((point) => canvasBoundsContainPoint(selection, point));
+  if (points.some((point) => canvasBoundsContainPoint(selection, point))) return true;
+  return points.slice(1).some((point, index) =>
+    canvasSegmentIntersectsBounds(points[index], point, selection));
 }
 
 export function canvasGeometryBounds(

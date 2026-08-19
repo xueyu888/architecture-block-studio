@@ -64,7 +64,14 @@ import {
 import { AlignmentGuideLayer } from "./AlignmentGuideLayer";
 import { BlockNodeComponent } from "./BlockNode";
 import { canvasDetailLevel, type CanvasDetailLevel } from "./canvasDetail";
-import { canvasClientBounds, canvasGeometryBounds, reconcileCanvasSelection } from "./canvasSelection";
+import {
+  canvasBoundsSelectBounds,
+  canvasBoundsSelectRoute,
+  canvasClientBounds,
+  canvasGeometryBounds,
+  reconcileCanvasSelection,
+  type CanvasBoundsSelectionMode,
+} from "./canvasSelection";
 import type { CanvasFlowEdge, CanvasFlowNode, RouteHandleFocusTarget } from "./canvasTypes";
 import { InterfaceEdgeComponent } from "./InterfaceEdge";
 import { Tooltip } from "./Tooltip";
@@ -129,7 +136,7 @@ function CanvasViewportControls({
   const zoom = useStore((state) => state.transform[2]);
   return (
     <Controls
-      className="bd-canvas-controls"
+      className="bd-canvas-controls nokey"
       position="bottom-left"
       showZoom={false}
       showFitView={false}
@@ -273,9 +280,9 @@ interface ResizePreview {
 interface BoxSelectionGesture {
   base: SelectionRef;
   toggle: boolean;
+  mode: CanvasBoundsSelectionMode;
   start: { x: number; y: number };
   end: { x: number; y: number };
-  selectedFlowNodeIds: Set<string>;
 }
 
 function hasToggleModifier(event: Pick<MouseEvent, "shiftKey" | "ctrlKey" | "metaKey">): boolean {
@@ -325,7 +332,11 @@ const CanvasInner = memo(function CanvasInner({
   const [resizeRestoreRevision, setResizeRestoreRevision] = useState(0);
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
   const alignmentGestureRef = useRef<AlignmentGesture | undefined>(undefined);
-  const boxSelectionStartRef = useRef<{ x: number; y: number } | undefined>(undefined);
+  const boxSelectionStartRef = useRef<{
+    x: number;
+    y: number;
+    mode: CanvasBoundsSelectionMode;
+  } | undefined>(undefined);
   const boxSelectionGestureRef = useRef<BoxSelectionGesture | undefined>(undefined);
   const resizePreviewRef = useRef<ResizePreview | undefined>(undefined);
   const multiSelection = selection.kind === "multiple";
@@ -381,19 +392,25 @@ const CanvasInner = memo(function CanvasInner({
   const onCanvasPointerMoveCapture = useCallback((event: ReactPointerEvent) => {
     interruptViewportNavigation();
     const gesture = boxSelectionGestureRef.current;
-    if (gesture) gesture.end = { x: event.clientX, y: event.clientY };
+    if (gesture) {
+      gesture.end = { x: event.clientX, y: event.clientY };
+      if (event.altKey) gesture.mode = "intersecting";
+    }
   }, [interruptViewportNavigation]);
   const onCanvasPointerDownCapture = useCallback((event: ReactPointerEvent) => {
     // A direct gesture owns the viewport immediately. Freeze even when a
     // third-party navigation promise has already reported completion: Firefox
     // can still deliver a final interpolated frame after that promise settles.
     interruptViewportNavigation(true);
-    if (
-      event.button === 0 &&
-      event.target instanceof Element &&
-      event.target.classList.contains("react-flow__pane")
-    ) {
-      boxSelectionStartRef.current = { x: event.clientX, y: event.clientY };
+    const target = event.target instanceof Element ? event.target : undefined;
+    const directPaneGesture = target?.classList.contains("react-flow__pane") ?? false;
+    const forcedSelectionGesture = Boolean(event.altKey && target && !target.closest(".nokey"));
+    if (event.button === 0 && event.isPrimary && (directPaneGesture || forcedSelectionGesture)) {
+      boxSelectionStartRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+        mode: event.altKey ? "intersecting" : "full",
+      };
     } else {
       boxSelectionStartRef.current = undefined;
     }
@@ -542,6 +559,7 @@ const CanvasInner = memo(function CanvasInner({
       snapResizeGeometry,
     ],
   );
+  const baseNodeById = useMemo(() => new Map(baseNodes.map((node) => [node.id, node])), [baseNodes]);
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasFlowNode>(baseNodes);
   // Automatic routing follows committed layout geometry. Pointer move/resize
   // previews adapt only their incident endpoints in InterfaceEdge, avoiding a
@@ -604,14 +622,6 @@ const CanvasInner = memo(function CanvasInner({
     [layout.edges, multiSelection, onRouteConnection, routeJumps, routingResult, simplifiedEdgeInteraction],
   );
   const onCanvasNodesChange = useCallback((changes: NodeChange<CanvasFlowNode>[]) => {
-    const boxGesture = boxSelectionGestureRef.current;
-    if (boxGesture) {
-      changes.forEach((change) => {
-        if (change.type !== "select") return;
-        if (change.selected) boxGesture.selectedFlowNodeIds.add(change.id);
-        else boxGesture.selectedFlowNodeIds.delete(change.id);
-      });
-    }
     const preview = resizePreviewRef.current;
     if (!preview) {
       onNodesChange(changes);
@@ -646,6 +656,7 @@ const CanvasInner = memo(function CanvasInner({
   const selectedNodeIdsRef = useRef<ReadonlySet<string>>(new Set(selectedNodeIds));
   selectedNodeIdsRef.current = new Set(selectedNodeIds);
   const routedEdges = baseEdges;
+  const routedEdgeById = useMemo(() => new Map(routedEdges.map((edge) => [edge.id, edge])), [routedEdges]);
   const flowEdgeIdsBySelection = useMemo(() => {
     const result = new Map<string, string[]>();
     routedEdges.forEach((edge) => {
@@ -992,35 +1003,42 @@ const CanvasInner = memo(function CanvasInner({
     commitCanvasSelection(next);
   }, [commitCanvasSelection]);
   const onSelectionStart = useCallback((event: ReactMouseEvent) => {
-    const start = boxSelectionStartRef.current ?? { x: event.clientX, y: event.clientY };
+    const capturedStart = boxSelectionStartRef.current;
+    const start = capturedStart ?? { x: event.clientX, y: event.clientY };
     boxSelectionGestureRef.current = {
       base: selectionRef.current,
       toggle: hasToggleModifier(event),
+      mode: capturedStart?.mode ?? (event.altKey ? "intersecting" : "full"),
       start,
       end: { x: event.clientX, y: event.clientY },
-      selectedFlowNodeIds: new Set(),
     };
     boxSelectionStartRef.current = undefined;
   }, []);
-  const onSelectionEnd = useCallback(() => {
+  const onSelectionEnd = useCallback((event: ReactMouseEvent) => {
     const gesture = boxSelectionGestureRef.current;
     if (!gesture) return;
-    const items = [...gesture.selectedFlowNodeIds].flatMap<DiagramSelectionRef>((flowNodeId) => {
-      const node = baseNodes.find((candidate) => candidate.id === flowNodeId);
-      return node ? [{ kind: "node", levelId: node.data.levelId, nodeId: node.data.block.id }] : [];
-    });
+    if (event.altKey) gesture.mode = "intersecting";
+    const items: DiagramSelectionRef[] = [];
     const canvasRoot = store.getState().domNode;
     const selectionBounds = canvasClientBounds(gesture.start, gesture.end);
+    canvasRoot?.querySelectorAll<HTMLElement>(".react-flow__node").forEach((element) => {
+      const node = baseNodeById.get(element.dataset.id ?? "");
+      if (!node) return;
+      const bounds = element.getBoundingClientRect();
+      if (!canvasBoundsSelectBounds(selectionBounds, bounds, gesture.mode)) return;
+      items.push({ kind: "node", levelId: node.data.levelId, nodeId: node.data.block.id });
+    });
+    const state = store.getState();
+    const rootBounds = canvasRoot?.getBoundingClientRect();
+    const [translateX, translateY, zoom] = state.transform;
     canvasRoot?.querySelectorAll<SVGGElement>(".react-flow__edge").forEach((element) => {
-      const edge = routedEdges.find((candidate) => candidate.id === element.dataset.id);
-      if (!edge?.data || edge.data.boundaryContinuation) return;
-      const route = element.querySelector<SVGPathElement>(".bd-interface-route");
-      if (!route) return;
-      const bounds = route.getBoundingClientRect();
-      if (
-        bounds.left < selectionBounds.left || bounds.right > selectionBounds.right ||
-        bounds.top < selectionBounds.top || bounds.bottom > selectionBounds.bottom
-      ) return;
+      const edge = routedEdgeById.get(element.dataset.id ?? "");
+      if (!edge?.data || edge.data.boundaryContinuation || !edge.data.plannedRoute || !rootBounds) return;
+      const route = edge.data.plannedRoute.map((point) => ({
+        x: rootBounds.left + translateX + point.x * zoom,
+        y: rootBounds.top + translateY + point.y * zoom,
+      }));
+      if (!canvasBoundsSelectRoute(selectionBounds, route, gesture.mode)) return;
       items.push({
         kind: "connection",
         levelId: edge.data.levelId,
@@ -1038,7 +1056,7 @@ const CanvasInner = memo(function CanvasInner({
     window.requestAnimationFrame(() => {
       if (boxSelectionGestureRef.current === gesture) boxSelectionGestureRef.current = undefined;
     });
-  }, [baseNodes, commitCanvasSelection, entryLevelId, routedEdges, store]);
+  }, [baseNodeById, commitCanvasSelection, entryLevelId, routedEdgeById, store]);
   const onElementKeyDownCapture = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof Element) || !target.matches(".react-flow__node, .react-flow__edge")) return;
@@ -1327,7 +1345,7 @@ const CanvasInner = memo(function CanvasInner({
       panActivationKeyCode="Space"
       zoomActivationKeyCode={["Control", "Meta"]}
       selectionOnDrag
-      selectionKeyCode={null}
+      selectionKeyCode="Alt"
       multiSelectionKeyCode={["Control", "Meta"]}
       fitView
       fitViewOptions={FIT_VIEW_OPTIONS}
@@ -1338,7 +1356,7 @@ const CanvasInner = memo(function CanvasInner({
     >
       {CANVAS_BACKGROUND}
       {spacePanActive ? (
-        <Panel className="bd-canvas-pan-mode" position="top-right" aria-live="polite">
+        <Panel className="bd-canvas-pan-mode nokey" position="top-right" aria-live="polite">
           <Hand size={13} aria-hidden="true" />
           <strong>PAN MODE</strong>
           <span>Drag the canvas · release Space to return</span>
@@ -1347,7 +1365,7 @@ const CanvasInner = memo(function CanvasInner({
       <AlignmentGuideLayer guides={alignmentGuides} />
       {routingFailure ? (
         <div
-          className="bd-routing-diagnostic"
+          className="bd-routing-diagnostic nokey"
           role="status"
           title={routingResult.diagnostics.map((diagnostic) => diagnostic.message).join("\n")}
         >
@@ -1364,7 +1382,7 @@ const CanvasInner = memo(function CanvasInner({
         onToggleOverviewMap={() => setCompactOverviewMapOpen((open) => !open)}
       />
       <MiniMap<CanvasFlowNode>
-        className={`bd-canvas-minimap${compactOverviewMapOpen ? " is-compact-open" : ""}`}
+        className={`bd-canvas-minimap nokey${compactOverviewMapOpen ? " is-compact-open" : ""}`}
         position="bottom-right"
         pannable
         zoomable

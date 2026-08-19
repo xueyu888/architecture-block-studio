@@ -108,6 +108,8 @@ Iteration 79 对照 draw.io 官方 Shift + resize 保持比例合同。首次直
 
 Iteration 80 完成第九次十轮复评。重新审计 `BlockDesignDocument → Editor → layout / routing → Studio / Canvas` 后，没有发现第二设计事实、反向依赖、按连接 id 特判或足以支持机械拆分大组件的新职责；20 张刷新截图逐张复核也没有出现穿卡、短折返、不可解释共路、反向箭头、线中标签或 Dock 遮挡。官方 draw.io 键盘尺寸合同则揭示一个明确漂移：现有 Shift + Arrow 错误承担 resize，与 Shift pointer 等比约束混用。Canvas 现在先拦截选中模块上的 Shift + Arrow，只有无 Alt 的 Ctrl/Cmd + Shift + Arrow 才调用既有 `node/resize`；Shift 单独按下既不修改文档，也不让 React Flow 建立临时位置副本。Inspector、README、架构和测试共用同一组合键合同。最终 120 / 120 unit（18 files / 1.60 秒）、1894-module build（7.07 秒）、Chromium 56 / 56 + Firefox 55 / 55 = 111 / 111（3.2 分钟）、官方 npm registry production audit 0 known vulnerabilities；额外 headed Chromium 12 / 12 覆盖默认 / 紧凑、增量连线、方向、双层、五层、100 连接 Hub、密集线路编辑、排版、复制、克隆和等比缩放。首次 headed 启动因环境缺少 X Server 未进入页面，改用现有 `xvfb-run` 后完整通过，不计作产品断言。
 
+Iteration 81 对照 draw.io 的完整包围、Alt 强制起框、相交选择与 Alt + Shift 移出合同，删除“节点由第三方 select change、线路由 DOM 外接矩形”这两个漂移事实源。`canvasSelection` 现在统一负责模块 client bounds 与真实正交 route segments 的 full / intersecting 判定；Canvas 在 pointerdown 捕获起点与模式，React Flow 只显示 rubberband，结束时才转换为 canonical `SelectionRef`。L 形线路外接矩形中的空白不再误报命中，Controls / MiniMap / 状态提示也不会被 Alt 抢占。第一次完整回归 109 / 113 暴露 Alt 强制起框会破坏既有移动 / resize 绕过吸附；继续核对官方合同后，以时序明确正交边界：Alt 在 pointerdown 前成立时强制框选，直接 move / resize 已开始后再按 Alt 只关闭当前吸附。修正后最终 122 / 122 unit（18 files / 1.50 秒）、1894-module build（7.14 秒）、Chromium 57 / 57 + Firefox 56 / 56 = 113 / 113（3.2 分钟）通过；五层 17 modules / 20 routes、偏斜 101 modules / 100 routes 与 200 modules / 400 connections 都执行真实部分相交框选，最新大图样本首次可交互 1531 ms、多选 865 ms、搜索 1420 ms、接口聚焦 572 ms、保存 112 ms。headed `intersecting-selection.png` 已人工复核选择轮廓、端口、箭头、线路、Inspector 与 Dock 无遮挡。
+
 ## 每次迭代的最小验证门槛
 
 每个完成的迭代必须留下与风险相称的证据：
