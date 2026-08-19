@@ -18,12 +18,19 @@ function CommandButton({ command }: { command: StudioCommand }) {
   );
 }
 
-function CommandGroup({ commands, ids }: { commands: StudioCommands; ids: StudioCommandId[] }) {
+function CommandGroup({
+  commands,
+  ids,
+  label,
+}: {
+  commands: StudioCommands;
+  ids: StudioCommandId[];
+  label: string;
+}) {
   return (
-    <>
+    <div className="bd-toolbar-group" role="group" aria-label={label}>
       {ids.map((id) => <CommandButton key={id} command={commands[id]} />)}
-      <span className="bd-toolbar-separator" />
-    </>
+    </div>
   );
 }
 
@@ -39,12 +46,12 @@ export function StudioToolbar({
   expandedCount: number;
 }) {
   return (
-    <div className="bd-toolbar">
-      <CommandGroup commands={commands} ids={["newDesign", "openDesign", "save"]} />
-      <CommandGroup commands={commands} ids={["undo", "redo", "deleteSelection"]} />
-      <CommandGroup commands={commands} ids={["addBlock", "addPort", "addConnection", "addChildDesign"]} />
-      <CommandGroup commands={commands} ids={["regenerateLayout", "optimizeRouting", "fitDesign", "validateDesign"]} />
-      <CommandGroup commands={commands} ids={["toggleSources", "toggleMessages", "toggleProperties", "maximizeDiagram"]} />
+    <div className="bd-toolbar" role="toolbar" aria-label="Architecture design tools">
+      <CommandGroup label="File" commands={commands} ids={["newDesign", "openDesign", "save"]} />
+      <CommandGroup label="History and selection" commands={commands} ids={["undo", "redo", "deleteSelection"]} />
+      <CommandGroup label="Create" commands={commands} ids={["addBlock", "addPort", "addConnection", "addChildDesign"]} />
+      <CommandGroup label="Layout and validation" commands={commands} ids={["regenerateLayout", "optimizeRouting", "fitDesign", "validateDesign"]} />
+      <CommandGroup label="Workspace panels" commands={commands} ids={["toggleSources", "toggleMessages", "toggleProperties", "maximizeDiagram"]} />
       <nav className="bd-breadcrumbs" aria-label="Expanded hierarchy">
         <strong>{activeLevelTitle}</strong>
         {expandedTitles.map((title) => <span key={title}><b>/</b>{title}</span>)}

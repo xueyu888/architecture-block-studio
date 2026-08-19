@@ -708,6 +708,9 @@ test("loads the bundled v2 design without DRC or viewport failures", async ({ pa
   await expect(agentUi.locator(".bd-port-label span").first()).toBeVisible();
   await expect(agentUi.locator(".bd-block-heading span")).toBeHidden();
   await expect(agentUi.locator(".bd-port-label small").first()).toBeHidden();
+  if (process.env.CAPTURE_WORKBENCH_REFRESH === "1") {
+    await captureStudioScreenshot(page, "docs/screenshots/professional-workbench.png");
+  }
 
   await page.locator(".react-flow__controls-zoomin").click({ force: true });
   await expect(canvas).toHaveAttribute("data-detail-level", "full");
@@ -1804,6 +1807,9 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   await expect(page.locator(".bd-document-title span")).toHaveText(document.title, {
     timeout: stress ? 120_000 : 30_000,
   });
+  const productTitle = await page.locator(".bd-brand strong").boundingBox();
+  expect(productTitle).not.toBeNull();
+  expect(productTitle!.width).toBeGreaterThan(140);
   await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: stress ? 120_000 : 30_000 });
   await expect(page.locator(".bd-statusbar")).toContainText(`${nodeCount} diagram blocks`);
   await expect(page.locator(".bd-statusbar")).toContainText(`${connectionCount} diagram interfaces`);

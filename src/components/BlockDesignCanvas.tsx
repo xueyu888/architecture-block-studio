@@ -56,7 +56,7 @@ const toneColors: Record<string, string> = {
 
 const CANVAS_DECORATIONS = (
   <>
-    <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#c7ccc8" />
+    <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--canvas-grid)" />
     <Controls position="bottom-left" showInteractive={false} />
   </>
 );
@@ -583,7 +583,7 @@ const CanvasInner = memo(function CanvasInner({
         pannable
         zoomable
         nodeColor={miniMapNodeColor}
-        maskColor="rgba(226, 230, 226, 0.72)"
+        maskColor="var(--minimap-mask)"
         onNodeClick={onMiniMapNodeClick}
       />
       </ReactFlow>

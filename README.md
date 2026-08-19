@@ -10,7 +10,7 @@ Architecture Block Studio 把代码系统表达成可编辑、可校验、可版
 - **理解**：把已有代码或外部分析结果映射成模块、端口和依赖关系，从整体上读懂系统。
 - **审查**：在代码变更后检查职责漂移、隐式依赖、越界调用与接口合同变化，补足逐行 Code Review 的结构视角。
 
-![Architecture Block Studio 工作台](docs/screenshots/editor-polished-workbench.png)
+![Architecture Block Studio 专业工作台](docs/screenshots/professional-workbench.png)
 
 ## 为什么是现在
 
@@ -55,11 +55,9 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 
 模块的直接依赖从同一份设计文档实时派生，按入站与出站收敛在 Inspector 中；画布继续保持安静，不增加常驻标签。
 
-![模块关联接口审查摘要](docs/screenshots/module-interface-review.png)
-
 不便使用鼠标或处理密集画布时，可以从统一命令入口选择源端口和目标端口，再进入同一个类型化接口合同流程。
 
-![键盘接口端点选择](docs/screenshots/keyboard-interface-dialog.png)
+![紧凑工作区中的接口审查与 DRC](docs/screenshots/compact-workbench.png)
 
 菜单获得焦点后，可以直接输入 **F / E / D / V** 定位 File、Edit、Design 或 View；菜单展开后，输入命令首字母会跳到下一个同首字母项并支持环绕。例如在 Design 中重复按 **A** 可依次检查 Add Module、Add Port、Add Interface，用 **C** 直达 Create Child Design。暂不可用的命令仍可由方向键或首字母聚焦，菜单会直接说明成立条件；Enter、Space 和鼠标点击都不会误执行。
 

@@ -804,7 +804,7 @@ export function BlockDesignStudio({
       <header className="bd-app-header">
         <div className="bd-brand"><span className="bd-brand-mark"><CircuitBoard size={16} /></span><strong>Architecture Block Studio</strong></div>
         <div className="bd-document-title"><span>{document.title}{editor.dirty || inspectorDraftDirty ? " *" : ""}</span><small>{sourceLabel}{inspectorDraftDirty ? " · Unapplied Inspector changes" : editor.dirty ? " · Unsaved" : ""}</small></div>
-        <div className="bd-validation-summary">
+        <div className={`bd-validation-summary${errorCount > 0 ? " has-errors" : " is-clean"}`}>
           {errorCount === 0 ? <CheckCircle2 size={14} /> : <TriangleAlert size={14} />}
           <span>{errorCount} errors</span><span>{warningCount} warnings</span>
         </div>

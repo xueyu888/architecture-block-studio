@@ -46,6 +46,21 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 
 当前依赖核查中，`model` 不依赖任何上层模块，`layout` 与 `io` 只消费模型合同，`routing` 只消费几何库类型；`editor` 只额外复用 `io` 的纯 canonical snapshot 序列化，避免 dirty、历史和文件输出出现第二套规则。组件对 `studio` 的引用仅指向无 UI 依赖的 `commands` / `selection` 叶子协议，这两个协议不反向导入组件；`BlockDesignStudio` 才负责组合具体组件。文件行数本身不是拆分依据，只有独立状态、规则或变化原因出现时才建立新 Owner。
 
+## 工作台与视觉系统
+
+工作台采用稳定的专业画布骨架：文档标题和校验摘要位于顶层，菜单负责完整命令发现，分组工具栏承载高频动作；Sources、Canvas、Inspector 构成主要横向工作区，Messages / DRC 与状态栏提供按需反馈。Canvas 始终是视觉主面，左右面板是上下文，只有选择、错误、dirty 和主操作使用强调色。改变面板显隐、Dock 布局或视觉样式不会改变设计事实。
+
+`src/styles.css` 的 `:root` 是颜色、边界、控件高度、圆角、阴影和动效时长的唯一视觉常量 Owner。组件只通过自身语义 class 表达“这是菜单、节点、属性面板或状态”，不得复制同一 surface、border、selection 或 control 尺寸；React Flow 的网格与 MiniMap 遮罩同样消费该 token 层。`StudioToolbar` 只依据 `StudioCommands` 投影命令，并用具名 `role="group"` 表达视觉分组，不拥有命令状态。视觉 token 只被组件消费，不依赖组件，也不进入 JSON、历史、selection 或布局结果。
+
+```text
+BlockDesignDocument ─► model / editor / layout / routing ─► Studio ─► UI components
+StudioCommands ───────────────────────────────────────────► Menu / Toolbar
+:root visual tokens ──────────────────────────────────────► all UI components
+Dock / selection / dialogs ─► disposable workspace state; never design JSON
+```
+
+视觉失败与业务失败保持正交：非法编辑继续由既有命令和 Editor 给出可见错误并保留原文档；视觉回归由 WCAG computed-color、1680 × 1050 / 1280 × 720 几何合同、双浏览器旅程和 headed 截图捕获，不能通过新增文档字段或组件局部特例补偿。
+
 ## 状态分类
 
 系统必须区分五类状态，避免事实源漂移。
