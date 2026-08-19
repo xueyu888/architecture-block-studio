@@ -14,6 +14,7 @@ import {
   useStoreApi,
   type EdgeMouseHandler,
   type Connection,
+  type FitViewOptions,
   type MiniMapProps,
   type OnNodeDrag,
   type NodeMouseHandler,
@@ -63,8 +64,15 @@ const CANVAS_BACKGROUND = (
   <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--canvas-grid)" />
 );
 
-function CanvasViewportControls() {
-  const { fitView, zoomIn, zoomOut } = useReactFlow();
+function CanvasViewportControls({
+  onZoomIn,
+  onZoomOut,
+  onFit,
+}: {
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onFit: () => void;
+}) {
   const zoom = useStore((state) => state.transform[2]);
   return (
     <Controls
@@ -81,7 +89,7 @@ function CanvasViewportControls() {
           className="react-flow__controls-zoomin"
           aria-label="Zoom in"
           disabled={zoom >= MAX_ZOOM - 0.001}
-          onClick={() => void zoomIn({ duration: fitDuration() })}
+          onClick={onZoomIn}
         >
           <Plus aria-hidden="true" size={13} />
         </ControlButton>
@@ -92,7 +100,7 @@ function CanvasViewportControls() {
           className="react-flow__controls-zoomout"
           aria-label="Zoom out"
           disabled={zoom <= MIN_ZOOM + 0.001}
-          onClick={() => void zoomOut({ duration: fitDuration() })}
+          onClick={onZoomOut}
         >
           <Minus aria-hidden="true" size={13} />
         </ControlButton>
@@ -102,7 +110,7 @@ function CanvasViewportControls() {
           type="button"
           className="react-flow__controls-fitview"
           aria-label="Fit design"
-          onClick={() => void fitView({ ...FIT_VIEW_OPTIONS, duration: fitDuration() })}
+          onClick={onFit}
         >
           <Scan aria-hidden="true" size={13} />
         </ControlButton>
@@ -175,7 +183,7 @@ const CanvasInner = memo(function CanvasInner({
   onCreateConnection,
   onRouteConnection,
 }: CanvasInnerProps) {
-  const { fitView } = useReactFlow();
+  const { fitView, getViewport, setViewport, zoomIn, zoomOut } = useReactFlow();
   const store = useStoreApi();
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
@@ -192,10 +200,43 @@ const CanvasInner = memo(function CanvasInner({
     duration: navigationDuration,
     interpolate: navigationInterpolation,
   });
+  const viewportNavigationGeneration = useRef(0);
+  const animatedViewportNavigationActive = useRef(false);
   navigationOptionsRef.current = {
     duration: navigationDuration,
     interpolate: navigationInterpolation,
   };
+  const runViewportNavigation = useCallback((duration: number, navigate: () => Promise<boolean>) => {
+    const generation = viewportNavigationGeneration.current + 1;
+    viewportNavigationGeneration.current = generation;
+    animatedViewportNavigationActive.current = duration > 0;
+    void navigate().finally(() => {
+      if (viewportNavigationGeneration.current === generation) {
+        animatedViewportNavigationActive.current = false;
+      }
+    });
+  }, []);
+  const navigateViewport = useCallback((options: FitViewOptions<CanvasFlowNode>) => {
+    runViewportNavigation(options.duration ?? 0, () => fitView(options));
+  }, [fitView, runViewportNavigation]);
+  const zoomViewport = useCallback((direction: "in" | "out") => {
+    const duration = fitDuration();
+    runViewportNavigation(
+      duration,
+      () => direction === "in" ? zoomIn({ duration }) : zoomOut({ duration }),
+    );
+  }, [runViewportNavigation, zoomIn, zoomOut]);
+  const zoomInViewport = useCallback(() => zoomViewport("in"), [zoomViewport]);
+  const zoomOutViewport = useCallback(() => zoomViewport("out"), [zoomViewport]);
+  const fitCanvasViewport = useCallback(() => {
+    navigateViewport({ ...FIT_VIEW_OPTIONS, duration: fitDuration() });
+  }, [navigateViewport]);
+  const interruptViewportNavigation = useCallback(() => {
+    if (!animatedViewportNavigationActive.current) return;
+    animatedViewportNavigationActive.current = false;
+    viewportNavigationGeneration.current += 1;
+    void setViewport(getViewport(), { duration: 0 });
+  }, [getViewport, setViewport]);
   const baseNodes = useMemo<CanvasFlowNode[]>(
     () =>
       layout.nodes.map((node) => ({
@@ -428,9 +469,9 @@ const CanvasInner = memo(function CanvasInner({
 
   useEffect(() => {
     if (fitRequest <= 0) return;
-    const timer = window.setTimeout(() => fitView({ padding: FIT_PADDING, duration: fitDuration() }), 60);
+    const timer = window.setTimeout(() => navigateViewport({ padding: FIT_PADDING, duration: fitDuration() }), 60);
     return () => window.clearTimeout(timer);
-  }, [fitRequest, fitView]);
+  }, [fitRequest, navigateViewport]);
 
   useEffect(() => {
     if (revealSelectionRequest <= handledRevealSelectionRequest.current) return;
@@ -460,7 +501,7 @@ const CanvasInner = memo(function CanvasInner({
     if (targetNodeIds.size === 0) return;
     handledRevealSelectionRequest.current = revealSelectionRequest;
     const timer = window.setTimeout(() => {
-      void fitView({
+      navigateViewport({
         nodes: [...targetNodeIds].map((id) => ({ id })),
         padding: 0.55,
         maxZoom: 1.05,
@@ -471,11 +512,11 @@ const CanvasInner = memo(function CanvasInner({
     return () => window.clearTimeout(timer);
   }, [
     baseNodes,
-    fitView,
     flowEdgeIdsBySelection,
     flowNodeIdsBySelection,
     navigationDuration,
     navigationInterpolation,
+    navigateViewport,
     revealSelectionRequest,
     routedEdges,
     selection,
@@ -583,7 +624,7 @@ const CanvasInner = memo(function CanvasInner({
         nodeId: node.data.block.id,
       })) return;
       const navigation = navigationOptionsRef.current;
-      void fitView({
+      navigateViewport({
         nodes: [{ id: node.id }],
         padding: 0.55,
         maxZoom: 1.05,
@@ -591,7 +632,7 @@ const CanvasInner = memo(function CanvasInner({
         interpolate: navigation.interpolate,
       });
     },
-    [fitView],
+    [navigateViewport],
   );
 
   return (
@@ -606,6 +647,7 @@ const CanvasInner = memo(function CanvasInner({
       onNodeClick={onNodeClick}
       onNodeDoubleClick={onNodeDoubleClick}
       onEdgeClick={onEdgeClick}
+      onPointerMoveCapture={interruptViewportNavigation}
       onKeyDownCapture={onElementKeyDownCapture}
       onConnect={onConnect}
       isValidConnection={isValidConnection}
@@ -628,7 +670,11 @@ const CanvasInner = memo(function CanvasInner({
       className="bd-react-flow"
     >
       {CANVAS_BACKGROUND}
-      <CanvasViewportControls />
+      <CanvasViewportControls
+        onZoomIn={zoomInViewport}
+        onZoomOut={zoomOutViewport}
+        onFit={fitCanvasViewport}
+      />
       <MiniMap<CanvasFlowNode>
         position="bottom-right"
         pannable

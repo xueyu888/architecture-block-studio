@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { firstConnectablePair, listLevelPortEndpoints, normalizeConnectionEndpoints } from "../model";
 import type {
   ConnectablePortEndpoint,
@@ -90,7 +90,7 @@ function useLinkedIdentifier({
   const [name, setName] = useState(initialName);
   const [id, setId] = useState(initialId);
   const [idCustomized, setIdCustomized] = useState(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     setName(initialName);
     setId(initialId);
@@ -164,7 +164,7 @@ export function AddBlockDialog({
     idFromName: idFromTitle,
   });
   const [owner, setOwner] = useState("");
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     setOwner("");
   }, [open]);
@@ -214,7 +214,7 @@ export function AddPortDialog({
   const [side, setSide] = useState<PortSide>("left");
   const [dataType, setDataType] = useState("");
   const [required, setRequired] = useState(true);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     setDirection("input");
     setSide("left");
@@ -315,7 +315,7 @@ export function SelectConnectionEndpointsDialog({
   const [sourceKey, setSourceKey] = useState("");
   const [targetKey, setTargetKey] = useState("");
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!level) return;
     const initial = firstConnectablePair(level);
     setSourceKey(initial ? endpointKey(initial.source) : "");
@@ -328,7 +328,7 @@ export function SelectConnectionEndpointsDialog({
   ));
   const target = availableTargets.find((endpoint) => endpointKey(endpoint) === targetKey);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!level || !source || target || availableTargets.length === 0) return;
     const preferred = availableTargets.find((endpoint) => endpoint.nodeId !== source?.nodeId) ?? availableTargets[0];
     setTargetKey(endpointKey(preferred));
@@ -380,7 +380,7 @@ export function CreateConnectionDialog({
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<InterfaceKind>("port");
   const [owner, setOwner] = useState("");
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!pending) return;
     setConnectionId(pending.defaultConnectionId);
     setInterfaceId(pending.defaultInterfaceId);
@@ -423,7 +423,7 @@ export function SaveDesignDialog({
   onSave: (fileName: string) => void;
 }) {
   const [fileName, setFileName] = useState(initialFileName);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (open) setFileName(initialFileName);
   }, [initialFileName, open]);
   return (

@@ -79,6 +79,8 @@ Dock / selection / dialogs ─► disposable workspace state; never design JSON
 
 关键规则：派生结果和验证证据不能反向定义文档；工作区状态不能写成架构事实；草稿必须显式提交或显式放弃，不能静默消失。
 
+Dialog 草稿由各 Dialog 自己拥有，并在打开边界的 layout effect 中于浏览器产生可交互画面前完成初始化；同一次打开后的名称、ID、Owner、端点和合同输入只由用户交互继续更新。焦点协议随后只负责把焦点放入已经初始化的表单，不能用更晚的 passive effect 覆盖快速输入。提交仍只生成既有具名创建参数和 `DesignOperation`，取消则直接丢弃这份瞬时草稿。
+
 `DesignIssue` 是 validation rule 的派生输出，包含稳定 id、severity、code、message、remediation 和可交叉定位的目标引用。语义规则在 `model/validation` 同时定义“发生了什么”和“下一步如何修正”，Messages 只负责筛选与展示；布局运行失败由 Studio 在同一诊断合同中补充恢复方向。remediation 不进入文档，也不能自动修改设计事实。
 
 ## 性能证据链
@@ -188,6 +190,8 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 `SelectionRef` 是 `src/studio/selection.ts` 拥有的单一工作区选择协议，区分 document、level、node、port 与 connection。Tree、模块关联接口摘要、接口列表、Canvas、DRC 和 Inspector 通过它同步上下文；`selectionExists`、`selectionForIssue`、`levelForSelection` 和 `hierarchyLevelPath` 等纯查询不封闭在 React 编排组件内。
 
 选择事实与视口导航正交：Canvas 内点击只更新 `SelectionRef`，不改变用户正在观察的 viewport；Sources、Messages、Inspector 和 MiniMap 属于交叉定位入口，在选择被草稿保护规则接受后才发出一次性 `revealSelectionRequest`。Canvas 从当前完整布局解析目标节点或接口两端，通过 `fitView` 平滑聚焦；该计数是可丢弃 UI 请求，不进入文档、历史或保存文件。MiniMap 节点直接点击复用相同的选择保护，并聚焦到可读尺寸。
+
+平滑定位同样必须服从新的直接操作。Studio Fit、Sources / Messages / Inspector 交叉定位、MiniMap 和 Canvas 缩放 / Fit 控件都调用同一个 Canvas 导航协调器；它以 generation 标识自己发起的动画。只要 pointer 在动画期间进入画布，当前 transform 就以零时长固定，旧动画的异步完成不能重新宣称导航仍在进行。这样鼠标按下时命中的是用户眼前的模块，而不是动画继续移动后暴露的 pane。中断只结束可丢弃 viewport 动画，不改变 `SelectionRef`、设计坐标、布局或历史。
 
 React Flow 的 Node / Edge wrapper 虽然提供原生 Tab 焦点与 Enter、Space、Escape 键，但库内 selection 不是工作区事实。Canvas 在捕获阶段把这些键转换成同一 `SelectionRef` 请求，并阻止库内平行选择；Enter / Space 选择对象，Escape 回到对象所属 Level。Delete 随后继续调用统一 Studio command，因此键盘选择、Inspector、路由把手和删除看到同一对象。
 

@@ -9,9 +9,10 @@
 ## 优先级
 
 - **P0 — 数据安全与可恢复性**：保存正确性、Undo / Redo、Schema 兼容、崩溃恢复、无效加载与原子编辑。
-- **P1 — 核心设计与审查体验**：选择、层级、Inspector、DRC、接口追踪、空状态、命令一致性与弹窗键盘行为。
-- **P2 — 可视质量与大设计**：布局、路由、性能、虚拟化、视觉 token、响应式与跨平台。
-- **P3 — 生态与扩展**：源码 / AI 适配器、设计 Diff、仓库集成、协作与发布能力。
+- **P1 — 核心设计与审查体验**：高频流程、选择、层级、Inspector、DRC、接口追踪、空状态与弹窗行为。
+- **P2 — 规模、导航与操作效率**：大工程性能、布局与路由可读性、上下文保持、搜索和专业键盘效率。
+- **P3 — 视觉、可访问性与平台完成度**：视觉一致性、细节打磨、响应式、读屏与跨浏览器 / 桌面平台。
+- **P4 — 新高级能力与生态**：设计 Diff、源码 / AI 适配器、仓库集成、协作与发布能力。
 
 P0 未收敛前不扩展协作或服务端事实源。源码分析作为适配器消费公开 Schema，不进入 model、editor 或 routing 内部。
 
@@ -26,7 +27,7 @@ P0 未收敛前不扩展协作或服务端事实源。源码分析作为适配�
 | P1 | 已完成 | 首屏 React 警告 | Iteration 1 已限制 `BaseEdge` 属性边界，并将测试监听前移到 navigation 之前 |
 | P1 | 已完成 | Inspector 草稿丢失 | Iteration 3 已显示 UNAPPLIED 状态，切换对象需确认，保存与结构命令要求先处理草稿 |
 | P1 | 已完成 | 空白设计引导 | Iteration 2 已提供画布内 Module → Port → Interface 起步路径与首模块入口 |
-| P1 | 已完成 | Dialog 键盘模型 | Iteration 4 已让 Editor / Open dialogs 共享 Esc、焦点循环、初始焦点与恢复协议 |
+| P1 | 已完成 | Dialog 键盘模型 | Iteration 4 已让 Editor / Open dialogs 共享 Esc、焦点循环、初始焦点与恢复协议；Iteration 60 将全部打开态草稿初始化前移到可交互画面之前，快速首次输入不再被 passive effect 重置 |
 | P1 | 已完成 | 命令单一来源 | Iteration 5 已用 `StudioCommands` 统一 execute、enabled、label、shortcut 与 icon；Iteration 56 以判别联合补齐禁用原因，Menu / Toolbar 不再复制 eligibility 或解释 |
 | P1 | 已完成 | DRC 筛选 | Iteration 6 已按严重度和 code / message / target 筛选，点击结果仍交叉定位 |
 | P1 | 已完成 | Hierarchy 浏览与搜索 | Iteration 19 按模块标题、id、Owner 和 Level 派生搜索结果；Iteration 29 让搜索结果按 40 行批次渐进挂载；Iteration 34 把默认层级树也收敛为完整有序行投影加渐进 DOM 窗口，展开与选择不丢失 |
@@ -35,13 +36,14 @@ P0 未收敛前不扩展协作或服务端事实源。源码分析作为适配�
 | P1 | 已完成 | 无鼠标核心旅程 | Iteration 23 已从空白设计连续完成两模块、两端口、一接口、合同、DRC、Undo / Redo 与保存；菜单 Dialog 恢复到稳定触发器；Iteration 45–47 补齐 DRC、手动布线和模块移动的连续键盘事实链 |
 | P2 | 已完成 | 连线可读性与手动路由 | Iteration 7 清理无意义小折返；Iteration 8 支持拖动、键盘、Undo、Reset 和 JSON 持久化；Iteration 25 以冲突图规划共享端点 / 模块通道的确定性车道并锁定设计坐标几何合同；Iteration 43 让拖动把手在任意缩放下保持 24 px 命中区；Iteration 46 让键盘选择进入唯一 `SelectionRef` 并在每次 Arrow 写入后恢复把手焦点；Iteration 52 让增量接口从端口外侧进入，并统一自动分道、手动提交和端点恢复的严格正交合同 |
 | P2 | 已完成 | 多尺度总览可读性 | Iteration 41 从 viewport 唯一派生 detail level；低缩放只隐藏不可读的次级文字，保留模块标题、端口名、把手和线路，放大自动恢复完整细节 |
-| P2 | 进行中 | 样式事实源 | Iteration 18 已删除旧三栏工作区与当前 Dock 工作台之间确定无效的覆盖声明和旧 DOM 样式；Iteration 42 收敛高频 surface、border、row text、control size 与 motion token 并删除四个死 token；其余低频状态色仍按独立语义保留 |
+| P2 | 进行中 | 高频命令效率 | Iteration 55 已建立菜单字符定位，Iteration 59 已统一命令 Tooltip；Iteration 60 的完整键盘设计仍需五次重新进入 Design 菜单，Validate 仍可能跨越大量工作区焦点。下一步以现有 `StudioCommands` 为唯一动作与可用性来源建立可搜索命令面板，不复制执行逻辑 |
 | P2 | 进行中 | 大设计性能 | Iteration 16 建立 200 / 400 全量几何基线；Iteration 28 建立 1000 / 2000 heap 与连续编辑基线并消除无关编辑整图重排；Iteration 29、34 完成 Sources 搜索、接口与默认层级渐进挂载；Iteration 31 收敛选择投影；Iteration 32 仅对压力档启用 Canvas 视口裁剪；Iteration 35 建立带版本原始样本、重复执行入口和只观察趋势报告；Iteration 36 让压力跨图定位只做一次 viewport 变换，并修复 MiniMap 冻结初始回调；Iteration 50 最新三轮最终测量内存中位数约 65.3 MB，Sources / MiniMap 定位中位数 217 / 63 ms；固定 CI 数值预算尚未建立 |
-| P2 | 进行中 | 浏览器矩阵 | Chromium 30 / 30 完整自动化；Iteration 38 将 Firefox 从 5 条 allowlist 扩展为除 Chromium CDP heap 采样外的全部产品合同，当前 29 / 29 通过；WebKit、Windows 和 macOS 尚未验证 |
-| P2 | 进行中 | 可访问性 | 已有 dialog focus trap、WCAG A / AA 结构与文本对比度门禁、桌面菜单，以及 Chromium / Firefox 连续无鼠标核心旅程；Iteration 48 为被接受的模块键盘移动补齐位置 live 公告，Iteration 55 补齐字符定位，Iteration 56 为禁用命令补齐可见原因与 accessible name；读屏人工验证与 WebKit 自动化仍缺 |
-| P3 | 待完善 | 高级审查工作流 | 设计 Diff、传递影响范围、源码定位与评审状态尚未建立；不能用临时高亮伪装这些事实 |
-| P3 | 方向明确 | 源码可视化适配 | 当前不扫描代码；由外部工具输出 `BlockDesignDocument` |
-| P3 | 待评估 | 仓库与协作 | 单人文件模型稳定后再决定 Git diff、评论、协作和服务端边界 |
+| P3 | 进行中 | 样式事实源 | Iteration 18 已删除旧三栏工作区与当前 Dock 工作台之间确定无效的覆盖声明和旧 DOM 样式；Iteration 42 收敛高频 surface、border、row text、control size 与 motion token 并删除四个死 token；Iteration 58–59 完成工作台视觉重塑和统一命令 Tooltip；其余低频状态色仍按独立语义保留 |
+| P3 | 进行中 | 浏览器矩阵 | Chromium 31 / 31 完整自动化；Iteration 38 将 Firefox 扩展为除 Chromium CDP heap 采样外的全部产品合同，当前 30 / 30 通过；WebKit、Windows 和 macOS 尚未验证 |
+| P3 | 进行中 | 可访问性 | 已有 dialog focus trap、WCAG A / AA 结构与文本对比度门禁、桌面菜单，以及 Chromium / Firefox 连续无鼠标核心旅程；Iteration 48 为被接受的模块键盘移动补齐位置 live 公告，Iteration 55 补齐字符定位，Iteration 56 为禁用命令补齐可见原因与 accessible name；读屏人工验证与 WebKit 自动化仍缺 |
+| P4 | 待完善 | 高级审查工作流 | 设计 Diff、传递影响范围、源码定位与评审状态尚未建立；不能用临时高亮伪装这些事实 |
+| P4 | 方向明确 | 源码可视化适配 | 当前不扫描代码；由外部工具输出 `BlockDesignDocument` |
+| P4 | 待评估 | 仓库与协作 | 单人文件模型稳定后再决定 Git diff、评论、协作和服务端边界 |
 
 ## 阶段路线
 
@@ -151,9 +153,10 @@ P0 未收敛前不扩展协作或服务端事实源。源码分析作为适配�
 | Iteration 57 | Chromium / Firefox 无障碍树虽然包含禁用原因，但 native disabled 让 Arrow、Home / End、字符导航和直接 focus 都跳过相关项，键盘用户无法停留读取；这与 WAI-ARIA Menu 对禁用项“可聚焦、不可激活”的约定冲突 | 只在 `MenuBar` 复合菜单内以 `aria-disabled` 投影不可用状态，全部菜单项进入方向键和字符导航；Enter、Space、真实鼠标点击统一无操作并保持菜单与焦点。相邻菜单不再跳过全禁用的 Edit；Toolbar 普通按钮仍使用 native disabled；删除 `requireEnabledCommand` 分支和 disabled hover 样式穿透 | 双浏览器旅程验证 File → Edit → Design、全部禁用项逐项聚焦、A / C 环绕、Enter / Space / pointer 不执行、可用后正常开 Dialog；菜单 Axe 与文本对比度 0 问题；完整 Chromium 30 / 30 + Firefox 29 / 29 = 59 / 59（1.8 分钟）；75 / 75 unit；build 1879 / 7.60 秒；headed `disabled-menu-focus.png` 人工复核焦点、原因、hover、Canvas 与 Inspector 无遮挡 | eligibility 和原因仍只来自 `StudioCommands`，MenuBar 只拥有复合菜单导航与激活门禁，JSON / selection / history 不变。自动无障碍树和双浏览器行为已覆盖，真实 NVDA / VoiceOver 与 Windows / macOS 仍缺；菜单出入焦点连续性登记为后续可访问性事项，下一轮按用户优先级先重塑整体界面 |
 | Iteration 58 | 真实 1680 / 1280 截图显示旧界面以深色顶栏、连续硬边框、重复灰底和不一致的字号、圆角、控件尺寸构成，Canvas、上下文面板和状态反馈视觉权重接近；颜色与尺寸字面量散落，整体更像功能样机。对照 draw.io 的稳定画布骨架后，根因确认是视觉事实缺少统一 Owner，而不是页面功能不足 | `:root` 收敛 surface、文字、状态、边界、控件尺寸、圆角、阴影和动效 token；重建浅色文档栏、菜单、语义分组工具栏、Dock、Sources、Canvas、节点、Inspector、Messages、Dialog 与状态栏层级。Toolbar 以具名 `role=group` 投影同一命令，删除分隔 span 与三枚无下游旧 chrome token；React Flow 网格和 MiniMap 遮罩改为消费 token。长标题不再挤压产品标识；JSON、命令、Dock、selection、布局和路由语义不变 | `pnpm typecheck`；75 / 75 unit（0.456 秒）；build 1879 / 6.91 秒；完整 Chromium 30 / 30 + Firefox 29 / 29 = 59 / 59（1.8 分钟）；文本对比度双浏览器通过；7 / 7 headed 场景通过且 0 console / page errors；最终长标题、紧凑工作台与 WCAG 双浏览器 6 / 6；`professional-workbench.png`、`compact-workbench.png` 及 5 张关键状态截图逐张复核无面板重叠、线路中部标签或固定操作区遮挡 | 视觉 token 只拥有展示常量，组件语义 class 仍各自自完备，没有成为状态或文档事实。Windows / macOS 字体渲染、真实 NVDA / VoiceOver 与 WebKit 仍缺；下一轮补齐图标工具的统一即时提示和键盘可发现性，不新增命令逻辑 |
 | Iteration 59 | Toolbar 与 React Flow controls 都依赖浏览器原生 `title`：出现延迟、样式和键盘行为不可控，工具栏无法同时清楚展示快捷键与同源禁用原因，第三方 Canvas controls 还拥有另一套提示路径 | 新增自我完备的 `Tooltip`，只拥有 360 ms pointer 延迟、focus 即时打开、Esc / pointer down 关闭、unmount timer cleanup、placement 与 reduced motion；Toolbar 直接传入 `StudioCommands` 的 title、shortcut、`unavailableReason`，Canvas 显式组合保留 zoom bounds / Fit 的 ControlButton 并复用同一 Tooltip。删除 Toolbar / Canvas 的原生 title、Menu 已可见原因的重复 title、静态 `CANVAS_DECORATIONS` 和测试中 51 个 title selector，统一改为 accessible toolbar role / button name；JSON、eligibility、执行和 viewport 事实不变 | 双浏览器 Tooltip 2 / 2，验证 hover 不瞬时闪烁、focus、Esc、pointer disabled reason、快捷键、按钮不重叠、视口边界、Canvas control 侧向定位和 reduced motion；完整 Chromium 31 / 31 + Firefox 30 / 30 = 61 / 61（1.8 分钟）；75 / 75 unit（0.452 秒）；build 1880 / 7.06 秒；headed `command-tooltip.png` 人工复核 0 console / page errors、无端口 / 节点 / Inspector 遮挡；typecheck 通过 | Tooltip 不是命令或状态事实源，禁用 Toolbar 按钮仍使用 native disabled，键盘原因继续由 Menu 读取。其他 contextual title（端口完整信息、截断树行、Dock / Dialog 小图标）不属于本轮 command-tooltip 合同，后续需采用可越过 overflow / transform 的定位方案；下一轮执行第六次十轮产品复评 |
+| Iteration 60 | 第六次十轮复评需要确认视觉重塑与 Tooltip 没有掩盖 Design / Understand / Review、文件和大图回归。真实操作捕获两条交互竞争：名称输入已经生效，较晚的 passive effect 却把建议 ID 从 `payment-worker-2` 重置回 `module`；Sources 的平滑定位仍在移动模块时，紧随其后的 pointerdown 偶尔命中 pane 而不是用户眼前的模块 | 重读五份权威文档并审计依赖、Owner、状态、文件、CSS、截图和 production dependencies；将全部 Editor Dialog 草稿初始化前移到 layout effect。Studio Fit、交叉定位、MiniMap 与 Canvas controls 统一调用 generation 化的 Canvas 导航协调器，pointer 进入时以当前 transform 中断动画，陈旧完成不再覆盖新导航状态。创建参数、`DesignOperation`、JSON、selection、设计坐标和布局均未改变；刷新当前空白设计、Dialog、DRC 与大图证据 | 五条 headed Chromium 角色 / 大图旅程通过；首次 Dialog 证据如实失败 1 / 2，修复后唯一 ID 并发 10 / 10、Dialog / 键盘双浏览器 8 / 8；首轮完整回归 60 / 61 暴露 Firefox 拖动竞争，原路径重复为 9 / 10，trace 证明 pointerdown 时 viewport 仍从 `translate(121.992px)` 移到 `188.43px` 且 pane 进入 dragging；修复后草稿保护、Canvas controls 与动画中断双浏览器重复 20 / 20；最终 75 / 75 unit、1880-module build、Chromium 31 / 31 + Firefox 30 / 30 全部通过；production audit 0 known vulnerabilities；关键截图无面板重叠、线中标签、穿块或操作区遮挡 | JSON 仍是唯一设计事实，默认示例仍可由文件 / URL / 查询参数 / 嵌入对象替换；recovery、未知字段和 history capacity 继续等待产品语义；P4 高级能力不抢占核心。下一轮用现有 `StudioCommands` 建立可搜索命令面板，收敛重复菜单进入和跨工作区 Tab 成本 |
 
 ## 下一轮
 
-**Iteration 60 — 第六次完整产品与质量复评。**
+**Iteration 61 — 用统一命令面板缩短高频操作路径。**
 
-按十轮协议重新从新用户、日常专业用户和 Reviewer 三种视角完整 dogfood Design / Understand / Review，复核文件生命周期、命令效率、Inspector、Hierarchy、DRC、路由可读性、紧凑视口、Tooltip、性能、可访问性、文档与依赖边界。重点不是预设新功能，而是用真实操作和当前证据重新排序 P0–P4；继续保留 recovery / 未知字段 / history capacity 等需要产品语义的显式未决项，不以局部实现替用户决定。
+以 `StudioCommands` 为唯一动作、名称、快捷键、可用性和禁用原因来源，增加可搜索、可键盘操作的命令面板；Menu、Toolbar、快捷键和命令面板只做正交投影，不复制执行或 eligibility。真实测量新建模块 / 端口 / 接口与 Validate 的操作路径，验证焦点恢复、禁用原因、Dialog 交接、Esc、reduced motion、双浏览器和截图；不在本轮顺带决定 copy / paste / duplicate 的产品语义。

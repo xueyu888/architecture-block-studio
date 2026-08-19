@@ -63,6 +63,8 @@ Iteration 57 按 ARIA 复合菜单语义让禁用菜单项可聚焦但不可激�
 
 Iteration 59 用一个局部、自我完备的 `Tooltip` 展示 Owner 取代 Toolbar 与 Canvas controls 的浏览器原生 `title`。Toolbar 只传入同一 `StudioCommands` label、shortcut 与 `unavailableReason`，Canvas 保留原 zoom bounds / Fit 行为；pointer 延迟、focus 即时、Esc / click 关闭、禁用按钮不可激活、视口内定位和 reduced motion 在双浏览器同一旅程验证。E2E 选择器同步改用 accessible role / name，不再把原生 title 当作产品合同。
 
+Iteration 60 第六次复评重走新用户、日常专业用户、Reviewer、DRC 和 200 / 400 大图五条 headed Chromium 旅程，并复核文件、依赖、Owner、状态分类与关键截图。复评捕获两条“画面已经可操作、延迟状态仍在变化”的竞争：Dialog 接受名称后被较晚的 passive effect 重置建议 ID；Sources 平滑定位尚未结束时，模块继续移动使 pointerdown 偶尔命中 pane。Dialog 初始化现统一前移到 layout effect；Studio Fit、交叉定位、MiniMap 和 Canvas controls 的动画统一由 Canvas generation 管理，并在 pointer 进入时固定当前 transform。唯一 ID headed 并发重复 10 / 10、Dialog / 键盘链双浏览器 8 / 8、草稿保护与 Canvas controls 动画中断双浏览器重复 20 / 20 通过；最终 75 / 75 unit、1880-module build 与 Chromium 31 / 31 + Firefox 30 / 30 完整回归通过。空白设计与 Dialog 截图已刷新到当前视觉系统，没有用重跑掩盖首次失败。
+
 ## 每次迭代的最小验证门槛
 
 每个完成的迭代必须留下与风险相称的证据：
@@ -102,6 +104,7 @@ Iteration 59 用一个局部、自我完备的 `Tooltip` 展示 Owner 取代 Too
 - surface、文字、边界、控件高度、圆角、阴影与状态色必须由统一 token Owner 提供；组件只表达语义角色，不建立局部第二套视觉常量。
 - 强调色只表达选择、错误、dirty 与主操作；普通结构依靠留白、密度和弱分隔线建立层级，不以装饰性阴影、渐变或多套边框争夺注意力。
 - 选择在 Tree、接口列表、Canvas、DRC 和 Inspector 之间一致。
+- Studio Fit、Sources、Messages、Inspector、MiniMap 或 Canvas controls 发起的平滑定位必须可被新的画布 pointer 操作立即中断；移动中的目标不能让随后拖动落到 pane。
 - DRC 同时说明问题与简短修正方向；修正方向由规则 Owner 派生、可搜索、可读屏，不由 Messages 复制或自动改写设计。
 - 属性编辑、选择和面板调整不导致画布重挂、意外 Fit 或缩放跳变。
 - 空白画布提供清晰的第一步，不迫使新用户猜工具栏图标。
@@ -109,6 +112,7 @@ Iteration 59 用一个局部、自我完备的 `Tooltip` 展示 Owner 取代 Too
 - 所有禁用命令都必须由同一命令合同给出原因；Menu 可见显示，Toolbar hover 与 accessible name 同步表达，不允许投影层复制 eligibility 判断。
 - 菜单字符定位从当前焦点向后环绕全部实际渲染且名称匹配的命令，包括 `aria-disabled` 项；重复字符循环同首字母项，无匹配时焦点不移动，禁用项激活保持无操作，命令执行仍由统一命令定义负责。
 - 弹窗支持 Esc、初始焦点、焦点循环与关闭后的焦点恢复。
+- 弹窗的打开态草稿必须在可交互画面与初始焦点成立前完成初始化；用户的首次快速输入不能被更晚的初始化 effect 覆盖。
 - 破坏性操作说明级联范围，并支持取消；可撤销时明确告知。
 - 所有错误进入一致的可见反馈通道，不依赖 console。
 - 选中模块时可以在不追逐画布线路的情况下查看其直接入站、出站接口与对端，并跳转到接口合同。

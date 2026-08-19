@@ -856,7 +856,14 @@ test("reveals one unobtrusive tooltip path for toolbar and canvas controls", asy
     await captureStudioScreenshot(page, "docs/screenshots/command-tooltip.png");
   }
 
+  const zoomBeforeControl = await canvasViewportTransform(page);
+  await page.locator(".react-flow__controls-zoomin").click();
+  await expect.poll(() => canvasViewportTransform(page)).not.toBe(zoomBeforeControl);
   await page.mouse.move(700, 420);
+  await page.waitForTimeout(30);
+  const interruptedControlViewport = await canvasViewportTransform(page);
+  await page.waitForTimeout(80);
+  expect(await canvasViewportTransform(page)).toBe(interruptedControlViewport);
   const fit = page.locator(".react-flow__controls-fitview");
   await fit.focus();
   await expect(tooltip).toHaveText("Fit design");
@@ -1311,7 +1318,16 @@ test("protects unapplied Inspector changes across review navigation and save", a
   const inspector = page.getByRole("region", { name: "Properties" });
   const agentUi = page.locator(".bd-tree-select").filter({ hasText: "Agent UI" });
   const project = page.locator(".bd-tree-select").filter({ hasText: "Project" });
+  const viewportBeforeReveal = await canvasViewportTransform(page);
   await agentUi.click({ force: true });
+  await expect.poll(() => canvasViewportTransform(page)).not.toBe(viewportBeforeReveal);
+  const canvasBox = await page.getByRole("application").boundingBox();
+  expect(canvasBox).not.toBeNull();
+  await page.mouse.move(canvasBox!.x + 12, canvasBox!.y + 12);
+  await page.waitForTimeout(30);
+  const interruptedViewport = await canvasViewportTransform(page);
+  await page.waitForTimeout(80);
+  expect(await canvasViewportTransform(page)).toBe(interruptedViewport);
   await inspector.getByLabel("Title").fill("Agent UI draft");
   await expect(inspector.getByText("UNAPPLIED", { exact: true })).toBeVisible();
   await expect(page.locator(".bd-statusbar")).toContainText("Unapplied Inspector changes");
