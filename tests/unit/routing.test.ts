@@ -2,11 +2,13 @@ import { describe, expect, test } from "vitest";
 import {
   adaptRouteEndpoints,
   compactOrthogonalPoints,
+  DEFAULT_ROUTING_POLICY,
   drawOrthogonalRoute,
   planRouteJumps,
-  routeConnectionPreview,
   restoreManualRoute,
+  solveConnectionPreview,
   type PlannedRoute,
+  type RoutingPreviewEnvironment,
 } from "../../src/routing";
 
 describe("orthogonal route primitives", () => {
@@ -85,73 +87,65 @@ describe("orthogonal route primitives", () => {
     ])).toBe("M 0, 0 L 80, 0 L 80, 40");
   });
 
-  test("keeps both attached preview endpoints normal with a deterministic orthogonal middle", () => {
-    const preview = routeConnectionPreview({
-      from: { x: 100, y: 120 },
-      to: { x: 300, y: 220 },
-      fromPosition: "right",
-      toPosition: "left",
-      targetAttached: true,
-    });
+  test("routes an attached pointer preview around every scene obstacle", () => {
+    const environment: RoutingPreviewEnvironment = {
+      obstacles: [
+        { id: "source", kind: "module", bounds: { left: 0, right: 100, top: 0, bottom: 100 } },
+        { id: "blocker", kind: "module", bounds: { left: 150, right: 250, top: 0, bottom: 100 } },
+        { id: "target", kind: "module", bounds: { left: 300, right: 400, top: 0, bottom: 100 } },
+      ],
+      nodes: new Map([
+        ["source", {
+          id: "source",
+          ancestorObstacleIds: [],
+          endpoints: new Map([["out", { point: { x: 100, y: 50 }, outward: "right", physicalKey: "source::out" }]]),
+        }],
+        ["target", {
+          id: "target",
+          ancestorObstacleIds: [],
+          endpoints: new Map([["in", { point: { x: 300, y: 50 }, outward: "left", physicalKey: "target::in" }]]),
+        }],
+      ]),
+    };
+    const request = {
+      source: { nodeId: "source", handleId: "out" },
+      target: { kind: "attached" as const, nodeId: "target", handleId: "in" },
+    };
 
-    expect(preview).toEqual([
-      { x: 100, y: 120 },
-      { x: 200, y: 120 },
-      { x: 200, y: 220 },
-      { x: 300, y: 220 },
-    ]);
-    expect(preview.slice(1).every((point, index) =>
-      point.x === preview[index].x || point.y === preview[index].y
-    )).toBe(true);
+    const first = solveConnectionPreview(environment, request, DEFAULT_ROUTING_POLICY);
+    const second = solveConnectionPreview(environment, request, DEFAULT_ROUTING_POLICY);
+
+    expect(first.status).toBe("routed");
+    expect(first.points).toEqual(second.points);
+    expect(first.points.at(1)?.y).toBe(50);
+    expect(first.points.at(-2)?.y).toBe(50);
+    expect(first.points.some((point) => point.y < -18 || point.y > 118)).toBe(true);
+    expect(first.obstacleCount).toBe(3);
   });
 
-  test("keeps an attached mixed-side preview outside both terminal cards", () => {
-    const sourceBounds = { left: 0, right: 100, top: 80, bottom: 160 };
-    const targetBounds = { left: 180, right: 340, top: 100, bottom: 240 };
-    const preview = routeConnectionPreview({
-      from: { x: 100, y: 120 },
-      to: { x: 260, y: 240 },
-      fromPosition: "right",
-      toPosition: "bottom",
-      targetAttached: true,
-      fromBounds: sourceBounds,
-      toBounds: targetBounds,
-    });
+  test("does not fall back to a line through an unrelated obstacle", () => {
+    const environment: RoutingPreviewEnvironment = {
+      obstacles: [
+        { id: "source", kind: "module", bounds: { left: 0, right: 100, top: 0, bottom: 100 } },
+        { id: "blocker", kind: "module", bounds: { left: 150, right: 250, top: 0, bottom: 100 } },
+      ],
+      nodes: new Map([
+        ["source", {
+          id: "source",
+          ancestorObstacleIds: [],
+          endpoints: new Map([["out", { point: { x: 100, y: 50 }, outward: "right", physicalKey: "source::out" }]]),
+        }],
+      ]),
+    };
 
-    const crossesInterior = (bounds: typeof sourceBounds) => preview.slice(1).some((point, index) => {
-      const previous = preview[index];
-      return previous.y === point.y
-        ? previous.y > bounds.top && previous.y < bounds.bottom &&
-            Math.max(previous.x, point.x) > bounds.left && Math.min(previous.x, point.x) < bounds.right
-        : previous.x > bounds.left && previous.x < bounds.right &&
-            Math.max(previous.y, point.y) > bounds.top && Math.min(previous.y, point.y) < bounds.bottom;
-    });
-    expect(crossesInterior(sourceBounds)).toBe(false);
-    expect(crossesInterior(targetBounds)).toBe(false);
-    expect(preview).toEqual([
-      { x: 100, y: 120 },
-      { x: 114, y: 120 },
-      { x: 114, y: 254 },
-      { x: 260, y: 254 },
-      { x: 260, y: 240 },
-    ]);
-  });
+    const preview = solveConnectionPreview(environment, {
+      source: { nodeId: "source", handleId: "out" },
+      target: { kind: "pointer", point: { x: 200, y: 50 } },
+    }, DEFAULT_ROUTING_POLICY);
 
-  test("keeps only the fixed port normal while the preview target is free", () => {
-    const preview = routeConnectionPreview({
-      from: { x: 80, y: 160 },
-      to: { x: 210, y: 260 },
-      fromPosition: "top",
-      toPosition: "bottom",
-      targetAttached: false,
-    });
-
-    expect(preview).toEqual([
-      { x: 80, y: 160 },
-      { x: 80, y: 146 },
-      { x: 80, y: 260 },
-      { x: 210, y: 260 },
-    ]);
+    expect(preview.status).toBe("unresolved");
+    expect(preview.points).toEqual([]);
+    expect(preview.diagnostics.length).toBeGreaterThan(0);
   });
 
   test("renders a deterministic bridge for an unavoidable route crossing", () => {

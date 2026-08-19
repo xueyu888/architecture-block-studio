@@ -12,23 +12,26 @@ BlockDesignDocument                 LayoutResult
           │                               │
           └──────────────┬────────────────┘
                          ▼
-              RoutingSceneAdapter
-              坐标量化与语义映射
-                         │ RoutingScene
-                         ▼
+          RoutingLayoutProjectionAdapter
+           坐标量化与唯一语义映射
+                │                     │
+                │ RoutingScene        │ read-only preview environment
+                ▼                     ▼
         baseline → visibility graph → negotiated solve
-                         │
-                         ▼
+                │              one disposable preview leg
+                ▼                     │
              independent route verifier
-                         │ RoutingResult + certificate
-                         ▼
-                    Canvas renderer
+                │                     │ verified points / unresolved
+                └──────────┬──────────┘
+                           ▼
+                      Canvas renderer
 ```
 
 - 路由层不移动模块，不修改文档，不持有 viewport、selection 或 pointer gesture，也不决定颜色、箭头和命中区。
 - 自动路线是可重建的派生结果，不进入 JSON。唯一可持久路线输入是用户确认的 `connection.routing.waypoints`。
 - 手工路线是锁定约束：求解器不得移动它，但验证器仍检查其合法性与空间占用。
 - Canvas 只渲染 `RoutingResult`。求解失败时缺失路线保持缺失并显示诊断，不能调用另一套“尽量画出来”的 fallback。
+- Pointer preview 只把当前端点意图交给路由层。它复用同一障碍、端口、层级域、策略和 verifier，但只求一条可丢弃 leg；不参与多连接协商，不写 JSON，也不能把临时结果安装为正式路线。
 
 ## 2. 数学输入
 
@@ -176,6 +179,10 @@ J(P)=\operatorname{lexmin}(U,Q,X,D_{max},D_{sum},B,H,T)
 ## 8. 交互一致性
 
 - move / resize pointer 期间不在每一帧重算全场景；Edge 只让已提交路线的首尾固定 leg 随 React Flow 当前端点一起移动，保持正交和拖动流畅。小于 1 设计像素的浏览器测量误差继续使用量化 scene anchor；真正的 gesture 位移才平移相邻 leg，因此不能插入亚像素补偿折点。
+- connection pointer preview 与 move / resize 的局部适配不同：用户正在决定一条新连接，所以必须在 pointermove 中对当前完整障碍场景求一个 single-leg 结果。吸附端点按 `nodeId + handleId` 从 layout projection 读取与正式路线相同的规范 anchor、法向和 physical key；React Flow 的可点击 Handle 外框坐标只负责命中，不能定义路由端点。未吸附的自由端使用当前 pointer 位置和一个唯一临时 terminal。
+- preview leg 继承两端祖先忽略集合；两端属于同一父容器时继承同一 routing domain。它使用正式 `RoutingPolicy` 的坐标精度、净空、stub、相关障碍和搜索顶点预算，只把 `negotiatedIterations` 收敛到一次并关闭 `conflictSweepIterations`，因为场景中没有第二条临时路线可协商。多个自由端方向候选按长度、折点数和稳定点签名选择。
+- 只有独立 verifier 接受的 preview 才能绘制。无解、预算耗尽、缺失节点 / Handle 或端点重合都返回空点集；Canvas 显示 blocked / invalid 状态，禁止退回穿障碍直线。吸附到合法端口时，单线 preview 与提交后仅含该连接的正式 solve 必须得到相同点集。
+- preview environment、点集、耗时、障碍数和求解次数全部是可丢弃验证 / 展示状态。Escape、blur、非法落点或 gesture 结束后立即清理；正式提交仍只把 source / target 意图送入 Studio → Editor，之后从新文档和完整多连接场景重新求解。
 - gesture 松手后，文档几何经 layout 重新投影，场景求解一次并替换派生路线。
 - 拖动虚拟线段点会通过 `connection/route` 将明确 waypoint 写入文档；此后该路线被锁定，直到 Reset Auto 删除这份持久输入。
 - 键盘调整折点时，一次性焦点请求同时携带目标索引与新坐标；只有完全匹配的新路径 DOM 出现后才能恢复焦点，不能命中被替换前的旧折点。
@@ -189,6 +196,6 @@ J(P)=\operatorname{lexmin}(U,Q,X,D_{max},D_{sum},B,H,T)
 
 ## 10. 与 draw.io 和研究实现的关系
 
-draw.io 的新 `LibavoidRouting` 绑定同样把编辑器适配与路由核心分开，收集全部 vertex 障碍物、固定端点约束和 jetty，再把 bends 写回 geometry；手工 waypoint 会接管自动路线。它也明确记录了 multi-edge nudging 与 independent deterministic solve 的取舍，而不是宣称两者同时成立（[`LibavoidRouting.js`](https://github.com/jgraph/drawio/blob/a1f615b7f5a5237da71de2ce2f057b5fa70b0aeb/src/main/webapp/js/diagramly/LibavoidRouting.js#L1275-L1380)、[`LibavoidRouting.js`](https://github.com/jgraph/drawio/blob/a1f615b7f5a5237da71de2ce2f057b5fa70b0aeb/src/main/webapp/js/diagramly/LibavoidRouting.js#L3110-L3122)）。本项目吸收 Owner 分离、端点约束和手工优先原则，但使用自己的场景、层级 Gate、目标向量、确定性协调与证书，不复制 draw.io 文件格式或编辑器 glue。
+draw.io 的新 `LibavoidRouting` 绑定同样把编辑器适配与路由核心分开，收集全部 vertex 障碍物、固定端点约束和 jetty，再把 bends 写回 geometry；手工 waypoint 会接管自动路线。当前 `dev` 实现还在一次连接拖拽中注册场景障碍、只更新临时端点并求一个 connector，提交后再由正式路径接管；它也明确记录了 multi-edge nudging 与 independent deterministic solve 的取舍，而不是宣称两者同时成立（[`LibavoidRouting.js`](https://github.com/jgraph/drawio/blob/dev/src/main/webapp/js/diagramly/LibavoidRouting.js)）。本项目吸收 Owner 分离、固定端点、live single-connector preview 和手工优先原则，但使用自己的场景、层级 Gate、目标向量、确定性协调与证书，不复制 draw.io 文件格式、WASM 绑定或编辑器 glue。gesture-lifetime session 与刷新合并仍是下一轮性能边界，不能提前写成已完成能力。
 
 正交候选图、共享路径与 nudging 的理论背景参考 Wybrow、Marriott、Stuckey 的 [Orthogonal Connector Routing](https://users.monash.edu/~mwybrow/papers/wybrow-gd-2009.pdf)；有限 rip-up/reroute 的思想参考 [PathFinder](https://janders.eecg.utoronto.ca/1387/readings/pathfinder.pdf)。这些资料解释算法来源，不替代本文的产品合同与独立验证。

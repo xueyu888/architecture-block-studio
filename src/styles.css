@@ -1612,6 +1612,18 @@ button { color: inherit; }
   fill: color-mix(in srgb, var(--error) 18%, #fff);
   stroke: var(--error);
 }
+.bd-connection-preview.is-routing-unresolved .bd-connection-preview-path,
+.bd-connection-preview.is-routing-invalid .bd-connection-preview-path,
+.bd-connection-preview.is-routing-unresolved .bd-connection-preview-underlay,
+.bd-connection-preview.is-routing-invalid .bd-connection-preview-underlay {
+  display: none;
+}
+.bd-connection-preview.is-routing-unresolved .bd-connection-preview-pointer,
+.bd-connection-preview.is-routing-invalid .bd-connection-preview-pointer {
+  fill: color-mix(in srgb, var(--warning) 18%, #fff);
+  stroke: var(--warning);
+  stroke-dasharray: 2 2;
+}
 .bd-connection-gesture-panel,
 .bd-connection-feedback {
   margin-top: 10px;
@@ -1634,6 +1646,7 @@ button { color: inherit; }
 }
 .bd-connection-gesture-panel.is-valid { border-color: color-mix(in srgb, var(--success) 58%, var(--divider-soft)); }
 .bd-connection-gesture-panel.is-invalid { border-color: color-mix(in srgb, var(--error) 58%, var(--divider-soft)); }
+.bd-connection-gesture-panel.is-blocked { border-color: color-mix(in srgb, var(--warning) 64%, var(--divider-soft)); }
 .bd-connection-gesture-icon {
   width: 26px;
   height: 26px;
@@ -1650,6 +1663,10 @@ button { color: inherit; }
 .bd-connection-gesture-panel.is-invalid .bd-connection-gesture-icon {
   color: var(--error);
   background: color-mix(in srgb, var(--error) 12%, #fff);
+}
+.bd-connection-gesture-panel.is-blocked .bd-connection-gesture-icon {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, #fff);
 }
 .bd-connection-gesture-copy { min-width: 0; display: grid; gap: 1px; }
 .bd-connection-gesture-copy small {

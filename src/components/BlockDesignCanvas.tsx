@@ -56,10 +56,12 @@ import {
   type ResizeLimits,
 } from "../layout";
 import {
-  createRoutingSceneFromLayout,
+  createRoutingLayoutProjectionFromLayout,
   planRouteJumps,
   routingPolicyForScene,
   solveRoutingScene,
+  type RoutingLayoutProjection,
+  type RoutingPolicy,
   type RoutingResult,
 } from "../routing";
 import {
@@ -76,6 +78,7 @@ import {
   ConnectionGestureFeedbackPanel,
   ConnectionGesturePanel,
   ConnectionGesturePreview,
+  ConnectionGesturePreviewProvider,
   type ActiveConnectionGesture,
   type ConnectionGestureFeedback,
 } from "./ConnectionGestureLayer";
@@ -116,7 +119,14 @@ const FIT_VIEW_OPTIONS = { padding: FIT_PADDING };
 const REACT_FLOW_OPTIONS = { hideAttribution: true };
 const VIEWPORT_CULL_NODE_COUNT = 500;
 const VIEWPORT_CULL_EDGE_COUNT = 1000;
-const routingResultCache = new WeakMap<object, { geometrySignature: string; result: RoutingResult }>();
+interface RoutingCanvasProjection {
+  geometrySignature: string;
+  layoutProjection: RoutingLayoutProjection;
+  policy: RoutingPolicy;
+  result: RoutingResult;
+}
+
+const routingResultCache = new WeakMap<object, RoutingCanvasProjection>();
 const ALIGNMENT_TOLERANCE_PX = 6;
 const ALIGNMENT_VIEWPORT_MARGIN_PX = 80;
 const ALT_CLICK_TOLERANCE_PX = 5;
@@ -689,9 +699,8 @@ const CanvasInner = memo(function CanvasInner({
   );
   const baseNodeById = useMemo(() => new Map(baseNodes.map((node) => [node.id, node])), [baseNodes]);
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasFlowNode>(baseNodes);
-  // Automatic routing follows committed layout geometry. Pointer move/resize
-  // previews adapt only their incident endpoints in InterfaceEdge, avoiding a
-  // scene-wide solve on every animation frame.
+  // Committed routing and disposable pointer previews consume the same absolute
+  // scene projection. Only the committed result coordinates multiple legs.
   const routingNodes = baseNodes;
   const routingGeometrySignature = routingNodes.map((node) => {
     const width = node.measured?.width ?? node.width ?? 0;
@@ -699,14 +708,17 @@ const CanvasInner = memo(function CanvasInner({
     return `${node.id}:${node.parentId ?? "root"}:${node.position.x},${node.position.y},${width},${height}`;
   }).join("|");
   const routingCacheSignature = `${routingGeometrySignature}|revision:${routeRevision}`;
-  const routingResult = useMemo(() => {
+  const routingProjection = useMemo(() => {
     const cached = routingResultCache.get(layout.edges);
-    if (cached?.geometrySignature === routingCacheSignature) return cached.result;
-    const scene = createRoutingSceneFromLayout(routingNodes, layout.edges);
-    const result = solveRoutingScene(scene, routingPolicyForScene(scene));
-    routingResultCache.set(layout.edges, { geometrySignature: routingCacheSignature, result });
-    return result;
+    if (cached?.geometrySignature === routingCacheSignature) return cached;
+    const layoutProjection = createRoutingLayoutProjectionFromLayout(routingNodes, layout.edges);
+    const policy = routingPolicyForScene(layoutProjection.scene);
+    const result = solveRoutingScene(layoutProjection.scene, policy);
+    const projection = { geometrySignature: routingCacheSignature, layoutProjection, policy, result };
+    routingResultCache.set(layout.edges, projection);
+    return projection;
   }, [layout.edges, routingCacheSignature]);
+  const routingResult = routingProjection.result;
   const unresolvedDetail = routingResult.certificate.objective.unrouted > 0
     ? `${routingResult.certificate.objective.unrouted} connection${routingResult.certificate.objective.unrouted === 1 ? "" : "s"} could not be routed.`
     : routingResult.certificate.objective.capacityViolations > 0
@@ -1973,103 +1985,109 @@ const CanvasInner = memo(function CanvasInner({
 
   return (
     <>
-      <ReactFlow<CanvasFlowNode, CanvasFlowEdge>
-      nodes={nodes}
-      edges={edges}
-      nodeTypes={nodeTypes}
-      edgeTypes={edgeTypes}
-      onNodesChange={onCanvasNodesChange}
-      onNodeDragStart={onNodeDragStart}
-      onNodeDrag={onNodeDrag}
-      onNodeDragStop={onNodeDragStop}
-      onNodeClick={onNodeClick}
-      onNodeDoubleClick={onNodeDoubleClick}
-      onEdgeClick={onEdgeClick}
-      onSelectionStart={onSelectionStart}
-      onSelectionEnd={onSelectionEnd}
-      onPointerDownCapture={onCanvasPointerDownCapture}
-      onPointerMoveCapture={onCanvasPointerMoveCapture}
-      onPointerUpCapture={onCanvasPointerUpCapture}
-      onPointerCancelCapture={onCanvasPointerCancelCapture}
-      onClickCapture={onCanvasClickCapture}
-      onKeyDownCapture={onElementKeyDownCapture}
-      onConnect={onConnect}
-      onConnectStart={onConnectStart}
-      onConnectEnd={onConnectEnd}
-      onReconnect={onReconnect}
-      onReconnectStart={onReconnectStart}
-      isValidConnection={isValidConnection}
-      onError={warnReactFlowError}
-      onPaneClick={onPaneClick}
-      tabIndex={0}
-      aria-label="Architecture diagram canvas"
-      connectionMode={ConnectionMode.Loose}
-      connectionLineComponent={ConnectionGesturePreview}
-      nodesConnectable
-      edgesReconnectable
-      snapToGrid
-      snapGrid={SNAP_GRID}
-      minZoom={MIN_ZOOM}
-      maxZoom={MAX_ZOOM}
-      panOnScroll
-      panOnDrag={[1, 2]}
-      panActivationKeyCode="Space"
-      zoomActivationKeyCode={["Control", "Meta"]}
-      selectionOnDrag
-      selectionKeyCode="Alt"
-      multiSelectionKeyCode={["Control", "Meta"]}
-      fitView
-      fitViewOptions={FIT_VIEW_OPTIONS}
-      onlyRenderVisibleElements={cullViewportElements}
-      proOptions={REACT_FLOW_OPTIONS}
-      deleteKeyCode={null}
-      className="bd-react-flow"
-    >
-      {CANVAS_BACKGROUND}
-      {spacePanActive ? (
-        <Panel className="bd-canvas-pan-mode nokey" position="top-right" aria-live="polite">
-          <Hand size={13} aria-hidden="true" />
-          <strong>PAN MODE</strong>
-          <span>Drag the canvas · release Space to return</span>
-        </Panel>
-      ) : null}
-      {connectionGesture ? (
-        <ConnectionGesturePanel
-          gesture={connectionGesture}
-          candidateCount={connectionCandidateCount}
-        />
-      ) : connectionFeedback ? (
-        <ConnectionGestureFeedbackPanel feedback={connectionFeedback} />
-      ) : null}
-      <AlignmentGuideLayer guides={alignmentGuides} />
-      {routingFailure ? (
-        <div
-          className="bd-routing-diagnostic nokey"
-          role="status"
-          title={routingResult.diagnostics.map((diagnostic) => diagnostic.message).join("\n")}
+      <ConnectionGesturePreviewProvider
+        environment={routingProjection.layoutProjection.previewEnvironment}
+        policy={routingProjection.policy}
+        gesture={connectionGesture}
+      >
+        <ReactFlow<CanvasFlowNode, CanvasFlowEdge>
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          onNodesChange={onCanvasNodesChange}
+          onNodeDragStart={onNodeDragStart}
+          onNodeDrag={onNodeDrag}
+          onNodeDragStop={onNodeDragStop}
+          onNodeClick={onNodeClick}
+          onNodeDoubleClick={onNodeDoubleClick}
+          onEdgeClick={onEdgeClick}
+          onSelectionStart={onSelectionStart}
+          onSelectionEnd={onSelectionEnd}
+          onPointerDownCapture={onCanvasPointerDownCapture}
+          onPointerMoveCapture={onCanvasPointerMoveCapture}
+          onPointerUpCapture={onCanvasPointerUpCapture}
+          onPointerCancelCapture={onCanvasPointerCancelCapture}
+          onClickCapture={onCanvasClickCapture}
+          onKeyDownCapture={onElementKeyDownCapture}
+          onConnect={onConnect}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
+          onReconnect={onReconnect}
+          onReconnectStart={onReconnectStart}
+          isValidConnection={isValidConnection}
+          onError={warnReactFlowError}
+          onPaneClick={onPaneClick}
+          tabIndex={0}
+          aria-label="Architecture diagram canvas"
+          connectionMode={ConnectionMode.Loose}
+          connectionLineComponent={ConnectionGesturePreview}
+          nodesConnectable
+          edgesReconnectable
+          snapToGrid
+          snapGrid={SNAP_GRID}
+          minZoom={MIN_ZOOM}
+          maxZoom={MAX_ZOOM}
+          panOnScroll
+          panOnDrag={[1, 2]}
+          panActivationKeyCode="Space"
+          zoomActivationKeyCode={["Control", "Meta"]}
+          selectionOnDrag
+          selectionKeyCode="Alt"
+          multiSelectionKeyCode={["Control", "Meta"]}
+          fitView
+          fitViewOptions={FIT_VIEW_OPTIONS}
+          onlyRenderVisibleElements={cullViewportElements}
+          proOptions={REACT_FLOW_OPTIONS}
+          deleteKeyCode={null}
+          className="bd-react-flow"
         >
-          <strong>{routingFailure.title}</strong>
-          <span>{routingFailure.detail}</span>
-        </div>
-      ) : null}
-      <CanvasViewportControls
-        onZoomIn={zoomInViewport}
-        onZoomOut={zoomOutViewport}
-        onActualSize={actualSizeViewport}
-        onFit={fitCanvasViewport}
-        overviewMapOpen={compactOverviewMapOpen}
-        onToggleOverviewMap={() => setCompactOverviewMapOpen((open) => !open)}
-      />
-      <MiniMap<CanvasFlowNode>
-        className={`bd-canvas-minimap nokey${compactOverviewMapOpen ? " is-compact-open" : ""}`}
-        position="bottom-right"
-        pannable
-        zoomable
-        nodeColor={miniMapNodeColor}
-        maskColor="var(--minimap-mask)"
-        onNodeClick={onMiniMapNodeClick}
-      />
-      </ReactFlow>
+          {CANVAS_BACKGROUND}
+          {spacePanActive ? (
+            <Panel className="bd-canvas-pan-mode nokey" position="top-right" aria-live="polite">
+              <Hand size={13} aria-hidden="true" />
+              <strong>PAN MODE</strong>
+              <span>Drag the canvas · release Space to return</span>
+            </Panel>
+          ) : null}
+          {connectionGesture ? (
+            <ConnectionGesturePanel
+              gesture={connectionGesture}
+              candidateCount={connectionCandidateCount}
+            />
+          ) : connectionFeedback ? (
+            <ConnectionGestureFeedbackPanel feedback={connectionFeedback} />
+          ) : null}
+          <AlignmentGuideLayer guides={alignmentGuides} />
+          {routingFailure ? (
+            <div
+              className="bd-routing-diagnostic nokey"
+              role="status"
+              title={routingResult.diagnostics.map((diagnostic) => diagnostic.message).join("\n")}
+            >
+              <strong>{routingFailure.title}</strong>
+              <span>{routingFailure.detail}</span>
+            </div>
+          ) : null}
+          <CanvasViewportControls
+            onZoomIn={zoomInViewport}
+            onZoomOut={zoomOutViewport}
+            onActualSize={actualSizeViewport}
+            onFit={fitCanvasViewport}
+            overviewMapOpen={compactOverviewMapOpen}
+            onToggleOverviewMap={() => setCompactOverviewMapOpen((open) => !open)}
+          />
+          <MiniMap<CanvasFlowNode>
+            className={`bd-canvas-minimap nokey${compactOverviewMapOpen ? " is-compact-open" : ""}`}
+            position="bottom-right"
+            pannable
+            zoomable
+            nodeColor={miniMapNodeColor}
+            maskColor="var(--minimap-mask)"
+            onNodeClick={onMiniMapNodeClick}
+          />
+        </ReactFlow>
+      </ConnectionGesturePreviewProvider>
       <div className="bd-visually-hidden bd-canvas-announcement" role="status" aria-live="polite" aria-atomic="true">
         {canvasAnnouncement}
       </div>

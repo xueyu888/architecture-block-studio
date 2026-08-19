@@ -5,6 +5,7 @@ import axe, { type AxeResults } from "axe-core";
 import { performanceDesignDocument } from "./fixtures/performanceDesign";
 import { fiveLevelRoutingDesignDocument } from "./fixtures/fiveLevelRoutingDesign";
 import { routingStressDesignDocument } from "./fixtures/routingStressDesign";
+import { connectionPreviewDesignDocument } from "./fixtures/connectionPreviewDesign";
 import { createPerformanceSample, emitPerformanceSample } from "./performance/performanceSample";
 
 const examplePath = fileURLToPath(
@@ -785,6 +786,47 @@ async function geometryIssues(page: Page) {
       endpointIntrusions,
       microSegments,
       sharedRoutes,
+    };
+  });
+}
+
+async function connectionPreviewIssues(page: Page) {
+  return page.locator(".bd-connection-preview").evaluate((preview) => {
+    const group = preview as SVGGElement;
+    const path = group.querySelector<SVGPathElement>(".bd-connection-preview-path");
+    const points = JSON.parse(group.dataset.previewPoints ?? "[]") as Array<{ x: number; y: number }>;
+    const sourceId = group.dataset.previewSourceNodeId;
+    const targetId = group.dataset.previewTargetNodeId;
+    const nodes = [...document.querySelectorAll<HTMLElement>(".react-flow__node")]
+      .filter((node) => node.dataset.id !== sourceId && node.dataset.id !== targetId)
+      .filter((node) => node.querySelector('.bd-block[data-expanded="true"]') === null)
+      .map((node) => ({ id: node.dataset.id ?? "unknown", rect: node.getBoundingClientRect() }));
+    const collisions: string[] = [];
+    const matrix = path?.getScreenCTM();
+    const length = path?.getTotalLength() ?? 0;
+    if (!path || !matrix || length <= 0) return {
+      collisions: ["preview geometry unavailable"],
+      nonOrthogonalSegments: [],
+      zeroLengthSegments: [],
+    };
+    for (let distance = 2; distance < length - 2; distance += 2) {
+      const point = path.getPointAtLength(distance);
+      const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(matrix);
+      const hit = nodes.find(({ rect }) =>
+        screenPoint.x > rect.left + 2 && screenPoint.x < rect.right - 2 &&
+        screenPoint.y > rect.top + 2 && screenPoint.y < rect.bottom - 2,
+      );
+      if (hit && !collisions.includes(hit.id)) collisions.push(hit.id);
+    }
+    const segments = points.slice(1).map((point, index) => ({ previous: points[index], point, index }));
+    return {
+      collisions,
+      nonOrthogonalSegments: segments
+        .filter(({ previous, point }) => previous.x !== point.x && previous.y !== point.y)
+        .map(({ index }) => index),
+      zeroLengthSegments: segments
+        .filter(({ previous, point }) => previous.x === point.x && previous.y === point.y)
+        .map(({ index }) => index),
     };
   });
 }
@@ -2532,6 +2574,39 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
   };
   await assertCompleteAudit();
 
+  const stressSource = flowNode(page, "system::satellite-left-00")
+    .locator('.bd-port-handle-outer[data-handleid="link"]');
+  const stressTarget = flowNode(page, "system::hub")
+    .locator('.bd-port-handle-outer[data-handleid="left-01"]');
+  const stressSourceBox = await stressSource.boundingBox();
+  const stressTargetBox = await stressTarget.boundingBox();
+  expect(stressSourceBox).not.toBeNull();
+  expect(stressTargetBox).not.toBeNull();
+  await page.mouse.move(
+    stressSourceBox!.x + stressSourceBox!.width / 2,
+    stressSourceBox!.y + stressSourceBox!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    stressTargetBox!.x + stressTargetBox!.width / 2,
+    stressTargetBox!.y + stressTargetBox!.height / 2,
+    { steps: 12 },
+  );
+  const stressPanel = page.locator('.bd-connection-gesture-panel[data-connection-mode="create"]');
+  await expect(stressPanel).toHaveAttribute("data-connection-status", "valid");
+  await expect(stressPanel).toHaveAttribute("data-preview-routing-status", "routed");
+  await expect(stressPanel).toHaveAttribute("data-preview-obstacle-count", "101");
+  expect(Number(await stressPanel.getAttribute("data-preview-peak-duration-ms"))).toBeLessThan(80);
+  expect(await connectionPreviewIssues(page)).toEqual({
+    collisions: [],
+    nonOrthogonalSegments: [],
+    zeroLengthSegments: [],
+  });
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(page.locator(".react-flow__edge")).toHaveCount(100);
+  await assertCompleteAudit();
+
   await runMenuCommand(page, "Design", "Optimize Routing");
   await waitForEditorIdle(page);
   await assertCompleteAudit();
@@ -2604,6 +2679,46 @@ test("expands five hierarchy layers and audits every visible route and pair", as
     orphanJumps: [],
   });
   expect(audit.routeIds).toHaveLength(20);
+
+  const nestedPreviewSource = diagramNode(page, "level-4", "relay-4-00")
+    .locator('.bd-port-handle-outer[data-handleid="out"]');
+  const nestedPreviewTarget = diagramNode(page, "level-4", "layer-5")
+    .locator('.bd-port-handle-outer[data-handleid="flow-01"]');
+  const nestedPreviewSourceBox = await nestedPreviewSource.boundingBox();
+  const nestedPreviewTargetBox = await nestedPreviewTarget.boundingBox();
+  expect(nestedPreviewSourceBox).not.toBeNull();
+  expect(nestedPreviewTargetBox).not.toBeNull();
+  await page.mouse.move(
+    nestedPreviewSourceBox!.x + nestedPreviewSourceBox!.width / 2,
+    nestedPreviewSourceBox!.y + nestedPreviewSourceBox!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    nestedPreviewTargetBox!.x + nestedPreviewTargetBox!.width / 2,
+    nestedPreviewTargetBox!.y + nestedPreviewTargetBox!.height / 2,
+    { steps: 10 },
+  );
+  const nestedPreviewPanel = page.locator('.bd-connection-gesture-panel[data-connection-mode="create"]');
+  await expect(nestedPreviewPanel).toHaveAttribute("data-connection-status", "valid");
+  await expect(nestedPreviewPanel).toHaveAttribute("data-preview-routing-status", "routed");
+  await expect(nestedPreviewPanel).toHaveAttribute("data-preview-obstacle-count", "17");
+  expect(await connectionPreviewIssues(page)).toEqual({
+    collisions: [],
+    nonOrthogonalSegments: [],
+    zeroLengthSegments: [],
+  });
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(page.locator(".react-flow__edge")).toHaveCount(20);
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 20,
+    auditedPairCount: 190,
+    expectedPairCount: 190,
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
 
   if (process.env.CAPTURE_ROUTING_FIVE_LEVEL === "1" && browserName === "chromium") {
     await toolbarButton(page, "适应窗口").click({ force: true });
@@ -3025,6 +3140,49 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   })).toBe(true);
   metrics.revealInterfaceMs = Math.round(performance.now() - revealInterfaceStarted);
 
+  const visibleEdgeCountBeforePreview = await renderedEdges.count();
+  await flowNode(page, "system::module-000").click({ position: { x: 120, y: 72 }, force: true });
+  const largePreviewSource = flowNode(page, "system::module-000")
+    .locator('.bd-port-handle-outer[data-handleid="out"]');
+  const largePreviewTarget = flowNode(page, "system::module-010")
+    .locator('.bd-port-handle-outer[data-handleid="in"]');
+  const largePreviewSourceBox = await largePreviewSource.boundingBox();
+  const largePreviewTargetBox = await largePreviewTarget.boundingBox();
+  expect(largePreviewSourceBox).not.toBeNull();
+  expect(largePreviewTargetBox).not.toBeNull();
+  await page.mouse.move(
+    largePreviewSourceBox!.x + largePreviewSourceBox!.width / 2,
+    largePreviewSourceBox!.y + largePreviewSourceBox!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    largePreviewTargetBox!.x + largePreviewTargetBox!.width / 2,
+    largePreviewTargetBox!.y + largePreviewTargetBox!.height / 2,
+    { steps: 10 },
+  );
+  const largePreviewPanel = page.locator('.bd-connection-gesture-panel[data-connection-mode="create"]');
+  await expect(largePreviewPanel).toHaveAttribute("data-connection-status", "valid");
+  await expect(largePreviewPanel).toHaveAttribute("data-preview-routing-status", "routed");
+  await expect(largePreviewPanel).toHaveAttribute("data-preview-obstacle-count", String(nodeCount));
+  metrics.connectionPreviewPeakMs = Number(
+    await largePreviewPanel.getAttribute("data-preview-peak-duration-ms"),
+  );
+  metrics.connectionPreviewLatestMs = Number(
+    await largePreviewPanel.getAttribute("data-preview-duration-ms"),
+  );
+  metrics.connectionPreviewSolveCount = Number(
+    await largePreviewPanel.getAttribute("data-preview-solve-count"),
+  );
+  expect(metrics.connectionPreviewPeakMs).toBeLessThan(80);
+  expect(await connectionPreviewIssues(page)).toEqual({
+    collisions: [],
+    nonOrthogonalSegments: [],
+    zeroLengthSegments: [],
+  });
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(renderedEdges).toHaveCount(visibleEdgeCountBeforePreview);
+
   const saveStarted = performance.now();
   const downloadPromise = page.waitForEvent("download");
   await clickWithPointer(page, toolbarButton(page, "保存设计"));
@@ -3254,6 +3412,90 @@ test("exposes draggable real bends after a virtual segment becomes manual", asyn
   expect(await edge.locator(".bd-route-bend-handle").count()).toBeLessThan(bendCountBeforeDelete);
 });
 
+test("routes a live pointer connection through the full obstacle scene and commits the same geometry", async ({ page, browserName }) => {
+  const document = connectionPreviewDesignDocument();
+  await openDesignDialog(page);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "scene-aware-connection-preview.block-design.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(document)),
+  });
+  await expect(page.locator(".bd-document-title span")).toHaveText("Scene-Aware Connection Preview");
+  await expect(page.locator(".react-flow__node")).toHaveCount(3);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(0);
+  await expect(page.locator(".bd-canvas-busy")).toHaveCount(0);
+  await page.waitForTimeout(500);
+  if (process.env.CAPTURE_SCENE_CONNECTION_PREVIEW === "1" && browserName === "chromium") {
+    await page.locator(".react-flow__controls-zoomin").click();
+    await page.locator(".react-flow__controls-zoomin").click();
+    await page.waitForTimeout(300);
+  }
+  const source = flowNode(page, "system::source")
+    .locator('.bd-port-handle-outer[data-handleid="command"]');
+  const target = flowNode(page, "system::target")
+    .locator('.bd-port-handle-outer[data-handleid="command"]');
+  const sourceBox = await source.boundingBox();
+  const targetBox = await target.boundingBox();
+  expect(sourceBox).not.toBeNull();
+  expect(targetBox).not.toBeNull();
+
+  await page.mouse.move(sourceBox!.x + sourceBox!.width / 2, sourceBox!.y + sourceBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2, { steps: 12 });
+  const panel = page.locator('.bd-connection-gesture-panel[data-connection-mode="create"]');
+  const preview = page.locator('.bd-connection-preview[data-connection-status="valid"]');
+  await expect(panel).toHaveAttribute("data-connection-status", "valid");
+  await expect(panel).toHaveAttribute("data-preview-routing-status", "routed");
+  await expect(panel).toHaveAttribute("data-preview-obstacle-count", "3");
+  await expect(preview).toHaveAttribute("data-preview-routing-status", "routed");
+  expect(Number(await preview.getAttribute("data-preview-point-count"))).toBeGreaterThanOrEqual(5);
+  expect(await connectionPreviewIssues(page)).toEqual({
+    collisions: [],
+    nonOrthogonalSegments: [],
+    zeroLengthSegments: [],
+  });
+  const previewPoints = JSON.parse(await preview.getAttribute("data-preview-points") ?? "[]");
+  if (process.env.CAPTURE_SCENE_CONNECTION_PREVIEW === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/scene-connection-preview.png");
+  }
+
+  await page.mouse.up();
+  const dialog = page.getByRole("dialog", { name: "Create Typed Interface" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("Interface title").fill("Reviewed Command");
+  await dialog.getByLabel("Connection id").fill("source-to-target");
+  await dialog.getByLabel("Interface id").fill("preview.command");
+  await dialog.getByLabel("Interface type").selectOption("rpc");
+  await dialog.getByLabel("Owner").fill("Architecture Team");
+  await dialog.getByRole("button", { name: "Create Connection", exact: true }).click({ force: true });
+  await waitForEditorIdle(page);
+
+  const edge = page.locator('.react-flow__edge[data-id="system::source-to-target"]');
+  await expect(edge).toBeVisible();
+  const committedPoints = JSON.parse(
+    await edge.locator("[data-route-points]").getAttribute("data-route-points") ?? "[]",
+  );
+  expect(committedPoints).toEqual(previewPoints);
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    microSegments: [],
+    sharedRoutes: [],
+  });
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 1,
+    auditedPairCount: 0,
+    expectedPairCount: 0,
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+});
+
 test("previews, cancels, rejects, preserves, and commits pointer connections consistently", async ({ page, browserName }) => {
   const source = flowNode(page, "system::agent-ui")
     .locator('.bd-port-handle-outer[data-handleid="session-command"]');
@@ -3282,6 +3524,9 @@ test("previews, cancels, rejects, preserves, and commits pointer connections con
   await expect(incompatiblePort).toHaveAttribute("data-connection-role", "incompatible");
   const floatingPreview = page.locator('.bd-connection-preview[data-connection-status="searching"]');
   await expect(floatingPreview).toBeVisible();
+  await expect(floatingPreview).toHaveAttribute("data-preview-routing-status", "routed");
+  await expect(createPanel).toHaveAttribute("data-preview-routing-status", "routed");
+  expect(Number(await createPanel.getAttribute("data-preview-obstacle-count"))).toBeGreaterThan(1);
   const floatingPath = await floatingPreview.locator(".bd-connection-preview-path").getAttribute("d");
   expect(floatingPath).toMatch(/^M .* L /);
   expect(floatingPath).not.toMatch(/[CQ]/);
@@ -3325,6 +3570,8 @@ test("previews, cancels, rejects, preserves, and commits pointer connections con
   await expect(replacementTarget).toHaveClass(/valid/);
   const attachedPreview = page.locator('.bd-connection-preview[data-connection-status="valid"]');
   await expect(attachedPreview).toBeVisible();
+  await expect(attachedPreview).toHaveAttribute("data-preview-routing-status", "routed");
+  await expect(reconnectPanel).toHaveAttribute("data-preview-routing-status", "routed");
   const attachedPath = await attachedPreview.locator(".bd-connection-preview-path").getAttribute("d");
   expect(attachedPath).toMatch(/^M .* L /);
   expect(attachedPath).not.toMatch(/[CQ]/);

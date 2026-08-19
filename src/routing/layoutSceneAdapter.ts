@@ -6,6 +6,7 @@ import {
   type LayoutFlowNode,
 } from "../layout";
 import type { BlockPort, PortSide } from "../model";
+import type { RoutingPreviewEnvironment } from "./connectionPreview";
 import { compactOrthogonalPoints, restoreManualRoute, type RoutePoint } from "./routeInterface";
 import { oppositeDirection } from "./routingGeometry";
 import {
@@ -163,6 +164,17 @@ function frameBounds(frame: AbsoluteNodeFrame, policy: RoutingPolicy): RoutingRe
   }, policy);
 }
 
+function routingDomainBounds(frame: AbsoluteNodeFrame, policy: RoutingPolicy): RoutingRect {
+  const bounds = frameBounds(frame, policy);
+  const handleRadius = BLOCK_NODE_GEOMETRY.portHandleSize / 2;
+  return {
+    left: bounds.left - handleRadius,
+    right: bounds.right + handleRadius,
+    top: bounds.top - handleRadius,
+    bottom: bounds.bottom + handleRadius,
+  };
+}
+
 function routingDomain(
   edge: LayoutFlowEdge,
   source: AbsoluteNodeFrame,
@@ -170,33 +182,28 @@ function routingDomain(
   frames: ReadonlyMap<string, AbsoluteNodeFrame>,
   policy: RoutingPolicy,
 ): RoutingRect | undefined {
-  const domainBounds = (frame: AbsoluteNodeFrame): RoutingRect => {
-    const bounds = frameBounds(frame, policy);
-    const handleRadius = BLOCK_NODE_GEOMETRY.portHandleSize / 2;
-    return {
-      left: bounds.left - handleRadius,
-      right: bounds.right + handleRadius,
-      top: bounds.top - handleRadius,
-      bottom: bounds.bottom + handleRadius,
-    };
-  };
   const boundaryId = edge.data?.boundaryNodeId;
   if (boundaryId) {
     const boundary = frames.get(boundaryId);
-    return boundary ? domainBounds(boundary) : undefined;
+    return boundary ? routingDomainBounds(boundary, policy) : undefined;
   }
   if (source.parentId && source.parentId === target.parentId) {
     const parent = frames.get(source.parentId);
-    return parent ? domainBounds(parent) : undefined;
+    return parent ? routingDomainBounds(parent, policy) : undefined;
   }
   return undefined;
 }
 
-export function createRoutingSceneFromLayout(
+export interface RoutingLayoutProjection {
+  scene: RoutingScene;
+  previewEnvironment: RoutingPreviewEnvironment;
+}
+
+export function createRoutingLayoutProjectionFromLayout(
   nodes: readonly LayoutFlowNode[],
   edges: readonly LayoutFlowEdge[],
   policy: RoutingPolicy = DEFAULT_ROUTING_POLICY,
-): RoutingScene {
+): RoutingLayoutProjection {
   const frames = absoluteNodeFrames(nodes);
   const obstacles = [...frames.values()].map((frame) => ({
     id: frame.id,
@@ -253,5 +260,41 @@ export function createRoutingSceneFromLayout(
       ends: [ends[0].end, ends[1].end] as const,
     }];
   });
-  return { obstacles, legs, gates };
+  const scene = { obstacles, legs, gates };
+  const previewEnvironment: RoutingPreviewEnvironment = {
+    obstacles,
+    nodes: new Map([...frames.values()].map((frame) => {
+      const parent = frame.parentId ? frames.get(frame.parentId) : undefined;
+      const endpoints = new Map(frame.node.data.block.ports.flatMap((port) => (
+        [
+          port.id,
+          `__binding__${port.id}`,
+          `__inner__${port.id}`,
+        ].map((handleId) => {
+          const endpoint = routingEndpoint(frame, handleId);
+          return [handleId, {
+            point: endpoint.point,
+            outward: endpoint.outward,
+            physicalKey: endpoint.physicalKey,
+          }] as const;
+        })
+      )));
+      return [frame.id, {
+        id: frame.id,
+        parentId: frame.parentId,
+        ancestorObstacleIds: ancestorIds(frame, frames),
+        parentRoutingBounds: parent ? routingDomainBounds(parent, policy) : undefined,
+        endpoints,
+      }];
+    })),
+  };
+  return { scene, previewEnvironment };
+}
+
+export function createRoutingSceneFromLayout(
+  nodes: readonly LayoutFlowNode[],
+  edges: readonly LayoutFlowEdge[],
+  policy: RoutingPolicy = DEFAULT_ROUTING_POLICY,
+): RoutingScene {
+  return createRoutingLayoutProjectionFromLayout(nodes, edges, policy).scene;
 }
