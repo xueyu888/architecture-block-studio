@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@tisoap/react-flow-smart-edge':
-        specifier: ^4.13.1
-        version: 4.13.1(@xyflow/react@12.9.3(@types/react@19.2.7)(react-dom@19.2.1(react@19.2.1))(react@19.2.1))(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       '@xyflow/react':
         specifier: 12.9.3
         version: 12.9.3(@types/react@19.2.7)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
@@ -443,13 +440,6 @@ packages:
     resolution: {integrity: sha512-k+/Rkcyx//P6fetPoLMb8pBeqJBNGx81uuf7iljX9++yNBVRDQgD04L+SVXmXmh5ZP4/WOp4mWF0kmi06PW2tA==}
     cpu: [x64]
     os: [win32]
-
-  '@tisoap/react-flow-smart-edge@4.13.1':
-    resolution: {integrity: sha512-hWp2x1pPEixWuyzPvTB15HC3ebUKiJcu85tj+4Z7JQ6que01AsaPhjEpSZ/Y7B06xULZ/TJ4XCQR+NnG1Jq4MQ==}
-    peerDependencies:
-      '@xyflow/react': '>=12'
-      react: '>=18'
-      react-dom: '>=18'
 
   '@types/babel__core@7.20.5':
     resolution: {integrity: sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==}
@@ -1314,12 +1304,6 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.53.2':
     optional: true
-
-  '@tisoap/react-flow-smart-edge@4.13.1(@xyflow/react@12.9.3(@types/react@19.2.7)(react-dom@19.2.1(react@19.2.1))(react@19.2.1))(react-dom@19.2.1(react@19.2.1))(react@19.2.1)':
-    dependencies:
-      '@xyflow/react': 12.9.3(@types/react@19.2.7)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
-      react: 19.2.1
-      react-dom: 19.2.1(react@19.2.1)
 
   '@types/babel__core@7.20.5':
     dependencies:

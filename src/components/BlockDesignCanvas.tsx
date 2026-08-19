@@ -46,7 +46,13 @@ import {
   type LayoutResult,
   type ResizeLimits,
 } from "../layout";
-import { planRouteLaneOffsets } from "../routing";
+import {
+  createRoutingSceneFromLayout,
+  planRouteJumps,
+  routingPolicyForScene,
+  solveRoutingScene,
+  type RoutingResult,
+} from "../routing";
 import {
   diagramSelectionItems,
   replaceDiagramSelection,
@@ -77,10 +83,9 @@ const NODE_KEYBOARD_DELTAS: Readonly<Record<string, { x: number; y: number; dire
 };
 const FIT_VIEW_OPTIONS = { padding: FIT_PADDING };
 const REACT_FLOW_OPTIONS = { hideAttribution: true };
-const LARGE_GRAPH_NODE_COUNT = 120;
-const LARGE_GRAPH_EDGE_COUNT = 240;
 const VIEWPORT_CULL_NODE_COUNT = 500;
 const VIEWPORT_CULL_EDGE_COUNT = 1000;
+const routingResultCache = new WeakMap<object, { geometrySignature: string; result: RoutingResult }>();
 const ALIGNMENT_TOLERANCE_PX = 6;
 const ALIGNMENT_VIEWPORT_MARGIN_PX = 80;
 const CONNECTION_TARGET_MARKER: EdgeMarker = {
@@ -181,10 +186,6 @@ function miniMapNodeColor(node: CanvasFlowNode): string {
 
 function fitDuration(): number {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 280;
-}
-
-function physicalEndpointKey(nodeId: string, handleId: string | null | undefined): string {
-  return `${nodeId}::${(handleId ?? "").replace(/^__(?:inner|binding)__/, "")}`;
 }
 
 function warnReactFlowError(code: string, message: string): void {
@@ -295,8 +296,6 @@ const CanvasInner = memo(function CanvasInner({
   const boxSelectionGestureRef = useRef<BoxSelectionGesture | undefined>(undefined);
   const resizePreviewRef = useRef<ResizePreview | undefined>(undefined);
   const multiSelection = selection.kind === "multiple";
-  const largeGraph = layout.nodes.length >= LARGE_GRAPH_NODE_COUNT
-    || layout.edges.length >= LARGE_GRAPH_EDGE_COUNT;
   const cullViewportElements = layout.nodes.length >= VIEWPORT_CULL_NODE_COUNT
     || layout.edges.length >= VIEWPORT_CULL_EDGE_COUNT;
   const navigationInterpolation: "linear" | "smooth" = cullViewportElements ? "linear" : "smooth";
@@ -336,8 +335,8 @@ const CanvasInner = memo(function CanvasInner({
   const fitCanvasViewport = useCallback(() => {
     navigateViewport({ ...FIT_VIEW_OPTIONS, duration: fitDuration() });
   }, [navigateViewport]);
-  const interruptViewportNavigation = useCallback(() => {
-    if (!animatedViewportNavigationActive.current) return;
+  const interruptViewportNavigation = useCallback((force = false) => {
+    if (!force && !animatedViewportNavigationActive.current) return;
     animatedViewportNavigationActive.current = false;
     viewportNavigationGeneration.current += 1;
     void setViewport(getViewport(), { duration: 0 });
@@ -348,7 +347,10 @@ const CanvasInner = memo(function CanvasInner({
     if (gesture) gesture.end = { x: event.clientX, y: event.clientY };
   }, [interruptViewportNavigation]);
   const onCanvasPointerDownCapture = useCallback((event: ReactPointerEvent) => {
-    interruptViewportNavigation();
+    // A direct gesture owns the viewport immediately. Freeze even when a
+    // third-party navigation promise has already reported completion: Firefox
+    // can still deliver a final interpolated frame after that promise settles.
+    interruptViewportNavigation(true);
     if (
       event.button === 0 &&
       event.target instanceof Element &&
@@ -503,39 +505,56 @@ const CanvasInner = memo(function CanvasInner({
       snapResizeGeometry,
     ],
   );
+  const [nodes, setNodes, onNodesChange] = useNodesState<CanvasFlowNode>(baseNodes);
+  // Automatic routing follows committed layout geometry. Pointer move/resize
+  // previews adapt only their incident endpoints in InterfaceEdge, avoiding a
+  // scene-wide solve on every animation frame.
+  const routingNodes = baseNodes;
+  const routingGeometrySignature = routingNodes.map((node) => {
+    const width = node.measured?.width ?? node.width ?? 0;
+    const height = node.measured?.height ?? node.height ?? 0;
+    return `${node.id}:${node.parentId ?? "root"}:${node.position.x},${node.position.y},${width},${height}`;
+  }).join("|");
+  const routingCacheSignature = `${routingGeometrySignature}|revision:${routeRevision}`;
+  const routingResult = useMemo(() => {
+    const cached = routingResultCache.get(layout.edges);
+    if (cached?.geometrySignature === routingCacheSignature) return cached.result;
+    const scene = createRoutingSceneFromLayout(routingNodes, layout.edges);
+    const result = solveRoutingScene(scene, routingPolicyForScene(scene));
+    routingResultCache.set(layout.edges, { geometrySignature: routingCacheSignature, result });
+    return result;
+  }, [layout.edges, routingCacheSignature]);
+  const unresolvedDetail = routingResult.certificate.objective.unrouted > 0
+    ? `${routingResult.certificate.objective.unrouted} connection${routingResult.certificate.objective.unrouted === 1 ? "" : "s"} could not be routed.`
+    : routingResult.certificate.objective.capacityViolations > 0
+      ? `${routingResult.certificate.objective.capacityViolations} route spacing conflict${routingResult.certificate.objective.capacityViolations === 1 ? "" : "s"} remain.`
+      : `${routingResult.diagnostics.length} route verification issue${routingResult.diagnostics.length === 1 ? "" : "s"} remain.`;
+  const routingFailure = routingResult.status === "Optimal" || routingResult.status === "Feasible"
+    ? undefined
+    : {
+        title: `Routing ${routingResult.status}`,
+        detail: routingResult.status === "InvalidInput"
+          ? `${routingResult.diagnostics.length} locked or scene geometry issue${routingResult.diagnostics.length === 1 ? "" : "s"}; manual geometry was preserved.`
+          : `${unresolvedDetail} Move modules apart or add manual waypoints.`,
+      };
+  const routeJumps = useMemo(() => planRouteJumps(routingResult.routes), [routingResult]);
+  const simplifiedEdgeInteraction = layout.nodes.length >= 120 || layout.edges.length >= 240;
   const baseEdges = useMemo<CanvasFlowEdge[]>(
-    () => {
-      const endpointUse = new Map<string, Set<string>>();
-      layout.edges.forEach((edge) => {
-        const sourceKey = physicalEndpointKey(edge.source, edge.sourceHandle);
-        const targetKey = physicalEndpointKey(edge.target, edge.targetHandle);
-        endpointUse.set(sourceKey, new Set(endpointUse.get(sourceKey)).add(edge.data?.connection.id ?? edge.id));
-        endpointUse.set(targetKey, new Set(endpointUse.get(targetKey)).add(edge.data?.connection.id ?? edge.id));
-      });
-      const laneOffsets = planRouteLaneOffsets(layout.edges.map((edge) => ({
-        connectionId: edge.data?.connection.id ?? edge.id,
-        sourceEndpointKey: physicalEndpointKey(edge.source, edge.sourceHandle),
-        targetEndpointKey: physicalEndpointKey(edge.target, edge.targetHandle),
-        channelKey: [edge.source, edge.target].sort().join("::pair::"),
-      })));
-      return layout.edges.map<CanvasFlowEdge>((edge) => {
+    () => layout.edges.map<CanvasFlowEdge>((edge) => {
         const data = edge.data;
         if (!data) throw new Error(`Layout edge ${edge.id} is missing interface data.`);
-        const sourceKey = physicalEndpointKey(edge.source, edge.sourceHandle);
-        const targetKey = physicalEndpointKey(edge.target, edge.targetHandle);
-        const separateSourceEndpoint = (endpointUse.get(sourceKey)?.size ?? 0) > 1;
-        const separateTargetEndpoint = (endpointUse.get(targetKey)?.size ?? 0) > 1;
+        const plannedRoute = routingResult.routes.get(edge.id)?.points;
         return {
           ...edge,
           reconnectable: !data.boundaryContinuation,
           markerEnd: data.boundaryContinuation ? undefined : CONNECTION_TARGET_MARKER,
           data: {
             ...data,
-            largeGraph,
             canEditSelection: () => selectionRef.current.kind !== "multiple",
-            laneOffset: laneOffsets.get(data.connection.id) ?? 0,
-            separateSourceEndpoint,
-            separateTargetEndpoint,
+            plannedRoute,
+            routeJumps: routeJumps.get(edge.id),
+            routingStatus: routingResult.status,
+            simplifiedInteraction: simplifiedEdgeInteraction,
             updateRouting: data.boundaryContinuation
               ? undefined
               : (routing) => onRouteConnection(data.levelId, data.connection.id, routing),
@@ -544,11 +563,9 @@ const CanvasInner = memo(function CanvasInner({
               : (handle) => setRouteHandleFocusRequest({ edgeId: edge.id, ...handle }),
           },
         };
-      });
-    },
-    [largeGraph, layout.edges, multiSelection, onRouteConnection],
+      }),
+    [layout.edges, multiSelection, onRouteConnection, routeJumps, routingResult, simplifiedEdgeInteraction],
   );
-  const [nodes, setNodes, onNodesChange] = useNodesState<CanvasFlowNode>(baseNodes);
   const onCanvasNodesChange = useCallback((changes: NodeChange<CanvasFlowNode>[]) => {
     const boxGesture = boxSelectionGestureRef.current;
     if (boxGesture) {
@@ -591,13 +608,7 @@ const CanvasInner = memo(function CanvasInner({
   const selectedNodeIdsKey = selectedNodeIds.join("\u0000");
   const selectedNodeIdsRef = useRef<ReadonlySet<string>>(new Set(selectedNodeIds));
   selectedNodeIdsRef.current = new Set(selectedNodeIds);
-  const routedEdges = useMemo<CanvasFlowEdge[]>(
-    () => baseEdges.map((edge) => ({
-      ...edge,
-      data: edge.data ? { ...edge.data, routeRevision } : edge.data,
-    })),
-    [baseEdges, routeRevision],
-  );
+  const routedEdges = baseEdges;
   const flowEdgeIdsBySelection = useMemo(() => {
     const result = new Map<string, string[]>();
     routedEdges.forEach((edge) => {
@@ -735,7 +746,11 @@ const CanvasInner = memo(function CanvasInner({
           ) ?? [])].filter(
             (candidate) => Number(candidate.getAttribute("aria-valuenow")) === routeHandleFocusRequest.coordinate,
           )
-        : [...(edge?.querySelectorAll<HTMLButtonElement>(".bd-route-bend-handle") ?? [])];
+        : [...(edge?.querySelectorAll<HTMLButtonElement>(".bd-route-bend-handle") ?? [])].filter(
+            (candidate) =>
+              Number(candidate.dataset.routeX) === routeHandleFocusRequest.point.x &&
+              Number(candidate.dataset.routeY) === routeHandleFocusRequest.point.y,
+          );
       const handle = candidates.find((candidate) =>
         Number(candidate.dataset.routeHandleIndex) === routeHandleFocusRequest.index,
       ) ?? candidates[0];
@@ -871,7 +886,7 @@ const CanvasInner = memo(function CanvasInner({
     };
     boxSelectionStartRef.current = undefined;
   }, []);
-  const onSelectionEnd = useCallback((event: ReactMouseEvent) => {
+  const onSelectionEnd = useCallback(() => {
     const gesture = boxSelectionGestureRef.current;
     if (!gesture) return;
     const items = [...gesture.selectedFlowNodeIds].flatMap<DiagramSelectionRef>((flowNodeId) => {
@@ -879,10 +894,7 @@ const CanvasInner = memo(function CanvasInner({
       return node ? [{ kind: "node", levelId: node.data.levelId, nodeId: node.data.block.id }] : [];
     });
     const canvasRoot = store.getState().domNode;
-    const selectionBounds = canvasClientBounds(gesture.start, {
-      x: event.clientX,
-      y: event.clientY,
-    });
+    const selectionBounds = canvasClientBounds(gesture.start, gesture.end);
     canvasRoot?.querySelectorAll<SVGGElement>(".react-flow__edge").forEach((element) => {
       const edge = routedEdges.find((candidate) => candidate.id === element.dataset.id);
       if (!edge?.data || edge.data.boundaryContinuation) return;
@@ -1201,6 +1213,16 @@ const CanvasInner = memo(function CanvasInner({
     >
       {CANVAS_BACKGROUND}
       <AlignmentGuideLayer guides={alignmentGuides} />
+      {routingFailure ? (
+        <div
+          className="bd-routing-diagnostic"
+          role="status"
+          title={routingResult.diagnostics.map((diagnostic) => diagnostic.message).join("\n")}
+        >
+          <strong>{routingFailure.title}</strong>
+          <span>{routingFailure.detail}</span>
+        </div>
+      ) : null}
       <CanvasViewportControls
         onZoomIn={zoomInViewport}
         onZoomOut={zoomOutViewport}

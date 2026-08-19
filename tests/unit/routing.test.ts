@@ -1,17 +1,54 @@
 import { describe, expect, test } from "vitest";
 import {
+  adaptRouteEndpoints,
   compactOrthogonalPoints,
   drawOrthogonalRoute,
-  orthogonalRoutePoints,
-  planRouteLaneOffsets,
+  planRouteJumps,
   restoreManualRoute,
-  routeFastOrthogonalInterface,
-  routeOrthogonalInterface,
-  routeLaneOffset,
-  separateOrthogonalRoute,
+  type PlannedRoute,
 } from "../../src/routing";
 
 describe("orthogonal route primitives", () => {
+  test("ignores browser measurement noise instead of creating endpoint micro-bends", () => {
+    expect(adaptRouteEndpoints(
+      [
+        { x: 314, y: 328.625 },
+        { x: 326, y: 328.625 },
+        { x: 326, y: 300.375 },
+        { x: 446, y: 300.375 },
+      ],
+      { x: 313.9998, y: 328.6562 },
+      { x: 445.9999, y: 300.3281 },
+      "right",
+      "left",
+    )).toEqual([
+      { x: 314, y: 328.625 },
+      { x: 326, y: 328.625 },
+      { x: 326, y: 300.375 },
+      { x: 446, y: 300.375 },
+    ]);
+  });
+
+  test("moves adjacent endpoint legs during a real node gesture", () => {
+    expect(adaptRouteEndpoints(
+      [
+        { x: 314, y: 328 },
+        { x: 326, y: 328 },
+        { x: 326, y: 300 },
+        { x: 446, y: 300 },
+      ],
+      { x: 330, y: 344 },
+      { x: 446, y: 300 },
+      "right",
+      "left",
+    )).toEqual([
+      { x: 330, y: 344 },
+      { x: 326, y: 344 },
+      { x: 326, y: 300 },
+      { x: 446, y: 300 },
+    ]);
+  });
+
   test("removes duplicate and collinear points", () => {
     expect(compactOrthogonalPoints([
       { x: 0, y: 0 },
@@ -26,7 +63,7 @@ describe("orthogonal route primitives", () => {
     ]);
   });
 
-  test("preserves an orthogonal reversal that keeps an endpoint approach outside its module", () => {
+  test("preserves an orthogonal reversal for explicit locked routes", () => {
     expect(compactOrthogonalPoints([
       { x: 0, y: 0 },
       { x: 40, y: 0 },
@@ -38,48 +75,46 @@ describe("orthogonal route primitives", () => {
     ]);
   });
 
-  test("parses and draws the same compact orthogonal path", () => {
-    const points = orthogonalRoutePoints("M 0, 0 L 40, 0 L 80, 0 L 80, 40");
-
-    expect(drawOrthogonalRoute(points)).toBe("M 0, 0 L 80, 0 L 80, 40");
-  });
-
-  test("keeps endpoint segments stable when only the internal lane separates", () => {
-    const original = "M 0, 0 L 40, 0 L 40, 80 L 100, 80";
-
-    const separated = orthogonalRoutePoints(separateOrthogonalRoute(original, 8).path);
-
-    expect(separated).toEqual([
+  test("draws a compact orthogonal path", () => {
+    expect(drawOrthogonalRoute([
       { x: 0, y: 0 },
-      { x: 48, y: 0 },
-      { x: 48, y: 80 },
-      { x: 100, y: 80 },
-    ]);
+      { x: 40, y: 0 },
+      { x: 80, y: 0 },
+      { x: 80, y: 40 },
+    ])).toBe("M 0, 0 L 80, 0 L 80, 40");
   });
 
-  test("adds a short source split only when the physical handle is shared", () => {
-    const original = "M 0, 0 L 40, 0 L 40, 80 L 100, 80";
+  test("renders a deterministic bridge for an unavoidable route crossing", () => {
+    const route = (
+      legId: string,
+      points: PlannedRoute["points"],
+    ): PlannedRoute => ({
+      legId,
+      commodityId: legId,
+      points,
+      sourceStub: points[0],
+      targetStub: points.at(-1)!,
+      locked: false,
+      baselineLength: 80,
+      length: 80,
+      bends: 0,
+    });
+    const horizontal = route("horizontal", [{ x: 0, y: 40 }, { x: 100, y: 40 }]);
+    const vertical = route("vertical", [{ x: 50, y: 0 }, { x: 50, y: 80 }]);
+    const jumps = planRouteJumps(new Map([
+      [horizontal.legId, horizontal],
+      [vertical.legId, vertical],
+    ]));
 
-    const separated = orthogonalRoutePoints(
-      separateOrthogonalRoute(original, 8, { separateSource: true }).path,
+    expect(jumps.get("horizontal")).toEqual([{
+      segmentIndex: 0,
+      point: { x: 50, y: 40 },
+      radius: 5,
+    }]);
+    expect(jumps.get("vertical")).toEqual([]);
+    expect(drawOrthogonalRoute(horizontal.points, jumps.get("horizontal"))).toBe(
+      "M 0, 40 L 45, 40 Q 50, 30 55, 40 L 100, 40",
     );
-
-    expect(separated.slice(0, 3)).toEqual([
-      { x: 0, y: 0 },
-      { x: 16, y: 0 },
-      { x: 16, y: 8 },
-    ]);
-    expect(separated.at(-1)).toEqual({ x: 100, y: 80 });
-  });
-
-  test("keeps a separated route strictly orthogonal at both endpoints", () => {
-    const original = "M 314, 329 L 348, 329 L 348, 72 L -4, 72";
-    const separated = orthogonalRoutePoints(separateOrthogonalRoute(original, 12).path);
-
-    expect(separated.slice(1).every((point, index) =>
-      point.x === separated[index].x || point.y === separated[index].y
-    )).toBe(true);
-    expect(separated.at(-2)?.y).toBe(72);
   });
 
   test("restores local waypoints and aligns them to horizontal endpoint ports", () => {
@@ -120,67 +155,5 @@ describe("orthogonal route primitives", () => {
       point.x === restored[index].x || point.y === restored[index].y
     )).toBe(true);
     expect(restored.at(-2)).toEqual({ x: -16, y: 72 });
-  });
-
-  test("assigns a deterministic bounded lane per connection", () => {
-    const first = routeLaneOffset("ui-session-command");
-
-    expect(routeLaneOffset("ui-session-command")).toBe(first);
-    expect([-12, -8, -4, 0, 4, 8, 12]).toContain(first);
-  });
-
-  test("assigns distinct lanes to connections sharing an endpoint or module channel", () => {
-    const lanes = planRouteLaneOffsets([
-      { connectionId: "first", sourceEndpointKey: "a:out", targetEndpointKey: "b:in", channelKey: "a:b" },
-      { connectionId: "second", sourceEndpointKey: "b:in", targetEndpointKey: "c:in", channelKey: "b:c" },
-      { connectionId: "third", sourceEndpointKey: "a:other", targetEndpointKey: "b:other", channelKey: "a:b" },
-    ]);
-
-    expect(lanes.get("first")).not.toBe(lanes.get("second"));
-    expect(lanes.get("first")).not.toBe(lanes.get("third"));
-  });
-
-  test("routes a large-graph edge around an intervening module", () => {
-    const route = routeFastOrthogonalInterface({
-      nodes: [{
-        id: "obstacle",
-        data: {},
-        position: { x: 120, y: 60 },
-        measured: { width: 100, height: 100 },
-      }],
-      sourceX: 0,
-      sourceY: 110,
-      targetX: 340,
-      targetY: 110,
-      sourcePosition: "right",
-      targetPosition: "left",
-    });
-    const points = orthogonalRoutePoints(route.path);
-
-    expect(points[0]).toEqual({ x: 0, y: 110 });
-    expect(points.at(-1)).toEqual({ x: 340, y: 110 });
-    expect(points.slice(1).some((point) => point.y < 42 || point.y > 178)).toBe(true);
-  });
-
-  test("keeps normal routes outside opposed source and target port sides", () => {
-    const route = routeOrthogonalInterface({
-      nodes: [],
-      sourceX: 240,
-      sourceY: 250,
-      targetX: 20,
-      targetY: 70,
-      sourcePosition: "right",
-      targetPosition: "left",
-    });
-
-    expect(route).not.toBeInstanceOf(Error);
-    const points = orthogonalRoutePoints((route as { svgPathString: string }).svgPathString);
-    expect(points[1].x).toBeGreaterThan(240);
-    expect(points[1].y).toBe(250);
-    expect(points.at(-2)!.x).toBeLessThan(20);
-    expect(points.at(-2)!.y).toBe(70);
-    expect(points.slice(1).every((point, index) =>
-      point.x === points[index].x || point.y === points[index].y
-    )).toBe(true);
   });
 });

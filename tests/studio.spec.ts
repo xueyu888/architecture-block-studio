@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import axe, { type AxeResults } from "axe-core";
 import { performanceDesignDocument } from "./fixtures/performanceDesign";
+import { fiveLevelRoutingDesignDocument } from "./fixtures/fiveLevelRoutingDesign";
+import { routingStressDesignDocument } from "./fixtures/routingStressDesign";
 import { createPerformanceSample, emitPerformanceSample } from "./performance/performanceSample";
 
 const examplePath = fileURLToPath(
@@ -380,8 +382,9 @@ async function routeNodeCollisions(page: Page): Promise<string[]> {
       const targetId = route?.dataset.targetNodeId;
       const matrix = path.getScreenCTM();
       if (!matrix) return [];
-      const points = [...path.getAttribute("d")!.matchAll(/[ML]\s*(-?\d+(?:\.\d+)?),?\s*(-?\d+(?:\.\d+)?)/g)]
-        .map((match) => new DOMPoint(Number(match[1]), Number(match[2])).matrixTransform(matrix));
+      const routeGeometry = path.closest<SVGGElement>("[data-route-points]");
+      const points = JSON.parse(routeGeometry?.dataset.routePoints ?? "[]")
+        .map((point: { x: number; y: number }) => new DOMPoint(point.x, point.y).matrixTransform(matrix));
       const hit = points.slice(1).some((right, index) => {
         const left = points[index];
         return nodes.some(({ id, rect }) => {
@@ -542,6 +545,17 @@ async function geometryIssues(page: Page) {
     const collisions: string[] = [];
 
     const paths = [...document.querySelectorAll<SVGPathElement>(".bd-interface-route")];
+    const microSegments = paths.flatMap((path) => {
+      const route = path.closest<SVGGElement>("[data-route-points]");
+      const points = JSON.parse(route?.dataset.routePoints ?? "[]") as Array<{ x: number; y: number }>;
+      return points.slice(1).flatMap((point, index) => {
+        const previous = points[index];
+        const length = Math.abs(point.x - previous.x) + Math.abs(point.y - previous.y);
+        return length > 0 && length < 1
+          ? [`${path.closest(".react-flow__edge")?.getAttribute("data-id") ?? "unknown"}:${length}`]
+          : [];
+      });
+    });
     paths.forEach((path) => {
       const route = path.closest<SVGGElement>("[data-source-node-id]");
       const sourceId = route?.dataset.sourceNodeId;
@@ -690,7 +704,196 @@ async function geometryIssues(page: Page) {
       });
     });
 
-    return { collisions, labelOverlaps, siblingOverlaps, boundaryEscapes, endpointIntrusions, sharedRoutes };
+    return {
+      collisions,
+      labelOverlaps,
+      siblingOverlaps,
+      boundaryEscapes,
+      endpointIntrusions,
+      microSegments,
+      sharedRoutes,
+    };
+  });
+}
+
+async function exhaustiveRouteAudit(page: Page) {
+  return page.evaluate(() => {
+    interface Point { x: number; y: number }
+    interface Jump { segmentIndex: number; point: Point; radius: number }
+    interface Segment { a: Point; b: Point; axis: "h" | "v"; index: number }
+    interface RouteAudit {
+      id: string;
+      points: Point[];
+      jumps: Jump[];
+      segments: Segment[];
+    }
+    const range = (left: number, right: number): [number, number] =>
+      left <= right ? [left, right] : [right, left];
+    const overlapLength = (left: Segment, right: Segment) => {
+      if (left.axis !== right.axis) return 0;
+      if (left.axis === "h") {
+        if (left.a.y !== right.a.y) return 0;
+        const [leftStart, leftEnd] = range(left.a.x, left.b.x);
+        const [rightStart, rightEnd] = range(right.a.x, right.b.x);
+        return Math.max(0, Math.min(leftEnd, rightEnd) - Math.max(leftStart, rightStart));
+      }
+      if (left.a.x !== right.a.x) return 0;
+      const [leftStart, leftEnd] = range(left.a.y, left.b.y);
+      const [rightStart, rightEnd] = range(right.a.y, right.b.y);
+      return Math.max(0, Math.min(leftEnd, rightEnd) - Math.max(leftStart, rightStart));
+    };
+    const crossing = (left: Segment, right: Segment): Point | undefined => {
+      if (left.axis === right.axis) return undefined;
+      const horizontal = left.axis === "h" ? left : right;
+      const vertical = left.axis === "v" ? left : right;
+      const [minX, maxX] = range(horizontal.a.x, horizontal.b.x);
+      const [minY, maxY] = range(vertical.a.y, vertical.b.y);
+      return vertical.a.x > minX && vertical.a.x < maxX && horizontal.a.y > minY && horizontal.a.y < maxY
+        ? { x: vertical.a.x, y: horizontal.a.y }
+        : undefined;
+    };
+    const projectedOverlap = (left: Segment, right: Segment) => {
+      if (left.axis !== right.axis) return 0;
+      const [leftStart, leftEnd] = left.axis === "h"
+        ? range(left.a.x, left.b.x)
+        : range(left.a.y, left.b.y);
+      const [rightStart, rightEnd] = right.axis === "h"
+        ? range(right.a.x, right.b.x)
+        : range(right.a.y, right.b.y);
+      return Math.max(0, Math.min(leftEnd, rightEnd) - Math.max(leftStart, rightStart));
+    };
+    const samePoint = (left: Point, right: Point) => left.x === right.x && left.y === right.y;
+    const sharedTerminalStubCoversOverlap = (
+      leftRoute: RouteAudit,
+      leftSegment: Segment,
+      rightRoute: RouteAudit,
+      rightSegment: Segment,
+    ) => {
+      const terminalStubs = (route: RouteAudit) => [
+        { endpoint: route.points[0], segment: route.segments[0] },
+        { endpoint: route.points.at(-1)!, segment: route.segments.at(-1)! },
+      ];
+      return terminalStubs(leftRoute).some((leftStub) => terminalStubs(rightRoute).some((rightStub) => {
+        if (!samePoint(leftStub.endpoint, rightStub.endpoint) ||
+          leftStub.segment.axis !== leftSegment.axis || rightStub.segment.axis !== rightSegment.axis) return false;
+        const [leftStart, leftEnd] = leftSegment.axis === "h"
+          ? range(leftSegment.a.x, leftSegment.b.x)
+          : range(leftSegment.a.y, leftSegment.b.y);
+        const [rightStart, rightEnd] = rightSegment.axis === "h"
+          ? range(rightSegment.a.x, rightSegment.b.x)
+          : range(rightSegment.a.y, rightSegment.b.y);
+        const overlapStart = Math.max(leftStart, rightStart);
+        const overlapEnd = Math.min(leftEnd, rightEnd);
+        const [leftStubStart, leftStubEnd] = leftStub.segment.axis === "h"
+          ? range(leftStub.segment.a.x, leftStub.segment.b.x)
+          : range(leftStub.segment.a.y, leftStub.segment.b.y);
+        const [rightStubStart, rightStubEnd] = rightStub.segment.axis === "h"
+          ? range(rightStub.segment.a.x, rightStub.segment.b.x)
+          : range(rightStub.segment.a.y, rightStub.segment.b.y);
+        return overlapEnd > overlapStart &&
+          overlapStart >= leftStubStart && overlapEnd <= leftStubEnd &&
+          overlapStart >= rightStubStart && overlapEnd <= rightStubEnd;
+      }));
+    };
+    const perRouteIssues: string[] = [];
+    const routes = [...document.querySelectorAll<SVGGElement>("[data-route-points]")].map<RouteAudit>((group) => {
+      const id = group.closest(".react-flow__edge")?.getAttribute("data-id") ?? "unknown";
+      const points = JSON.parse(group.dataset.routePoints ?? "[]") as Point[];
+      const jumps = JSON.parse(group.dataset.routeJumps ?? "[]") as Jump[];
+      const segments = points.slice(1).flatMap<Segment>((point, index) => {
+        const previous = points[index];
+        if (![previous.x, previous.y, point.x, point.y].every(Number.isFinite)) {
+          perRouteIssues.push(`${id}: non-finite coordinate`);
+          return [];
+        }
+        if (previous.x === point.x && previous.y === point.y) {
+          perRouteIssues.push(`${id}: zero-length segment ${index}`);
+          return [];
+        }
+        const axis = previous.y === point.y ? "h" : previous.x === point.x ? "v" : undefined;
+        if (!axis) {
+          perRouteIssues.push(`${id}: diagonal segment ${index}`);
+          return [];
+        }
+        const length = Math.abs(point.x - previous.x) + Math.abs(point.y - previous.y);
+        if (length < 1) perRouteIssues.push(`${id}: micro segment ${index} (${length})`);
+        return [{ a: previous, b: point, axis, index }];
+      });
+      if (points.length < 2 || segments.length !== points.length - 1) {
+        perRouteIssues.push(`${id}: incomplete polyline`);
+      }
+      segments.slice(1).forEach((segment, index) => {
+        const previous = segments[index];
+        if (previous.axis !== segment.axis) return;
+        const previousDelta = previous.axis === "h" ? previous.b.x - previous.a.x : previous.b.y - previous.a.y;
+        const currentDelta = segment.axis === "h" ? segment.b.x - segment.a.x : segment.b.y - segment.a.y;
+        if (Math.sign(previousDelta) !== Math.sign(currentDelta)) perRouteIssues.push(`${id}: reversal ${index}`);
+      });
+      segments.forEach((left, leftIndex) => segments.slice(leftIndex + 2).forEach((right) => {
+        if (overlapLength(left, right) > 0 || crossing(left, right)) {
+          perRouteIssues.push(`${id}: self intersection ${left.index}/${right.index}`);
+        }
+      }));
+      if (Number(group.dataset.routeJumpCount) !== jumps.length) {
+        perRouteIssues.push(`${id}: jump count mismatch`);
+      }
+      return { id, points, jumps, segments };
+    });
+    const duplicateRouteIds = routes
+      .map((route) => route.id)
+      .filter((id, index, ids) => ids.indexOf(id) !== index);
+    const parallelConflicts: string[] = [];
+    const unbridgedCrossings: string[] = [];
+    const coveredJumps = new Set<string>();
+    let auditedPairCount = 0;
+    routes.forEach((left, leftIndex) => routes.slice(leftIndex + 1).forEach((right) => {
+      auditedPairCount += 1;
+      left.segments.forEach((leftSegment) => right.segments.forEach((rightSegment) => {
+        if (leftSegment.axis === rightSegment.axis && projectedOverlap(leftSegment, rightSegment) > 0) {
+          const perpendicularGap = leftSegment.axis === "h"
+            ? Math.abs(leftSegment.a.y - rightSegment.a.y)
+            : Math.abs(leftSegment.a.x - rightSegment.a.x);
+          const exactOverlap = perpendicularGap === 0 && overlapLength(leftSegment, rightSegment) > 0;
+          if (perpendicularGap < 8 && !(exactOverlap && sharedTerminalStubCoversOverlap(
+            left,
+            leftSegment,
+            right,
+            rightSegment,
+          ))) {
+            parallelConflicts.push(`${left.id} <-> ${right.id} (${perpendicularGap}px)`);
+          }
+        }
+        const point = crossing(leftSegment, rightSegment);
+        if (!point) return;
+        const horizontalRoute = leftSegment.axis === "h" ? left : right;
+        const horizontalSegment = leftSegment.axis === "h" ? leftSegment : rightSegment;
+        const jumpIndex = horizontalRoute.jumps.findIndex((jump) =>
+          jump.segmentIndex === horizontalSegment.index &&
+          Math.abs(jump.point.y - point.y) < 0.01 &&
+          Math.abs(jump.point.x - point.x) <= jump.radius
+        );
+        if (jumpIndex < 0) {
+          unbridgedCrossings.push(`${left.id} <-> ${right.id} @ ${point.x},${point.y}`);
+        } else {
+          coveredJumps.add(`${horizontalRoute.id}:${jumpIndex}`);
+        }
+      }));
+    }));
+    const orphanJumps = routes.flatMap((route) => route.jumps.flatMap((_, index) =>
+      coveredJumps.has(`${route.id}:${index}`) ? [] : [`${route.id}:${index}`]
+    ));
+    return {
+      routeIds: routes.map((route) => route.id).sort(),
+      auditedRouteCount: routes.length,
+      auditedPairCount,
+      expectedPairCount: routes.length * (routes.length - 1) / 2,
+      duplicateRouteIds,
+      perRouteIssues,
+      parallelConflicts: [...new Set(parallelConflicts)],
+      unbridgedCrossings,
+      orphanJumps,
+      renderedJumpCount: routes.reduce((count, route) => count + route.jumps.length, 0),
+    };
   });
 }
 
@@ -744,9 +947,9 @@ test("loads the bundled v2 design without DRC or viewport failures", async ({ pa
     siblingOverlaps: [],
     boundaryEscapes: [],
     endpointIntrusions: [],
+    microSegments: [],
     sharedRoutes: [],
   });
-
   const overflow = await page.evaluate(() => [
     document.body.scrollWidth - window.innerWidth,
     document.body.scrollHeight - window.innerHeight,
@@ -1133,6 +1336,7 @@ test("routes and persists a new interface inside an existing complex design", as
     siblingOverlaps: [],
     boundaryEscapes: [],
     endpointIntrusions: [],
+    microSegments: [],
     sharedRoutes: [],
   });
 
@@ -1730,9 +1934,7 @@ test("renders one semantic target arrow per connection and neutral port affordan
   );
   const projectDirection = await projectLifecycle.evaluate((route) => {
     const path = route.querySelector<SVGPathElement>(".bd-interface-route");
-    const points = [...(path?.getAttribute("d") ?? "").matchAll(
-      /[ML]\s*(-?\d+(?:\.\d+)?),?\s*(-?\d+(?:\.\d+)?)/g,
-    )].map((match) => ({ x: Number(match[1]), y: Number(match[2]) }));
+    const points = JSON.parse(route.getAttribute("data-route-points") ?? "[]") as Array<{ x: number; y: number }>;
     const previous = points.at(-2);
     const target = points.at(-1);
     return {
@@ -2018,7 +2220,7 @@ test("creates a typed interface with the keyboard instead of dragging ports", as
 });
 
 test("completes a design and save journey without switching from the keyboard", async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(90_000);
   const fileMenu = page.getByRole("button", { name: "File", exact: true });
   const designMenu = page.getByRole("button", { name: "Design", exact: true });
   const replaceFocusedText = async (value: string) => {
@@ -2184,8 +2386,133 @@ test("keeps routes outside blocks with both hierarchy containers expanded", asyn
     siblingOverlaps: [],
     boundaryEscapes: [],
     endpointIntrusions: [],
+    microSegments: [],
     sharedRoutes: [],
   });
+  const routeAudit = await exhaustiveRouteAudit(page);
+  expect(routeAudit).toMatchObject({
+    auditedRouteCount: 54,
+    auditedPairCount: 1431,
+    expectedPairCount: 1431,
+    duplicateRouteIds: [],
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  expect(routeAudit.routeIds).toHaveLength(54);
+  expect(routeAudit.renderedJumpCount).toBeGreaterThan(0);
+  if (process.env.CAPTURE_SCENE_ROUTING === "1") {
+    await captureStudioScreenshot(page, "docs/screenshots/scene-routing-double-expanded.png");
+    for (const [title, path] of [
+      ["Rust Agent Core", "docs/screenshots/scene-routing-core-detail.png"],
+      ["Tool System", "docs/screenshots/scene-routing-tool-detail.png"],
+    ] as const) {
+      await page.getByRole("button", { name: title, exact: true }).click({ force: true });
+      await page.waitForTimeout(400);
+      for (let step = 0; step < 4; step += 1) {
+        await page.locator(".react-flow__controls-zoomin").click();
+        await page.waitForTimeout(250);
+      }
+      await captureStudioScreenshot(page, path);
+    }
+  }
+});
+
+test("audits every route in a 100-connection hub with a deliberately skewed degree distribution", async ({ page, browserName }) => {
+  test.setTimeout(90_000);
+  const document = routingStressDesignDocument();
+  await openDesignDialog(page);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "routing-skew-stress.block-design.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(document)),
+  });
+  await expect(page.locator(".bd-document-title span")).toHaveText("Routing Skew Stress", { timeout: 30_000 });
+  await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 60_000 });
+  await expect(page.locator(".react-flow__node")).toHaveCount(101, { timeout: 60_000 });
+  await expect(page.locator(".react-flow__edge")).toHaveCount(100, { timeout: 60_000 });
+  await expect(page.locator('[data-routing-status="Feasible"]')).toHaveCount(100);
+
+  const assertCompleteAudit = async () => {
+    const audit = await exhaustiveRouteAudit(page);
+    expect(audit).toMatchObject({
+      auditedRouteCount: 100,
+      auditedPairCount: 4950,
+      expectedPairCount: 4950,
+      duplicateRouteIds: [],
+      perRouteIssues: [],
+      parallelConflicts: [],
+      unbridgedCrossings: [],
+      orphanJumps: [],
+    });
+    expect(audit.routeIds).toHaveLength(100);
+  };
+  await assertCompleteAudit();
+
+  await runMenuCommand(page, "Design", "Optimize Routing");
+  await waitForEditorIdle(page);
+  await assertCompleteAudit();
+
+  if (process.env.CAPTURE_ROUTING_STRESS === "1" && browserName === "chromium") {
+    await toolbarButton(page, "适应窗口").click({ force: true });
+    await page.waitForTimeout(400);
+    await captureStudioScreenshot(page, "docs/screenshots/routing-stress-overview.png");
+    await page.locator('.bd-tree-select[data-level-id="system"][data-node-id="hub"]').click({ force: true });
+    await page.waitForTimeout(500);
+    await captureStudioScreenshot(page, "docs/screenshots/routing-stress-hub-detail.png");
+  }
+});
+
+test("expands five hierarchy layers and audits every visible route and pair", async ({ page, browserName }) => {
+  test.setTimeout(120_000);
+  const document = fiveLevelRoutingDesignDocument();
+  await openDesignDialog(page);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "five-level-routing-stress.block-design.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(document)),
+  });
+  await expect(page.locator(".bd-document-title span")).toHaveText("Five-Level Routing Stress", { timeout: 30_000 });
+  await expect(page.locator(".bd-validation-summary")).toContainText("0 errors");
+  for (let levelNumber = 1; levelNumber <= 5; levelNumber += 1) {
+    await expandHierarchy(page, `Layer ${levelNumber} Boundary`);
+  }
+
+  await expect(page.locator(".bd-level-chip")).toHaveText("5 expanded");
+  await expect(page.locator(".react-flow__node")).toHaveCount(17, { timeout: 60_000 });
+  await expect(page.locator(".react-flow__edge")).toHaveCount(20, { timeout: 60_000 });
+  await expect(page.locator('[data-routing-status="Feasible"]')).toHaveCount(20);
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    microSegments: [],
+    sharedRoutes: [],
+  });
+  const audit = await exhaustiveRouteAudit(page);
+  expect(audit).toMatchObject({
+    auditedRouteCount: 20,
+    auditedPairCount: 190,
+    expectedPairCount: 190,
+    duplicateRouteIds: [],
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  expect(audit.routeIds).toHaveLength(20);
+
+  if (process.env.CAPTURE_ROUTING_FIVE_LEVEL === "1" && browserName === "chromium") {
+    await toolbarButton(page, "适应窗口").click({ force: true });
+    await page.waitForTimeout(500);
+    await captureStudioScreenshot(page, "docs/screenshots/routing-five-level-overview.png");
+    await page.locator('.bd-tree-select[data-level-id="level-2"][data-node-id="layer-3"]').click({ force: true });
+    await page.waitForTimeout(500);
+    await captureStudioScreenshot(page, "docs/screenshots/routing-five-level-detail.png");
+  }
 });
 
 test("resizes, collapses, maximizes, floats and resets dock panels", async ({ page }) => {
@@ -2490,10 +2817,11 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   await expect.poll(() => revealedRoute.evaluate((path) => {
     const matrix = (path as SVGPathElement).getScreenCTM();
     const canvas = path.closest(".react-flow")?.getBoundingClientRect();
-    const points = [...(path.getAttribute("d") ?? "").matchAll(/[ML]\s*(-?\d+(?:\.\d+)?),?\s*(-?\d+(?:\.\d+)?)/g)];
+    const route = path.closest<SVGGElement>("[data-route-points]");
+    const points = JSON.parse(route?.dataset.routePoints ?? "[]") as Array<{ x: number; y: number }>;
     if (!matrix || !canvas || points.length < 2) return false;
-    return points.every((match) => {
-      const point = new DOMPoint(Number(match[1]), Number(match[2])).matrixTransform(matrix);
+    return points.every((routePoint) => {
+      const point = new DOMPoint(routePoint.x, routePoint.y).matrixTransform(matrix);
       return point.x >= canvas.left && point.x <= canvas.right && point.y >= canvas.top && point.y <= canvas.bottom;
     });
   })).toBe(true);
@@ -3070,6 +3398,7 @@ test("aligns and distributes same-level modules as atomic arrangement commands",
     siblingOverlaps: [],
     boundaryEscapes: [],
     endpointIntrusions: [],
+    microSegments: [],
     sharedRoutes: [],
   });
 });
@@ -3286,6 +3615,7 @@ test("resizes a selected module from a corner and persists one atomic geometry c
     siblingOverlaps: [],
     boundaryEscapes: [],
     endpointIntrusions: [],
+    microSegments: [],
     sharedRoutes: [],
   });
   if (process.env.CAPTURE_NODE_RESIZE === "1" && browserName === "chromium") {
@@ -3526,6 +3856,7 @@ test("authors, connects, nests, undoes, saves, and reloads a local module design
     siblingOverlaps: [],
     boundaryEscapes: [],
     endpointIntrusions: [],
+    microSegments: [],
     sharedRoutes: [],
   });
   await expect(page.locator(".bd-interface-underlay")).toHaveCount(2);

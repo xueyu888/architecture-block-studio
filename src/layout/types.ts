@@ -17,6 +17,8 @@ export interface LayoutBlockNodeData extends Record<string, unknown> {
 
 export interface LayoutInterfaceEdgeData extends Record<string, unknown> {
   connection: BlockConnection;
+  /** Stable identity shared by every visible leg of one logical connection. */
+  commodityId: string;
   levelId: string;
   definition: InterfaceDefinition;
   kind: InterfaceKind;

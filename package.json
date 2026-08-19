@@ -30,7 +30,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@tisoap/react-flow-smart-edge": "^4.13.1",
     "@xyflow/react": "12.9.3",
     "dockview-react": "^8.1.0",
     "elkjs": "0.9.3",

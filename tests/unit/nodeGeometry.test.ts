@@ -3,6 +3,7 @@ import {
   BLOCK_NODE_GEOMETRY,
   baseNodeDimensions,
   minimumNodeDimensions,
+  portAnchorOffset,
   portLabelWidth,
   portRailOffset,
   portsForSide,
@@ -10,6 +11,21 @@ import {
 import { createBlock, createPort } from "../../src/editor/designEditor";
 
 describe("block node geometry", () => {
+  it("uses the rendered border box and handle edge as the routing anchor", () => {
+    const ports = [
+      createPort({ id: "first", label: "First", side: "right", direction: "output", required: true }),
+      createPort({ id: "second", label: "Second", side: "right", direction: "output", required: true }),
+    ];
+    expect(portAnchorOffset({ width: 250, height: 175 }, ports, ports[0], false)).toEqual({
+      x: 254,
+      y: 1 + 173 / 3,
+    });
+    expect(portAnchorOffset({ width: 250, height: 175 }, ports, ports[1], true)).toEqual({
+      x: 253,
+      y: 2 + (171 * 2) / 3,
+    });
+  });
+
   it("keeps the default card size when no port rail needs more room", () => {
     const node = createBlock({ id: "module", title: "Module" });
     expect(minimumNodeDimensions(node)).toEqual({

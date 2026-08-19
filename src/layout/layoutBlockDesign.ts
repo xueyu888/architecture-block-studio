@@ -251,6 +251,7 @@ function actualEdge(
     targetHandle: connection.target.portId,
     data: {
       connection,
+      commodityId: flowEdgeId(instancePath, connection.id),
       levelId: level.id,
       definition,
       kind: definition.kind,
@@ -306,6 +307,7 @@ function bindingEdges(
         targetHandle: parentIsSource ? innerPortId(parentPort.id) : childHandle,
         data: {
           connection,
+          commodityId: flowEdgeId(instancePath, connection.id),
           levelId: level.id,
           definition,
           kind: definition.kind,

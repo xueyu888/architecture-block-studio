@@ -184,6 +184,10 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
     "--port-bottom-rail-height": `${portsBySide.bottom.length > 0 ? BLOCK_NODE_GEOMETRY.horizontalRailHeight : 0}px`,
     "--port-left-label-width": `${widestLabel("left")}px`,
     "--port-right-label-width": `${widestLabel("right")}px`,
+    "--block-border-width": `${data.expanded
+      ? BLOCK_NODE_GEOMETRY.expandedBorderWidth
+      : BLOCK_NODE_GEOMETRY.borderWidth}px`,
+    "--port-handle-size": `${BLOCK_NODE_GEOMETRY.portHandleSize}px`,
   } as GeometryStyle;
   const minimumSize = minimumNodeDimensions(block);
   const resizeVisible = selected && !data.expanded && Boolean(data.resizeNode) && data.canEditSelection?.() !== false;

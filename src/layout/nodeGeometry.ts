@@ -25,7 +25,40 @@ export const BLOCK_NODE_GEOMETRY = {
   portLabelPadding: 10,
   asciiGlyphWidth: 4.8,
   wideGlyphWidth: 8,
+  borderWidth: 1,
+  expandedBorderWidth: 2,
+  portHandleSize: 10,
 } as const;
+
+/**
+ * Returns the React Flow connection anchor relative to a node frame.
+ *
+ * The rail is absolutely positioned against the block's inner border box and
+ * React Flow connects at the outside edge of the Handle. Keeping that rendered
+ * geometry here prevents the scene router from inventing a slightly different
+ * port coordinate and creating sub-pixel doglegs at endpoints.
+ */
+export function portAnchorOffset(
+  dimensions: NodeDimensions,
+  ports: readonly BlockPort[],
+  port: BlockPort,
+  expanded: boolean,
+): { x: number; y: number } {
+  const sidePorts = portsForSide(ports, port.side);
+  const index = sidePorts.findIndex((candidate) => candidate.id === port.id);
+  if (index < 0) throw new Error(`Port ${port.id} is not present in the supplied node geometry.`);
+  const fraction = (index + 1) / (sidePorts.length + 1);
+  const borderWidth = expanded
+    ? BLOCK_NODE_GEOMETRY.expandedBorderWidth
+    : BLOCK_NODE_GEOMETRY.borderWidth;
+  const handleRadius = BLOCK_NODE_GEOMETRY.portHandleSize / 2;
+  const horizontal = borderWidth + (dimensions.width - borderWidth * 2) * fraction;
+  const vertical = borderWidth + (dimensions.height - borderWidth * 2) * fraction;
+  if (port.side === "left") return { x: borderWidth - handleRadius, y: vertical };
+  if (port.side === "right") return { x: dimensions.width - borderWidth + handleRadius, y: vertical };
+  if (port.side === "top") return { x: horizontal, y: borderWidth - handleRadius };
+  return { x: horizontal, y: dimensions.height - borderWidth + handleRadius };
+}
 
 function glyphWidth(character: string): number {
   return character.codePointAt(0)! <= 0x7f

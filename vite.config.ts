@@ -12,7 +12,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           "dock-vendor": ["dockview-react"],
-          "flow-vendor": ["@xyflow/react", "@tisoap/react-flow-smart-edge"],
+          "flow-vendor": ["@xyflow/react"],
         },
       },
     },

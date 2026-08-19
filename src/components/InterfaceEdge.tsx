@@ -1,19 +1,14 @@
 import { useMemo, useRef, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { BaseEdge, useReactFlow, useStoreApi, type EdgeProps } from "@xyflow/react";
 import {
-  absoluteRoutingObstacles,
+  adaptRouteEndpoints,
   drawOrthogonalRoute,
   editableOrthogonalRoute,
   editableRouteBends,
   moveRouteBend,
   moveRouteSegment,
   orthogonalizeRoutePoints,
-  orthogonalRoutePoints,
   removeRouteBend,
-  restoreManualRoute,
-  routeFastOrthogonalInterface,
-  routeOrthogonalInterface,
-  separateOrthogonalRoute,
   type EditableRouteBend,
   type EditableRouteSegment,
   type RoutePoint,
@@ -63,10 +58,6 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
     const nodeLookup = store.getState().nodeLookup;
     const sourceNode = nodeLookup.get(props.source);
     return {
-      // Smart-edge's public node input is parent-relative. Routing from React
-      // Flow's internal absolute geometry keeps compound children and handles
-      // in one coordinate space; clearing parentId prevents a second offset.
-      obstacles: absoluteRoutingObstacles(nodeLookup.values(), props.source, props.target),
       origin: sourceNode
         ? {
             x: sourceNode.internals.positionAbsolute.x - sourceNode.position.x,
@@ -76,76 +67,27 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
     };
   }, [data?.connection, props.source, props.sourceX, props.sourceY, props.target, props.targetX, props.targetY, store]);
   const drag = useRef<RouteDrag | undefined>(undefined);
-  const automaticBasePath = useMemo(() => {
-    const fallbackPath = routeFastOrthogonalInterface({
-      nodes: routingGeometry.obstacles,
-      sourceX: props.sourceX,
-      sourceY: props.sourceY,
-      targetX: props.targetX,
-      targetY: props.targetY,
-      sourcePosition: props.sourcePosition,
-      targetPosition: props.targetPosition,
-    }).path;
-    if (data?.largeGraph) {
-      return routeFastOrthogonalInterface({
-        nodes: routingGeometry.obstacles,
-        sourceX: props.sourceX,
-        sourceY: props.sourceY,
-        targetX: props.targetX,
-        targetY: props.targetY,
-        sourcePosition: props.sourcePosition,
-        targetPosition: props.targetPosition,
-      }).path;
-    }
-    const route = routeOrthogonalInterface({
-      nodes: routingGeometry.obstacles,
-      sourceX: props.sourceX,
-      sourceY: props.sourceY,
-      targetX: props.targetX,
-      targetY: props.targetY,
-      sourcePosition: props.sourcePosition,
-      targetPosition: props.targetPosition,
-    });
-    return route instanceof Error ? fallbackPath : route.svgPathString;
-  }, [
-    data?.largeGraph,
-    data?.routeRevision,
-    props.sourcePosition,
-    props.sourceX,
-    props.sourceY,
-    props.targetPosition,
-    props.targetX,
-    props.targetY,
-    routingGeometry.obstacles,
-  ]);
-  const automaticRoute = useMemo(() => separateOrthogonalRoute(
-    automaticBasePath,
-    data?.laneOffset ?? 0,
-    {
-      separateSource: data?.separateSourceEndpoint,
-      separateTarget: data?.separateTargetEndpoint,
-    },
-  ), [
-    automaticBasePath,
-    data?.laneOffset,
-    data?.separateSourceEndpoint,
-    data?.separateTargetEndpoint,
-  ]);
   if (!data) return null;
+  const routePoints = data.plannedRoute ? adaptRouteEndpoints(
+    data.plannedRoute,
+    { x: props.sourceX, y: props.sourceY },
+    { x: props.targetX, y: props.targetY },
+    props.sourcePosition,
+    props.targetPosition,
+  ) : undefined;
+  if (!routePoints || routePoints.length < 2) return null;
+  const routeMatchesPlan = data.plannedRoute?.length === routePoints.length && data.plannedRoute.every(
+    (point, index) => point.x === routePoints[index].x && point.y === routePoints[index].y,
+  );
+  // Bridges belong to committed route geometry. During a live node gesture the
+  // endpoint legs are adapted locally, so stale bridge coordinates are hidden
+  // until the scene is solved again instead of creating a diagonal preview.
+  const renderedJumps = routeMatchesPlan ? data.routeJumps : undefined;
+  const routePath = drawOrthogonalRoute(routePoints, renderedJumps);
+  const plainRoutePath = drawOrthogonalRoute(routePoints);
   const persistedPoints = data.connection.routing && !data.boundaryContinuation
-    ? restoreManualRoute({
-        source: { x: props.sourceX, y: props.sourceY },
-        target: { x: props.targetX, y: props.targetY },
-        waypoints: data.connection.routing.waypoints,
-        origin: routingGeometry.origin,
-        sourcePosition: props.sourcePosition,
-        targetPosition: props.targetPosition,
-      })
+    ? routePoints
     : undefined;
-  const routePoints = persistedPoints ?? orthogonalRoutePoints(automaticRoute.path);
-  const routePath = persistedPoints
-    ? drawOrthogonalRoute(persistedPoints)
-    : automaticRoute.path;
   const editing = editableOrthogonalRoute(routePoints);
   const bends = persistedPoints ? editableRouteBends(routePoints) : [];
   const endpointGrips = [
@@ -188,7 +130,7 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
     if (!elements) return;
     const { group, preview } = elements;
     group.classList.add("is-routing");
-    preview.setAttribute("d", routePath);
+    preview.setAttribute("d", plainRoutePath);
     drag.current = {
       kind: "segment",
       pointerId: event.pointerId,
@@ -211,7 +153,7 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
     if (!elements) return;
     const { group, preview } = elements;
     group.classList.add("is-routing");
-    preview.setAttribute("d", routePath);
+    preview.setAttribute("d", plainRoutePath);
     drag.current = {
       kind: "bend",
       pointerId: event.pointerId,
@@ -311,7 +253,7 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
     });
     if (next[bend.index].x === bend.point.x && next[bend.index].y === bend.point.y) return;
     if (commitPoints(next)) {
-      data.requestRouteHandleFocus?.({ kind: "bend", index: bend.index });
+      data.requestRouteHandleFocus?.({ kind: "bend", index: bend.index, point: next[bend.index] });
     }
   };
 
@@ -321,23 +263,27 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
       data-target-node-id={props.target}
       data-connection-id={data.connection.id}
       data-routing-mode={persistedPoints ? "manual" : "automatic"}
-      data-large-graph={data.largeGraph ? "true" : "false"}
+      data-routing-status={data.routingStatus}
+      data-simplified-interaction={data.simplifiedInteraction ? "true" : "false"}
       data-boundary-continuation={data.boundaryContinuation ? "true" : "false"}
       data-boundary-node-id={data.boundaryNodeId}
+      data-route-points={JSON.stringify(routePoints)}
+      data-route-jumps={JSON.stringify(renderedJumps ?? [])}
+      data-route-jump-count={renderedJumps?.length ?? 0}
     >
-      {(!data.largeGraph || props.selected) && (
+      {(!data.simplifiedInteraction || props.selected) && (
         <path className="bd-interface-underlay" d={routePath} aria-hidden="true" />
       )}
       <BaseEdge
         id={props.id}
         path={routePath}
-        style={data.largeGraph ? { ...props.style, transition: "none" } : props.style}
+        style={props.style}
         markerStart={props.markerStart}
         markerEnd={props.markerEnd}
-        interactionWidth={data.largeGraph ? 18 : 28}
+        interactionWidth={28}
         className="bd-interface-route"
       />
-      {props.selected && data.canEditSelection?.() !== false && <path className="bd-route-preview" d={routePath} aria-hidden="true" />}
+      {props.selected && data.canEditSelection?.() !== false && <path className="bd-route-preview" d={plainRoutePath} aria-hidden="true" />}
       {props.selected && data.canEditSelection?.() !== false && !data.boundaryContinuation && endpointGrips.map((point, index) => (
         <circle
           key={index === 0 ? "source-grip" : "target-grip"}
@@ -389,6 +335,8 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
             type="button"
             className="bd-route-handle bd-route-bend-handle nodrag nopan"
             data-route-handle-index={bend.index}
+            data-route-x={bend.point.x}
+            data-route-y={bend.point.y}
             aria-label={`Move route bend ${bend.index}. Use Arrow keys to move; Delete or double click to remove.`}
             onPointerDown={(event) => beginBendDrag(event, bend)}
             onDoubleClick={(event) => {

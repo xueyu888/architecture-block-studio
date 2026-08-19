@@ -33,7 +33,7 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 - 在 Hierarchy 中按模块标题、id、Owner 或 Level 搜索，并直接定位画布与 Inspector。
 - 选中模块即可查看直接入站 / 出站接口与对端，点击摘要进入完整接口合同。
 - 使用 DRC 检查结构、引用、方向、必连端口和合同完整性，并直接查看修正方向。
-- 使用 ELK 生成分层布局，并用正交避障路由保持复杂设计可读。
+- 使用 ELK 生成分层布局；自动连线由场景级正交多连接策略统一规划，以障碍净空、端口方向、真实 lane 间距、有限绕行和确定性证书保持复杂设计可读；无法消除的正交交叉用克制的线桥表达前后关系。
 - 缩放到系统总览时只保留模块标题、端口名和线路，放大后自动恢复 Owner、摘要、类型等完整细节。
 - 选中模块即可从四边或四角调整尺寸；端口和线路实时跟随，结果进入同一份 JSON、Undo / Redo 与保存链。
 - 移动或调整模块时自动显示边缘、中心与同宽 / 同高辅助线；按住 Alt 可临时关闭吸附，画布不会擅自跳回全图视角。
@@ -42,7 +42,7 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 - 画布不显示线中标签；端口承担局部识别，点击连线后由 Inspector 展示完整合同。
 - 通过 Undo / Redo、事务性加载和 dirty 状态保护编辑过程。
 
-![复杂层级与跨边界布线](docs/screenshots/editor-routing-validation.png)
+![双层展开后的场景级正交布线局部](docs/screenshots/scene-routing-core-detail.png)
 
 卡片尺寸不是画布临时效果。拖动四边 / 四角或使用 **Shift + 方向键** 调整后，位置、宽高、端口和线路作为一组原子几何保存；内容安全下限会避免端口文字被压坏。
 
@@ -61,6 +61,12 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 在既有复杂设计中继续新增模块和接口时，线路仍从正确端口侧进出，并避开其他模块；自动路径可直接选中，再用鼠标或方向键调整，最终随同一份 JSON 保存。
 
 ![既有复杂设计中的增量布线](docs/screenshots/incremental-routing.png)
+
+路由质量使用五层合同持续检查：逐条线、全部无序线对、稀疏到单模块 100+ 连接的偏斜密度、移动 / 调整 / 展开 / 手动布线状态，以及 Chromium / Firefox 真实渲染。真实 UI 场景会同时展开五层边界并审计全部 20 条可见线与 190 组线对；偏斜压力场景中的 100 条连接与 4950 组线对也全部审计，不靠抽样，更不会只修某一张截图中的特例。
+
+![五层展开的稀疏跨层布线](docs/screenshots/routing-five-level-overview.png)
+
+![单模块 100 连接压力场景](docs/screenshots/routing-stress-overview.png)
 
 面对陌生或大型设计，可以直接搜索模块、Owner 或所属 Level；结果仍使用同一选择语义，不会制造脱离画布的第二份结构。
 
@@ -121,6 +127,7 @@ pnpm dev --host 127.0.0.1 --port 4317
 
 - [产品定义](docs/PRODUCT.md)：用户、核心旅程、产品边界与演进方向。
 - [系统架构](docs/ARCHITECTURE.md)：Owner、状态分类、依赖方向、公开接口与 Schema 兼容策略。
+- [布线策略](docs/ROUTING.md)：分层正交多连接的数学合同、目标函数、求解边界、验证器与证明等级。
 - [质量标准](docs/QUALITY.md)：生产级 Definition of Done、测试矩阵、文件安全与发布门槛。
 - [演进路线](docs/ROADMAP.md)：当前成熟度、问题优先级与真实迭代记录。
 - [第三方许可](THIRD_PARTY_NOTICES.md)：依赖与许可证信息。

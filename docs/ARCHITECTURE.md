@@ -17,7 +17,7 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
           │       │       └──────────────► io：解析 / 序列化 / 下载
           │       └──────────────────────► model：Schema / DRC / 图查询
           ├────────► layout/types：纯 Flow 投影
-          ├────────► routing：车道规划 / 正交避障
+          ├────────► routing：场景适配 / 正交多连接求解 / 独立验证
           └────────► studio/selection：工作区选择协议
                               │
                               ▼
@@ -36,7 +36,7 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 | `src/editor` | 拥有原子文档变换、历史与 dirty 判断 | `DesignOperation`、`applyDesignOperation`、`useDesignEditor`、具名工厂 | 不渲染、不路由、不持久化；失败不产生部分修改 |
 | `src/io` | 拥有外部 JSON 与已校验文档之间的转换 | `loadDesignFromObject/File/Url`、`serializeDesign`、`downloadDesign` | 不解释模块业务；加载失败保留已安装文档 |
 | `src/layout` | 从文档与展开状态派生纯复合节点、边和位置投影，定义布局真正消费的签名，并提供不持有交互状态的吸附与多选编排几何 | `layoutBlockDesign`、`layoutFrameSignature`、`layoutProjectionSignature`、`snapMovingRect`、`snapResizingRect`、`alignSelection`、`distributeSelection`、`LayoutResult`、`PlacementMode` | 不依赖 Studio 或 React 交互回调，不修改源文档；没有合法吸附候选时原样返回预览几何，非法编排输入或布局失败上抛给 Studio |
-| `src/routing` | 从绝对几何、端口冲突组和连接 id 派生正交避障路径与确定性车道；提供不持有 UI 状态的正交路线编辑几何 | `absoluteRoutingObstacles`、`planRouteLaneOffsets`、`routeOrthogonalInterface`、`separateOrthogonalRoute`、`editableOrthogonalRoute`、`moveRouteSegment`、`moveRouteBend`、`removeRouteBend` | 设计坐标是路由事实；视口缩放不得改变路径，纯几何函数不移动模块、不持有 gesture、不直接改写接口事实 |
+| `src/routing` | 从绝对布局几何和锁定 waypoint 构造 `RoutingScene`，统一拥有版本化正交多连接策略、规模资源预算、确定性求解、证明等级与独立验证；另提供不持有 UI 状态的手工路线编辑几何和由已验证路线派生的线桥 | `createRoutingSceneFromLayout`、`routingPolicyForScene`、`solveRoutingScene`、`verifyRoutingResult`、`planRouteJumps`、`RoutingScene`、`RoutingPolicy`、`RoutingResult`、`editableOrthogonalRoute`、`moveRouteSegment`、`moveRouteBend`、`removeRouteBend` | 设计坐标是路由事实；不移动模块、不改文档、不持有 gesture；规模只收紧同一策略的有界资源，不改变几何与失败语义；`planRouteJumps` 只决定交叉处的绘制表达，不反写路线。失败返回 `Unresolved` / `InvalidInput`，不调用第二套自动 fallback。完整合同见 [`ROUTING.md`](ROUTING.md) |
 | `src/components` | 将纯布局投影组合为可交互 Canvas，并展示用户视图、发出用户意图 | `CanvasBlockNodeData`、`CanvasInterfaceEdgeData`、Canvas、Node、Edge、Tree、Inspector、Dialogs、Dock、Messages | 交互回调只存在于 Canvas 投影；不直接深改文档，局部表单草稿不得伪装成已提交事实 |
 | `src/studio` | 组合公开能力，拥有工作区选择协议与其他临时工作区状态 | `BlockDesignStudio`、`BlockDesignStudioProps`、`SelectionRef` 及纯选择查询 | 不重新定义 Schema、布局投影或编辑规则；组合失败应可见、可恢复 |
 | `src/App.tsx` | 提供独立应用的默认装配 | 默认示例 URL 与查询参数入口 | 示例不是核心依赖，不拥有设计内容 |
@@ -200,7 +200,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 - Canvas selection 只在受影响的前后节点 / 边对象上投影 `selected`，未受影响的 Flow 元素保持引用稳定；React Flow 事件、配置对象和静态控件同样保持稳定，选择不能借回调或 JSX identity 触发全图协调。
 - Canvas detail level 只从 React Flow viewport 的 zoom 派生，并以根节点展示属性投影给 CSS；低缩放隐藏不可读的 process、摘要、Owner 和 data type，但始终保留模块标题、端口名、端口把手与线路。节点不分别订阅 viewport，这个展示策略不进入文档、历史或布局结果。
 - MiniMap 是可丢弃的 viewport 导航，不是设计事实。宽屏工作台常驻显示；紧凑桌面默认收起并在 Canvas controls 提供显式 Show / Hide overview map，避免覆盖模块或线路。开关状态不进入 JSON、历史、selection 或 Dock 布局。
-- 路由快路径与 Canvas 视口裁剪是两个独立策略：前者改变派生路径算法，后者只减少压力图的 DOM 挂载。裁剪不得删减 `LayoutResult`、React Flow store、MiniMap、图中总数或保存输出；200 / 400 档继续全量挂载以执行每条路径的几何门禁。
+- 布线资源边界与 Canvas 视口裁剪是两个独立策略：大型场景只减少同一 `orthogonal-scene-v1` 策略的候选顶点、相关障碍物和迭代数，后者只减少压力图的 DOM 挂载。两者都不得删减 `LayoutResult`、React Flow store、MiniMap、图中总数或保存输出；200 / 400 档继续全量挂载以执行每条路径的几何门禁。
 - 视口导航同样与设计事实正交：默认和 200 / 400 图使用 280 ms 平滑定位；启用视口裁剪的压力图使用单次直接定位，避免插值途中持续换挂载。React Flow MiniMap 会保留首次 `onNodeClick` 闭包，因此 Canvas 暴露稳定回调并从 ref 读取最新规模策略；不能让第三方回调生命周期冻结空布局时期的配置。
 - 用户拖动期间的 position 只是 React Flow 预览；松手时 Canvas 按选中模块数量请求一次 `node/move` 或 `nodes/move`。成组移动保留各模块相对位置并共同接受参考线修正；多选对齐 / 分布同样只生成一次 `nodes/move`，不能按节点拆成多次提交。只有 Editor 接受后，各自的 `node.layout.position` 才成为新位置。若草稿保护、对象存在性或可编辑性规则拒绝操作，Canvas 一次恢复全部 base node 文档投影，不创建补偿操作、不覆盖错误提示或未应用草稿。ELK 自动位置不写回文档。
 - 用户拖动四边 / 四角期间的 position 与 dimensions 同样只是 React Flow 预览；松手只提交一次 `node/resize`。被接受后，布局、端口和线路都从新的文档几何重算；被拒绝后，节点与线路恢复原投影。选中模块上的 Shift + Arrow 按 16 设计像素调整宽或高，并通过一次性 `NodeFocusRequest` 恢复焦点；公告只从被接受的新尺寸派生。
@@ -209,19 +209,22 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 - 每条可见逻辑连接只在真实 target 显示一个语义箭头；内部 hierarchy continuation 不重复显示箭头，Port Handle 不承担方向表达。
 - 路径不得穿过无关模块或无关层级容器。
 - 跨层路径只通过 hierarchy binding 生成 continuation。
-- 自动路由先依端口和障碍物生成最小正交路径；若智能路径已从正确端口侧出入则保持原路径，只有端口侧被违反时才从两端 40 设计像素外向 stub 之间重新寻路。网格寻路和车道偏移留下的微小对角段统一由 `orthogonalizeRoutePoints` 转成显式直角，压缩路径时保留为避开模块所需的同轴折返。
-- 不同连接共享物理端口或模块通道时，`planRouteLaneOffsets` 对冲突图做确定性分道，互不冲突的连接可以复用车道；分道后重新按原路径首尾方向补齐直角，不能为了车道偏移产生斜线或从模块内部接近端口。
-- 路由和车道间距以设计坐标计算；Fit、缩放和设备像素比只改变投影，不能反向改写路径几何。
+- `RoutingSceneAdapter` 把绝对节点矩形、量化端口、层级布线域、commodity / Gate 和锁定 waypoint 映射为纯 `RoutingScene`。adapter 不求路，Canvas 不再为单条 Edge 收集障碍物或按模块对生成 channel。
+- `solveRoutingScene` 先在外扩安全域上建立单连接基准，再以 `U → Q → X → Dmax → Dsum → bends → short segments → signature` 的字典序目标协调当前全部可见 leg。只有真实共线或小于 lane 间距的投影才形成容量冲突；connection id 不生成 lane 偏移。
+- 单连接在版本化完整局部候选可见图中求最优；多连接执行有界 negotiated solve 并由独立 verifier 复算合法性和目标。证书必须列出逐 leg 审计 id 和全部已布通无序线对数量；`Optimal`、`Feasible`、`Unresolved`、`InvalidInput` 与保留的 `Infeasible` 具有不同证明含义，不能把找到路线等同于全局最优。
+- 相邻同轴反向、路径自交、端口法向错误、穿过安全域、Gate 不连续、超出显式绕行上限和小于 lane 间距都不能作为合法结果。唯一允许的共线是同一物理端口的固定短 stub。
+- Port anchor 的边框、展开态边框和 Handle 尺寸由 `layout/nodeGeometry.portAnchorOffset` 与同一组 CSS 变量共同拥有；可见圆点与 React Flow 内外 Handle 使用同一物理坐标。障碍物和 authored 几何按 1 / `coordinateScale` 量化，端点再归一到视觉整像素；小于 1 设计像素的浏览器测量误差继续投影该 anchor，真正的 move / resize 预览才让首尾相邻 leg 随当前端点平移，不能生成亚像素补偿折点。Fit、缩放和设备像素比不能反向改写路径事实。完整数学定义、策略默认值和证书见 [`ROUTING.md`](ROUTING.md)。
+- `planRouteJumps` 只从已验证 `PlannedRoute.points` 派生交叉处的 SVG 线桥：水平线跨过垂直线，相邻交点可合并，端点附近不画桥。它不改变路线、交叉目标、marker、命中几何或 JSON；浏览器逐线对审计必须确认每个严格交叉都有桥且不存在孤立桥。
 - 线路编辑器区分三种职责：空心菱形是从自动 / 手动路径派生的虚拟线段抓手，拖动会移动整段并物化手动 route；实心方点只投影已确认手动路线的真实折点，可拖动、Arrow 微调、Delete 或双击删除；小实心端点只提示可重连，真正的透明命中圆由 React Flow 管理。它们都不是新的设计事实。
 - 用户拖动线段或折点时，预览是临时 UI 状态；只有坐标真正改变，松手才提交一次 `connection/route`。拖动端点只提交一次 `connection/reconnect`。单击抓手、取消拖动或非法目标不得把自动路径误写成手动事实。
 - React Flow viewport 的 zoom 还派生一个根级 inverse-zoom CSS 变量；线段与折点抓手保持 20–24 CSS px 命中区，内部菱形 / 方点更小；重连仍保留 20 设计像素透明命中圆，但视觉只显示 10 设计像素实心点，避免与真实 Port 形成第二个大圆环。该变量和命中几何只参与交互展示，不改变 waypoint、端点或路由计算。
-- 键盘移动抓手时，每次 Arrow 只提交一个 8 设计像素的 `connection/route` 操作；因为受控 Edge 会在文档投影更新时重建，Canvas 用一次性 `RouteHandleFocusRequest` 按 edge、抓手类型和几何身份恢复焦点。该请求只负责连续输入，不进入设计、历史或路由算法。
+- 键盘移动抓手时，每次 Arrow 只提交一个 8 设计像素的 `connection/route` 操作；因为受控 Edge 会在文档投影更新时重建，Canvas 用一次性 `RouteHandleFocusRequest` 按 edge、抓手类型、索引和新坐标等待完全匹配的几何后恢复焦点，不能提前命中旧 DOM。该请求只负责连续输入，不进入设计、历史或路由算法。
 - 手动路由提交与端点位置恢复都复用同一个正交化函数；相邻 waypoints 必须共享 x 或 y，Schema 同样校验这一不变量，外部 JSON 不能产生斜线。
 - 手动 waypoints 属于连接所在 Level；hierarchy continuation 仍是自动投影，不复制手动事实。
 - 白色衬底保证线与网格、容器和相邻路径可区分。
 - 接口类型颜色在普通态、选中态和 target marker 中保持一致；选择只能增强线宽、阴影和把手，不能抹掉接口类型。
 - 线中不渲染标签；端口名提供局部识别，Inspector 提供完整接口语义。
-- Optimize Routing 只修改路由派生 revision；Regenerate Layout 才请求重新放置模块。
+- Optimize Routing 只请求重新派生路线；确定性输入不会因 revision 本身跳线。Regenerate Layout 才请求重新放置模块。
 
 ## 选择与交叉定位
 

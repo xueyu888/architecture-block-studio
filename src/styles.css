@@ -1052,6 +1052,31 @@ button { color: inherit; }
 .bd-react-flow .react-flow__pane:active { cursor: grabbing; }
 .bd-react-flow .react-flow__node { cursor: move; }
 
+.bd-routing-diagnostic {
+  position: absolute;
+  z-index: 9;
+  top: 12px;
+  right: 12px;
+  max-width: 310px;
+  display: grid;
+  gap: 2px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--warning) 38%, var(--surface-raised));
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius-small);
+  color: color-mix(in srgb, var(--warning) 72%, var(--ink));
+  background: color-mix(in srgb, var(--warning) 7%, var(--surface-raised) 93%);
+  box-shadow: 0 3px 12px rgba(51, 40, 20, 0.1);
+  pointer-events: none;
+}
+
+.bd-routing-diagnostic strong { font-size: 9px; }
+.bd-routing-diagnostic span {
+  color: color-mix(in srgb, var(--warning) 42%, var(--text-muted));
+  font-size: 8px;
+  line-height: 1.35;
+}
+
 .bd-canvas-caption {
   max-width: 420px;
   display: flex;
@@ -1104,7 +1129,7 @@ button { color: inherit; }
 .bd-block {
   --block-color: #637080;
   --block-fill: #edf1f5;
-  border: 1px solid #8f9ba8;
+  border: var(--block-border-width) solid #8f9ba8;
   border-radius: 6px;
   background: #fff;
   box-shadow: 0 2px 6px rgba(31, 43, 55, 0.14);
@@ -1234,7 +1259,7 @@ button { color: inherit; }
 .bd-size-guide-height::after { bottom: 0; }
 
 .bd-block.is-expanded {
-  border: 2px solid var(--block-color);
+  border: var(--block-border-width) solid var(--block-color);
   border-radius: var(--radius-medium);
   background: color-mix(in srgb, var(--block-fill) 34%, transparent);
   box-shadow: none;
@@ -1367,8 +1392,8 @@ button { color: inherit; }
 
 .bd-port-handle.react-flow__handle {
   z-index: 2;
-  width: 10px;
-  height: 10px;
+  width: var(--port-handle-size);
+  height: var(--port-handle-size);
   border: 2px solid var(--block-color);
   border-radius: 50%;
   background: #fff;
@@ -1385,22 +1410,22 @@ button { color: inherit; }
 
 .bd-port-left .bd-port-handle-anchor-left.react-flow__handle {
   inset: 50% auto auto 0;
-  transform: translate(-50%, -50%);
+  transform: translate(-150%, -50%);
 }
 
 .bd-port-right .bd-port-handle-anchor-right.react-flow__handle {
   inset: 50% 0 auto auto;
-  transform: translate(50%, -50%);
+  transform: translate(150%, -50%);
 }
 
 .bd-port-top .bd-port-handle-anchor-top.react-flow__handle {
   inset: 0 auto auto 50%;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -150%);
 }
 
 .bd-port-bottom .bd-port-handle-anchor-bottom.react-flow__handle {
   inset: auto auto 0 50%;
-  transform: translate(-50%, 50%);
+  transform: translate(-50%, 150%);
 }
 
 .react-flow__edge-path { stroke-width: 2; stroke-linecap: square; stroke-linejoin: miter; }
