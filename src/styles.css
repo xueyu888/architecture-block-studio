@@ -31,6 +31,7 @@
   --success: #2f7548;
   --selection: #2563d9;
   --selection-soft: #e8f0ff;
+  --alignment-guide: #c43f87;
   --surface-raised: #ffffff;
   --control-border: #c5ced8;
   --divider-strong: #c7d0da;
@@ -1155,6 +1156,69 @@ button { color: inherit; }
 .bd-node-resize-line.right::after { top: 0; bottom: 0; left: calc(50% - 0.5px); width: 1px; }
 .bd-node-resize-line.top::after,
 .bd-node-resize-line.bottom::after { top: calc(50% - 0.5px); right: 0; left: 0; height: 1px; }
+
+.bd-alignment-guide-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1000;
+  overflow: visible;
+  pointer-events: none;
+}
+.bd-alignment-guide,
+.bd-size-guide {
+  position: absolute;
+  color: var(--alignment-guide);
+  pointer-events: none;
+}
+.bd-alignment-guide-x {
+  width: 1px;
+  background: currentColor;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.82);
+}
+.bd-alignment-guide-y {
+  height: 1px;
+  background: currentColor;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.82);
+}
+.bd-alignment-guide[data-subject-anchor="center"],
+.bd-alignment-guide[data-target-anchor="center"] {
+  background: repeating-linear-gradient(
+    to bottom,
+    currentColor 0 7px,
+    transparent 7px 11px
+  );
+  box-shadow: none;
+}
+.bd-alignment-guide-y[data-subject-anchor="center"],
+.bd-alignment-guide-y[data-target-anchor="center"] {
+  background: repeating-linear-gradient(
+    to right,
+    currentColor 0 7px,
+    transparent 7px 11px
+  );
+}
+.bd-size-guide-width {
+  height: 1px;
+  border-top: 1px solid currentColor;
+}
+.bd-size-guide-height {
+  width: 1px;
+  border-left: 1px solid currentColor;
+}
+.bd-size-guide::before,
+.bd-size-guide::after {
+  position: absolute;
+  background: currentColor;
+  content: "";
+}
+.bd-size-guide-width::before,
+.bd-size-guide-width::after { top: -3px; width: 1px; height: 7px; }
+.bd-size-guide-width::before { left: 0; }
+.bd-size-guide-width::after { right: 0; }
+.bd-size-guide-height::before,
+.bd-size-guide-height::after { left: -3px; width: 7px; height: 1px; }
+.bd-size-guide-height::before { top: 0; }
+.bd-size-guide-height::after { bottom: 0; }
 
 .bd-block.is-expanded {
   border: 2px solid var(--block-color);

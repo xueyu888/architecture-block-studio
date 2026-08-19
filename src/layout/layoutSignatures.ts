@@ -42,11 +42,27 @@ function geometryProjection(document: BlockDesignDocument) {
 }
 
 /**
- * Fingerprints only document facts that can change node placement or bounds.
- * Studio uses it to decide whether a document edit warrants refitting the view.
+ * Fingerprints structural facts whose change invalidates the current diagram
+ * framing. Direct authored position and size edits deliberately stay out: the
+ * user is already operating on that viewport and must not be pulled to Fit.
  */
-export function layoutGeometrySignature(document: BlockDesignDocument): string {
-  return JSON.stringify(geometryProjection(document));
+export function layoutFrameSignature(document: BlockDesignDocument): string {
+  return JSON.stringify({
+    entryLevelId: document.entryLevelId,
+    levels: document.levels.map((level) => ({
+      id: level.id,
+      layout: level.layout,
+      nodes: level.nodes.map((node) => ({
+        id: node.id,
+        childLevelId: node.hierarchy?.childLevelId,
+        ports: node.ports.map(portGeometry),
+      })),
+      connections: level.connections.map((connection) => ({
+        source: connection.source,
+        target: connection.target,
+      })),
+    })),
+  });
 }
 
 /**

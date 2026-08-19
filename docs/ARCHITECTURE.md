@@ -35,7 +35,7 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 | `src/model` | 拥有文档结构、Schema 版本与迁移、语义设计规则和无状态图查询 | `BlockDesignDocument`、`BLOCK_DESIGN_SCHEMA_VERSION`、`blockDesignSchemaCompatibility`、`parseBlockDesignDocument`、`validateBlockDesignDocument`、`listModuleInterfaces`、`normalizeConnectionEndpoints` | 不负责 UI、历史或布局；版本与结构非法时在字段路径拒绝，语义问题输出 DRC，查询与连接规范化不持有状态 |
 | `src/editor` | 拥有原子文档变换、历史与 dirty 判断 | `DesignOperation`、`applyDesignOperation`、`useDesignEditor`、具名工厂 | 不渲染、不路由、不持久化；失败不产生部分修改 |
 | `src/io` | 拥有外部 JSON 与已校验文档之间的转换 | `loadDesignFromObject/File/Url`、`serializeDesign`、`downloadDesign` | 不解释模块业务；加载失败保留已安装文档 |
-| `src/layout` | 从文档与展开状态派生纯复合节点、边和位置投影，并定义布局真正消费的签名 | `layoutBlockDesign`、`layoutGeometrySignature`、`layoutProjectionSignature`、`LayoutResult`、`PlacementMode` | 不依赖 Studio 或 React 交互回调，不修改源文档；失败上抛给 Studio |
+| `src/layout` | 从文档与展开状态派生纯复合节点、边和位置投影，定义布局真正消费的签名，并提供不持有交互状态的对齐几何 | `layoutBlockDesign`、`layoutFrameSignature`、`layoutProjectionSignature`、`snapMovingRect`、`snapResizingRect`、`LayoutResult`、`PlacementMode` | 不依赖 Studio 或 React 交互回调，不修改源文档；没有合法吸附候选时原样返回预览几何，布局失败上抛给 Studio |
 | `src/routing` | 从绝对几何、端口冲突组和连接 id 派生正交避障路径与确定性车道；提供不持有 UI 状态的正交路线编辑几何 | `absoluteRoutingObstacles`、`planRouteLaneOffsets`、`routeOrthogonalInterface`、`separateOrthogonalRoute`、`editableOrthogonalRoute`、`moveRouteSegment`、`moveRouteBend`、`removeRouteBend` | 设计坐标是路由事实；视口缩放不得改变路径，纯几何函数不移动模块、不持有 gesture、不直接改写接口事实 |
 | `src/components` | 将纯布局投影组合为可交互 Canvas，并展示用户视图、发出用户意图 | `CanvasBlockNodeData`、`CanvasInterfaceEdgeData`、Canvas、Node、Edge、Tree、Inspector、Dialogs、Dock、Messages | 交互回调只存在于 Canvas 投影；不直接深改文档，局部表单草稿不得伪装成已提交事实 |
 | `src/studio` | 组合公开能力，拥有工作区选择协议与其他临时工作区状态 | `BlockDesignStudio`、`BlockDesignStudioProps`、`SelectionRef` 及纯选择查询 | 不重新定义 Schema、布局投影或编辑规则；组合失败应可见、可恢复 |
@@ -62,6 +62,8 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 
 模块尺寸编辑复用同一几何 Owner。`minimumNodeDimensions` 从四侧端口和内容区计算可读下限，Canvas 只把这个纯结果投影为四边 / 四角 resize 限制；最大值与 16 设计像素键盘步长同样来自统一几何常量。React Flow 在 pointer gesture 中拥有可丢弃预览，松手后只发出一次位置加尺寸意图；Editor 的 `node/resize` 才以一个原子操作写入 `node.layout.position / width / height / pinned`。左边或上边缩放会同时改变锚点和尺寸，因此不能只写 width / height，否则视觉边界与持久几何会漂移。展开的 hierarchy 容器尺寸由子图边界派生，不提供 authored resize 把手。
 
+对齐辅助线沿用同一几何链，但不拥有设计事实。Canvas 在 move / resize 开始时只收集同一父级、当前视口附近的模块矩形，并把 6 CSS px 容差换算为设计坐标；`layout/alignmentGuides` 纯函数从这些候选派生边缘、中心与同宽 / 同高吸附结果，`AlignmentGuideLayer` 只渲染当前 gesture 的临时线和尺寸括号。松手后仍只提交既有 `node/move` 或 `node/resize`；按住 Alt 时当前 gesture 原样使用用户预览，不显示 guide。候选不存在、吸附超出尺寸上下限或 Editor 拒绝提交时，不建立补偿状态，Canvas 回到文档投影。
+
 ```text
 BlockDesignDocument ─► model / editor / layout / routing ─► Studio ─► UI components
 StudioCommands ───────────────────────────► Menu / Keyboard / Command Palette（完整）
@@ -82,7 +84,7 @@ Dock / selection / dialogs / command query ─► disposable workspace state; ne
 | --- | --- | --- | --- |
 | 持久设计事实 | `BlockDesignDocument` | 文档、Level、模块、端口、接口、连接、层级绑定、authored 位置 / 尺寸与手动路由 | 是 |
 | 派生设计结果 | `model` / `layout` / `routing` | DRC issues、模块关联接口摘要、Flow nodes、可视边、ELK 位置、正交路径 | 否，可重建 |
-| 工作区状态 | `BlockDesignStudio` / Dockview | 当前选择、展开 Level、面板布局、缩放、Fit 请求、自动布局模式 | 否 |
+| 工作区状态 | `BlockDesignStudio` / Canvas / Dockview | 当前选择、展开 Level、面板布局、缩放、Fit 请求、自动布局模式、当前 gesture 的对齐辅助线 | 否 |
 | 未提交编辑草稿 | 各 Inspector / Dialog 表单 | 输入框内容、待创建连接 | 否；提交后才生成 `DesignOperation` |
 | 验证证据 | tests / screenshots / CI | 构建结果、几何检查、浏览器截图 | 否；只验证合同 |
 
@@ -175,7 +177,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 
 - 布局输入只有文档、展开 Level、placement mode 和 revision；输出是可重建的 `LayoutResult`。
 - `layoutProjectionSignature` 由布局 Owner 枚举布局与 Canvas 真正消费的模块可见字段、端口、拓扑、接口类型和手工路由；文档 / Level 说明和 Inspector 合同正文不在该投影中。只有投影变化才重建 React Flow 图。
-- `layoutGeometrySignature` 只包含会改变位置、尺寸、拓扑或层级边界的事实，用于决定是否 Fit；可见标题变化不能冒充几何变化。
+- `layoutFrameSignature` 只包含会改变拓扑、端点、Port 或层级边界的框架事实，用于决定是否重新 Fit；直接 move / resize 已由用户指定当前视野，不能再次 Fit 并把选中模块移出 viewport，可见标题变化同样不能冒充框架变化。
 - Level 标题覆盖层与重型 React Flow 图分开渲染；工作区命令回调通过稳定边界读取最新事实，普通属性编辑不能因 callback identity 变化重映射全部节点和边。
 - Canvas selection 只在受影响的前后节点 / 边对象上投影 `selected`，未受影响的 Flow 元素保持引用稳定；React Flow 事件、配置对象和静态控件同样保持稳定，选择不能借回调或 JSX identity 触发全图协调。
 - Canvas detail level 只从 React Flow viewport 的 zoom 派生，并以根节点展示属性投影给 CSS；低缩放隐藏不可读的 process、摘要、Owner 和 data type，但始终保留模块标题、端口名、端口把手与线路。节点不分别订阅 viewport，这个展示策略不进入文档、历史或布局结果。

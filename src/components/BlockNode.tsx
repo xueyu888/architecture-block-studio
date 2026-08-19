@@ -15,6 +15,12 @@ import type { CanvasFlowNode } from "./canvasTypes";
 
 type GeometryStyle = CSSProperties & Record<`--${string}`, string>;
 
+function resizeAltKey(event: { sourceEvent?: Event }): boolean {
+  return event.sourceEvent instanceof MouseEvent || event.sourceEvent instanceof PointerEvent
+    ? event.sourceEvent.altKey
+    : false;
+}
+
 const positionBySide: Record<PortSide, Position> = {
   left: Position.Left,
   right: Position.Right,
@@ -203,10 +209,15 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
         autoScale
         handleClassName="bd-node-resize-handle"
         lineClassName="bd-node-resize-line"
-        onResizeEnd={(_, geometry) => data.resizeNode?.({
+        onResizeStart={() => data.beginResize?.()}
+        onResize={(event, geometry) => data.previewResize?.({
           position: { x: geometry.x, y: geometry.y },
           size: { width: geometry.width, height: geometry.height },
-        })}
+        }, resizeAltKey(event))}
+        onResizeEnd={(event, geometry) => data.resizeNode?.({
+          position: { x: geometry.x, y: geometry.y },
+          size: { width: geometry.width, height: geometry.height },
+        }, resizeAltKey(event))}
       />
       <header className="bd-block-header">
         {hierarchy ? (

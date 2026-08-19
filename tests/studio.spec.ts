@@ -2341,6 +2341,23 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   metrics.selectModuleViewportTransformChanges = selectionTiming.viewportTransformChanges;
   metrics.selectModuleViewportMaxTransformGapMs = selectionTiming.viewportMaxTransformGapMs;
   if (stress) {
+    const selectedBox = await selectedFlowNode.boundingBox();
+    expect(selectedBox).not.toBeNull();
+    const guideDragStarted = performance.now();
+    const guideDragStart = {
+      x: selectedBox!.x + selectedBox!.width / 2,
+      y: selectedBox!.y + selectedBox!.height * 0.62,
+    };
+    await page.mouse.move(guideDragStart.x, guideDragStart.y);
+    await page.mouse.down();
+    await page.mouse.move(guideDragStart.x + 18, guideDragStart.y, { steps: 6 });
+    await expect(page.locator(".bd-alignment-guide")).not.toHaveCount(0);
+    await page.mouse.up();
+    await waitForEditorIdle(page);
+    metrics.viewportGuideDragMs = Math.round(performance.now() - guideDragStarted);
+    await expect(page.locator(".bd-alignment-guide, .bd-size-guide")).toHaveCount(0);
+    await expect(selectedFlowNode).toBeVisible({ timeout: 30_000 });
+
     const viewportBeforeCanvasSelection = await canvasViewportTransform(page);
     await clickWithPointer(page, selectedFlowNode);
     await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => {
@@ -2869,10 +2886,75 @@ test("moves a selected module through the document with the keyboard", async ({ 
   ).layout.position).toEqual({ x: 76, y: 286 });
 });
 
+test("aligns a pointer-moved module and lets Alt bypass guides for one gesture", async ({ page, browserName }) => {
+  const node = flowNode(page, "system::project");
+  await node.click({ force: true });
+  const viewportBeforeMove = await canvasViewportTransform(page);
+
+  const dragBy = async (deltaX: number, disableSnap = false) => {
+    const box = await node.boundingBox();
+    expect(box).not.toBeNull();
+    const start = { x: box!.x + box!.width / 2, y: box!.y + box!.height * 0.62 };
+    if (disableSnap) await page.keyboard.down("Alt");
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(start.x + deltaX, start.y, { steps: 10 });
+    await page.waitForTimeout(120);
+  };
+
+  await dragBy(32);
+  const centerGuide = page.locator('.bd-alignment-guide-y[data-target-id="system::knowledge"]');
+  await expect(centerGuide).toBeVisible();
+  await expect(centerGuide).toHaveAttribute("data-subject-anchor", "center");
+  const alignedProject = await node.boundingBox();
+  const alignedKnowledge = await flowNode(page, "system::knowledge").boundingBox();
+  expect(alignedProject).not.toBeNull();
+  expect(alignedKnowledge).not.toBeNull();
+  expect(Math.abs(
+    alignedProject!.y + alignedProject!.height / 2
+    - alignedKnowledge!.y - alignedKnowledge!.height / 2,
+  )).toBeLessThan(1);
+  if (process.env.CAPTURE_ALIGNMENT_GUIDES === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/alignment-guides.png");
+  }
+  await page.mouse.up();
+  await waitForEditorIdle(page);
+  expect(await canvasViewportTransform(page)).toBe(viewportBeforeMove);
+  await expect(page.locator(".bd-alignment-guide, .bd-size-guide")).toHaveCount(0);
+
+  let downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  let savedPath = await (await downloadPromise).path();
+  let saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  let savedNode = saved.levels.find((level: { id: string }) => level.id === "system").nodes.find(
+    (candidate: { id: string }) => candidate.id === "project",
+  );
+  expect(savedNode.layout.position.x).toBeGreaterThan(370);
+  expect(savedNode.layout.position.y).toBe(650);
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await dragBy(32, true);
+  await expect(page.locator(".bd-alignment-guide, .bd-size-guide")).toHaveCount(0);
+  await page.mouse.up();
+  await page.keyboard.up("Alt");
+  await waitForEditorIdle(page);
+
+  downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  savedPath = await (await downloadPromise).path();
+  saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  savedNode = saved.levels.find((level: { id: string }) => level.id === "system").nodes.find(
+    (candidate: { id: string }) => candidate.id === "project",
+  );
+  expect(savedNode.layout.position.y).not.toBe(650);
+});
+
 test("resizes a selected module from a corner and persists one atomic geometry change", async ({ page, browserName }) => {
   const node = flowNode(page, "system::platform-provider");
   const connectedEdge = page.locator('.react-flow__edge[data-id="system::platform-tool-registration"]');
   await node.click({ force: true });
+  const viewportBeforeResize = await canvasViewportTransform(page);
   await expect(node.locator(".bd-node-resize-handle")).toHaveCount(4);
   await expect(node.locator(".bd-node-resize-line")).toHaveCount(4);
   const before = await node.boundingBox();
@@ -2891,6 +2973,7 @@ test("resizes a selected module from a corner and persists one atomic geometry c
   );
   await page.mouse.up();
   await waitForEditorIdle(page);
+  expect(await canvasViewportTransform(page)).toBe(viewportBeforeResize);
 
   const after = await node.boundingBox();
   expect(after).not.toBeNull();
@@ -2934,6 +3017,60 @@ test("resizes a selected module from a corner and persists one atomic geometry c
   await page.keyboard.press("ControlOrMeta+Shift+Z");
   await waitForEditorIdle(page);
   await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText(sizeText);
+});
+
+test("matches a sibling size while resizing and lets Alt bypass size snapping", async ({ page, browserName }) => {
+  const node = flowNode(page, "system::platform-provider");
+  await node.click({ force: true });
+
+  const resizeWidthBy = async (deltaX: number, disableSnap = false) => {
+    const handle = node.locator(".bd-node-resize-line.right");
+    const box = await handle.boundingBox();
+    expect(box).not.toBeNull();
+    if (disableSnap) await page.keyboard.down("Alt");
+    const start = { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(start.x + deltaX, start.y, { steps: 8 });
+    await page.waitForTimeout(120);
+  };
+
+  await resizeWidthBy(8);
+  const sizeGuides = page.locator('.bd-size-guide-width[data-target-id="system::agent-ui"]');
+  await expect(sizeGuides).toHaveCount(2);
+  await expect(page.locator('.bd-size-guide-width[data-role="subject"]')).toBeVisible();
+  await expect(page.locator('.bd-size-guide-width[data-role="target"]')).toBeVisible();
+  const resizedPreview = await node.boundingBox();
+  const matchingSibling = await flowNode(page, "system::agent-ui").boundingBox();
+  expect(resizedPreview).not.toBeNull();
+  expect(matchingSibling).not.toBeNull();
+  expect(Math.abs(resizedPreview!.width - matchingSibling!.width)).toBeLessThan(1);
+  if (process.env.CAPTURE_ALIGNMENT_GUIDES === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/same-size-guides.png");
+  }
+  await page.mouse.up();
+  await waitForEditorIdle(page);
+  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("250 × 145");
+  await expect(page.locator(".bd-alignment-guide, .bd-size-guide")).toHaveCount(0);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await downloadPromise).path();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  const savedNode = saved.levels.find((level: { id: string }) => level.id === "system").nodes.find(
+    (candidate: { id: string }) => candidate.id === "platform-provider",
+  );
+  expect(savedNode.layout).toMatchObject({ width: 250, height: 145 });
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("240 × 145");
+  await resizeWidthBy(8, true);
+  await expect(page.locator(".bd-alignment-guide, .bd-size-guide")).toHaveCount(0);
+  await page.mouse.up();
+  await page.keyboard.up("Alt");
+  await waitForEditorIdle(page);
+  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("256 × 145");
 });
 
 test("resizes a focused module by grid increments from the keyboard", async ({ page }) => {

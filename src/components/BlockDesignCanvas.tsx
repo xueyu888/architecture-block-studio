@@ -18,14 +18,26 @@ import {
   type Connection,
   type FitViewOptions,
   type MiniMapProps,
+  type NodeChange,
   type OnNodeDrag,
   type NodeMouseHandler,
 } from "@xyflow/react";
 import { normalizeConnectionEndpoints } from "../model";
 import type { BlockDesignDocument, BlockPort, ConnectionRouting } from "../model";
-import { BLOCK_NODE_GEOMETRY, minimumNodeDimensions, type LayoutResult } from "../layout";
+import {
+  BLOCK_NODE_GEOMETRY,
+  minimumNodeDimensions,
+  snapMovingRect,
+  snapResizingRect,
+  type AlignmentGuide,
+  type AlignmentRect,
+  type LayoutFlowNode,
+  type LayoutResult,
+  type ResizeLimits,
+} from "../layout";
 import { planRouteLaneOffsets } from "../routing";
 import type { SelectionRef } from "../studio/selection";
+import { AlignmentGuideLayer } from "./AlignmentGuideLayer";
 import { BlockNodeComponent } from "./BlockNode";
 import { canvasDetailLevel, type CanvasDetailLevel } from "./canvasDetail";
 import { reconcileCanvasSelection } from "./canvasSelection";
@@ -52,6 +64,8 @@ const LARGE_GRAPH_NODE_COUNT = 120;
 const LARGE_GRAPH_EDGE_COUNT = 240;
 const VIEWPORT_CULL_NODE_COUNT = 500;
 const VIEWPORT_CULL_EDGE_COUNT = 1000;
+const ALIGNMENT_TOLERANCE_PX = 6;
+const ALIGNMENT_VIEWPORT_MARGIN_PX = 80;
 const CONNECTION_TARGET_MARKER: EdgeMarker = {
   type: MarkerType.ArrowClosed,
   color: "context-stroke",
@@ -200,6 +214,21 @@ interface NodeFocusRequest {
   dimensions?: { width: number; height: number };
 }
 
+interface AlignmentGesture {
+  nodeId: string;
+  original: AlignmentRect;
+  originalLocalPosition: { x: number; y: number };
+  candidates: AlignmentRect[];
+  tolerance: number;
+  limits: ResizeLimits;
+}
+
+interface ResizePreview {
+  nodeId: string;
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+}
+
 export interface BlockDesignCanvasProps extends Omit<CanvasInnerProps, "entryLevelId"> {
   document: BlockDesignDocument;
   onAddModule: () => void;
@@ -229,6 +258,9 @@ const CanvasInner = memo(function CanvasInner({
   const [canvasAnnouncement, setCanvasAnnouncement] = useState("");
   const [compactOverviewMapOpen, setCompactOverviewMapOpen] = useState(false);
   const [resizeRestoreRevision, setResizeRestoreRevision] = useState(0);
+  const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
+  const alignmentGestureRef = useRef<AlignmentGesture | undefined>(undefined);
+  const resizePreviewRef = useRef<ResizePreview | undefined>(undefined);
   const largeGraph = layout.nodes.length >= LARGE_GRAPH_NODE_COUNT
     || layout.edges.length >= LARGE_GRAPH_EDGE_COUNT;
   const cullViewportElements = layout.nodes.length >= VIEWPORT_CULL_NODE_COUNT
@@ -276,6 +308,100 @@ const CanvasInner = memo(function CanvasInner({
     viewportNavigationGeneration.current += 1;
     void setViewport(getViewport(), { duration: 0 });
   }, [getViewport, setViewport]);
+  const beginAlignmentGesture = useCallback((nodeId: string): AlignmentGesture | undefined => {
+    const state = store.getState();
+    const subject = state.nodeLookup.get(nodeId);
+    const layoutSubject = layout.nodes.find((node) => node.id === nodeId);
+    const subjectWidth = subject?.measured.width ?? subject?.width ?? 0;
+    const subjectHeight = subject?.measured.height ?? subject?.height ?? 0;
+    if (!subject || !layoutSubject || subjectWidth <= 0 || subjectHeight <= 0) return undefined;
+    const [translateX, translateY, zoom] = state.transform;
+    const margin = ALIGNMENT_VIEWPORT_MARGIN_PX / zoom;
+    const viewport = {
+      left: -translateX / zoom - margin,
+      top: -translateY / zoom - margin,
+      right: (-translateX + state.width) / zoom + margin,
+      bottom: (-translateY + state.height) / zoom + margin,
+    };
+    const candidates: AlignmentRect[] = [];
+    state.nodeLookup.forEach((candidate, candidateId) => {
+      if (candidateId === nodeId || candidate.parentId !== subject.parentId || candidate.hidden) return;
+      const width = candidate.measured.width ?? candidate.width ?? 0;
+      const height = candidate.measured.height ?? candidate.height ?? 0;
+      const { x, y } = candidate.internals.positionAbsolute;
+      if (
+        width <= 0 || height <= 0 ||
+        x + width < viewport.left || x > viewport.right ||
+        y + height < viewport.top || y > viewport.bottom
+      ) return;
+      candidates.push({ id: candidateId, x, y, width, height });
+    });
+    const minimum = minimumNodeDimensions(layoutSubject.data.block);
+    const gesture = {
+      nodeId,
+      original: {
+        id: nodeId,
+        x: subject.internals.positionAbsolute.x,
+        y: subject.internals.positionAbsolute.y,
+        width: subjectWidth,
+        height: subjectHeight,
+      },
+      originalLocalPosition: { ...subject.position },
+      candidates,
+      tolerance: ALIGNMENT_TOLERANCE_PX / zoom,
+      limits: {
+        minWidth: minimum.width,
+        minHeight: minimum.height,
+        maxWidth: BLOCK_NODE_GEOMETRY.maximumWidth,
+        maxHeight: BLOCK_NODE_GEOMETRY.maximumHeight,
+      },
+    };
+    alignmentGestureRef.current = gesture;
+    resizePreviewRef.current = undefined;
+    setAlignmentGuides([]);
+    return gesture;
+  }, [layout.nodes, store]);
+  const snapResizeGeometry = useCallback((
+    node: LayoutFlowNode,
+    geometry: { position: { x: number; y: number }; size: { width: number; height: number } },
+    disableSnap: boolean,
+  ) => {
+    const gesture = alignmentGestureRef.current?.nodeId === node.id
+      ? alignmentGestureRef.current
+      : beginAlignmentGesture(node.id);
+    if (!gesture || disableSnap) {
+      resizePreviewRef.current = undefined;
+      setAlignmentGuides([]);
+      return geometry;
+    }
+    const preview = {
+      id: node.id,
+      x: gesture.original.x + geometry.position.x - gesture.originalLocalPosition.x,
+      y: gesture.original.y + geometry.position.y - gesture.originalLocalPosition.y,
+      width: geometry.size.width,
+      height: geometry.size.height,
+    };
+    const snapped = snapResizingRect(
+      gesture.original,
+      preview,
+      gesture.candidates,
+      gesture.tolerance,
+      gesture.limits,
+    );
+    resizePreviewRef.current = {
+      nodeId: node.id,
+      position: {
+        x: gesture.originalLocalPosition.x + snapped.rect.x - gesture.original.x,
+        y: gesture.originalLocalPosition.y + snapped.rect.y - gesture.original.y,
+      },
+      size: { width: snapped.rect.width, height: snapped.rect.height },
+    };
+    setAlignmentGuides(snapped.guides);
+    return {
+      position: resizePreviewRef.current.position,
+      size: resizePreviewRef.current.size,
+    };
+  }, [beginAlignmentGesture]);
   const baseNodes = useMemo<CanvasFlowNode[]>(
     () =>
       layout.nodes.map((node) => ({
@@ -285,16 +411,26 @@ const CanvasInner = memo(function CanvasInner({
           toggleHierarchy: onToggleHierarchy,
           inspectPort: (nodeId: string, port: BlockPort) =>
             selectRef.current({ kind: "port", levelId: node.data.levelId, nodeId, portId: port.id }),
+          beginResize: node.data.positionEditable && !node.data.expanded
+            ? () => { beginAlignmentGesture(node.id); }
+            : undefined,
+          previewResize: node.data.positionEditable && !node.data.expanded
+            ? (geometry, disableSnap) => { snapResizeGeometry(node, geometry, disableSnap); }
+            : undefined,
           resizeNode: node.data.positionEditable && !node.data.expanded
-            ? (geometry) => {
+            ? (geometry, disableSnap) => {
+                const snapped = snapResizeGeometry(node, geometry, disableSnap);
+                alignmentGestureRef.current = undefined;
+                resizePreviewRef.current = undefined;
+                setAlignmentGuides([]);
                 const accepted = onResizeNode(
                   node.data.levelId,
                   node.data.block.id,
                   {
-                    x: node.data.designPosition.x + geometry.position.x - node.position.x,
-                    y: node.data.designPosition.y + geometry.position.y - node.position.y,
+                    x: node.data.designPosition.x + snapped.position.x - node.position.x,
+                    y: node.data.designPosition.y + snapped.position.y - node.position.y,
                   },
-                  geometry.size,
+                  snapped.size,
                 );
                 if (!accepted) setResizeRestoreRevision((revision) => revision + 1);
                 return accepted;
@@ -302,7 +438,14 @@ const CanvasInner = memo(function CanvasInner({
             : undefined,
         },
       })),
-    [layout.nodes, onResizeNode, onToggleHierarchy, resizeRestoreRevision],
+    [
+      beginAlignmentGesture,
+      layout.nodes,
+      onResizeNode,
+      onToggleHierarchy,
+      resizeRestoreRevision,
+      snapResizeGeometry,
+    ],
   );
   const baseEdges = useMemo<CanvasFlowEdge[]>(
     () => {
@@ -349,6 +492,23 @@ const CanvasInner = memo(function CanvasInner({
     [largeGraph, layout.edges, onRouteConnection],
   );
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasFlowNode>(baseNodes);
+  const onCanvasNodesChange = useCallback((changes: NodeChange<CanvasFlowNode>[]) => {
+    const preview = resizePreviewRef.current;
+    if (!preview) {
+      onNodesChange(changes);
+      return;
+    }
+    onNodesChange(changes.map((change) => {
+      if (!("id" in change) || change.id !== preview.nodeId) return change;
+      if (change.type === "position" && change.position) {
+        return { ...change, position: preview.position };
+      }
+      if (change.type === "dimensions" && change.dimensions) {
+        return { ...change, dimensions: preview.size };
+      }
+      return change;
+    }));
+  }, [onNodesChange]);
   const flowNodeIdsBySelection = useMemo(() => {
     const result = new Map<string, string[]>();
     baseNodes.forEach((node) => {
@@ -688,18 +848,58 @@ const CanvasInner = memo(function CanvasInner({
     return normalizeConnectionEndpoints(first, second);
   }, [resolveEndpoint]);
 
-  const onNodeDragStop = useCallback<OnNodeDrag<CanvasFlowNode>>((_, node) => {
+  const snapMovingNode = useCallback((node: CanvasFlowNode, disableSnap: boolean) => {
+    const gesture = alignmentGestureRef.current?.nodeId === node.id
+      ? alignmentGestureRef.current
+      : beginAlignmentGesture(node.id);
+    if (!gesture || disableSnap) {
+      setAlignmentGuides([]);
+      return { position: node.position, guides: [] as AlignmentGuide[] };
+    }
+    const preview = {
+      ...gesture.original,
+      x: gesture.original.x + node.position.x - gesture.originalLocalPosition.x,
+      y: gesture.original.y + node.position.y - gesture.originalLocalPosition.y,
+    };
+    const snapped = snapMovingRect(preview, gesture.candidates, gesture.tolerance);
+    setAlignmentGuides(snapped.guides);
+    return {
+      position: {
+        x: node.position.x + snapped.rect.x - preview.x,
+        y: node.position.y + snapped.rect.y - preview.y,
+      },
+      guides: snapped.guides,
+    };
+  }, [beginAlignmentGesture]);
+  const onNodeDragStart = useCallback<OnNodeDrag<CanvasFlowNode>>((_, node) => {
+    beginAlignmentGesture(node.id);
+  }, [beginAlignmentGesture]);
+  const onNodeDrag = useCallback<OnNodeDrag<CanvasFlowNode>>((event, node) => {
+    const snapped = snapMovingNode(node, event.altKey);
+    if (snapped.position.x === node.position.x && snapped.position.y === node.position.y) return;
+    setNodes((current) => current.map((candidate) => candidate.id === node.id
+      ? { ...candidate, position: snapped.position }
+      : candidate));
+  }, [setNodes, snapMovingNode]);
+  const onNodeDragStop = useCallback<OnNodeDrag<CanvasFlowNode>>((event, node) => {
     const original = baseNodes.find((candidate) => candidate.id === node.id);
-    if (!original) return;
+    if (!original) {
+      alignmentGestureRef.current = undefined;
+      setAlignmentGuides([]);
+      return;
+    }
+    const snapped = snapMovingNode(node, event.altKey);
+    alignmentGestureRef.current = undefined;
+    setAlignmentGuides([]);
     const accepted = node.data.positionEditable && onMoveNode(node.data.levelId, node.data.block.id, {
-      x: Math.round(node.data.designPosition.x + node.position.x - original.position.x),
-      y: Math.round(node.data.designPosition.y + node.position.y - original.position.y),
+      x: Math.round(node.data.designPosition.x + snapped.position.x - original.position.x),
+      y: Math.round(node.data.designPosition.y + snapped.position.y - original.position.y),
     });
     if (accepted) return;
     setNodes((current) => current.map((candidate) => candidate.id === node.id
       ? { ...candidate, position: { ...original.position }, dragging: false }
       : candidate));
-  }, [baseNodes, onMoveNode, setNodes]);
+  }, [baseNodes, onMoveNode, setNodes, snapMovingNode]);
   const onConnect = useCallback((connection: Connection) => {
     const normalized = normalizedConnection(connection);
     if (normalized) onCreateConnection(normalized);
@@ -719,7 +919,12 @@ const CanvasInner = memo(function CanvasInner({
     [normalizedConnection],
   );
   const onPaneClick = useCallback(
-    () => onSelect({ kind: "level", levelId: entryLevelId }),
+    () => {
+      alignmentGestureRef.current = undefined;
+      resizePreviewRef.current = undefined;
+      setAlignmentGuides([]);
+      onSelect({ kind: "level", levelId: entryLevelId });
+    },
     [entryLevelId, onSelect],
   );
   const onMiniMapNodeClick = useCallback<NonNullable<MiniMapProps<CanvasFlowNode>["onNodeClick"]>>(
@@ -749,7 +954,9 @@ const CanvasInner = memo(function CanvasInner({
       edges={edges}
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
-      onNodesChange={onNodesChange}
+      onNodesChange={onCanvasNodesChange}
+      onNodeDragStart={onNodeDragStart}
+      onNodeDrag={onNodeDrag}
       onNodeDragStop={onNodeDragStop}
       onNodeClick={onNodeClick}
       onNodeDoubleClick={onNodeDoubleClick}
@@ -778,6 +985,7 @@ const CanvasInner = memo(function CanvasInner({
       className="bd-react-flow"
     >
       {CANVAS_BACKGROUND}
+      <AlignmentGuideLayer guides={alignmentGuides} />
       <CanvasViewportControls
         onZoomIn={zoomInViewport}
         onZoomOut={zoomOutViewport}

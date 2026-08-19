@@ -5,7 +5,9 @@ import type { BlockPort, ConnectionRouting } from "../model";
 export interface CanvasBlockNodeData extends LayoutBlockNodeData {
   toggleHierarchy: (levelId: string) => void;
   inspectPort: (nodeId: string, port: BlockPort) => void;
-  resizeNode?: (geometry: NodeResizeGeometry) => boolean;
+  beginResize?: () => void;
+  previewResize?: (geometry: NodeResizeGeometry, disableSnap: boolean) => void;
+  resizeNode?: (geometry: NodeResizeGeometry, disableSnap: boolean) => boolean;
 }
 
 export interface NodeResizeGeometry {

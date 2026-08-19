@@ -72,7 +72,7 @@ import {
 } from "../io/saveDesign";
 import {
   layoutBlockDesign,
-  layoutGeometrySignature,
+  layoutFrameSignature,
   layoutProjectionSignature,
   type LayoutResult,
   type PlacementMode,
@@ -333,9 +333,9 @@ export function BlockDesignStudio({
 
   const runOperation = useCallback((operation: DesignOperation): BlockDesignDocument | undefined => {
     try {
-      const previousGeometry = layoutGeometrySignature(editorDocumentRef.current);
+      const previousFrame = layoutFrameSignature(editorDocumentRef.current);
       const next = editor.apply(operation);
-      if (layoutGeometrySignature(next) !== previousGeometry) fitAfterLayout.current = true;
+      if (layoutFrameSignature(next) !== previousFrame) fitAfterLayout.current = true;
       setIssues(validateBlockDesignDocument(next));
       setCommandError(undefined);
       setPlacementMode("authored");
@@ -348,11 +348,11 @@ export function BlockDesignStudio({
 
   const undoDesign = useCallback(() => {
     if (!confirmDiscardInspectorDraft("undo the last document operation")) return;
-    const previousGeometry = layoutGeometrySignature(editorDocumentRef.current);
+    const previousFrame = layoutFrameSignature(editorDocumentRef.current);
     const next = editor.undo();
     if (!next) return;
     setInspectorDraftDirty(false);
-    if (layoutGeometrySignature(next) !== previousGeometry) fitAfterLayout.current = true;
+    if (layoutFrameSignature(next) !== previousFrame) fitAfterLayout.current = true;
     setIssues(validateBlockDesignDocument(next));
     setPlacementMode("authored");
     setCommandError(undefined);
@@ -360,11 +360,11 @@ export function BlockDesignStudio({
 
   const redoDesign = useCallback(() => {
     if (!confirmDiscardInspectorDraft("redo the next document operation")) return;
-    const previousGeometry = layoutGeometrySignature(editorDocumentRef.current);
+    const previousFrame = layoutFrameSignature(editorDocumentRef.current);
     const next = editor.redo();
     if (!next) return;
     setInspectorDraftDirty(false);
-    if (layoutGeometrySignature(next) !== previousGeometry) fitAfterLayout.current = true;
+    if (layoutFrameSignature(next) !== previousFrame) fitAfterLayout.current = true;
     setIssues(validateBlockDesignDocument(next));
     setPlacementMode("authored");
     setCommandError(undefined);

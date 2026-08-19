@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
-  layoutGeometrySignature,
+  layoutFrameSignature,
   layoutProjectionSignature,
 } from "../../src/layout";
 import { completeContracts, connectedDesign } from "./designFixture";
@@ -21,7 +21,7 @@ describe("layout document signatures", () => {
     edited.interfaceDefinitions["source.output"].purpose = "Rewritten interface purpose";
 
     expect(layoutProjectionSignature(edited)).toBe(layoutProjectionSignature(document));
-    expect(layoutGeometrySignature(edited)).toBe(layoutGeometrySignature(document));
+    expect(layoutFrameSignature(edited)).toBe(layoutFrameSignature(document));
   });
 
   test("tracks every visible node and route fact without treating them all as geometry", () => {
@@ -29,25 +29,39 @@ describe("layout document signatures", () => {
     const renamed = structuredClone(document);
     renamed.levels[0].nodes[0].title = "Renamed source";
     expect(layoutProjectionSignature(renamed)).not.toBe(layoutProjectionSignature(document));
-    expect(layoutGeometrySignature(renamed)).toBe(layoutGeometrySignature(document));
+    expect(layoutFrameSignature(renamed)).toBe(layoutFrameSignature(document));
 
     const rerouted = structuredClone(document);
     rerouted.levels[0].connections[0].routing = {
       waypoints: [{ x: 100, y: 20 }, { x: 100, y: 80 }],
     };
     expect(layoutProjectionSignature(rerouted)).not.toBe(layoutProjectionSignature(document));
-    expect(layoutGeometrySignature(rerouted)).toBe(layoutGeometrySignature(document));
+    expect(layoutFrameSignature(rerouted)).toBe(layoutFrameSignature(document));
   });
 
-  test("tracks topology, ordering inputs, dimensions, and entry hierarchy as geometry", () => {
+  test("keeps direct authored geometry in the current frame and tracks structural changes", () => {
     const document = completedDesignDocument();
     const moved = structuredClone(document);
     moved.levels[0].nodes[0].layout.position = { x: 320, y: 160 };
-    expect(layoutGeometrySignature(moved)).not.toBe(layoutGeometrySignature(document));
+    expect(layoutFrameSignature(moved)).toBe(layoutFrameSignature(document));
+
+    const resized = structuredClone(document);
+    resized.levels[0].nodes[0].layout.width = 420;
+    expect(layoutFrameSignature(resized)).toBe(layoutFrameSignature(document));
 
     const retargeted = structuredClone(document);
     retargeted.levels[0].connections[0].target.nodeId = retargeted.levels[0].nodes[0].id;
-    expect(layoutGeometrySignature(retargeted)).not.toBe(layoutGeometrySignature(document));
+    expect(layoutFrameSignature(retargeted)).not.toBe(layoutFrameSignature(document));
+
+    const addedPort = structuredClone(document);
+    addedPort.levels[0].nodes[0].ports.push({
+      id: "status",
+      label: "Status",
+      side: "bottom",
+      direction: "output",
+      required: false,
+    });
+    expect(layoutFrameSignature(addedPort)).not.toBe(layoutFrameSignature(document));
   });
 
   test("canonicalizes interface definition record order", () => {

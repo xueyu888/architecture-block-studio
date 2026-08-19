@@ -361,7 +361,7 @@ function NodeEditor({ document, level, node, onOperation, onDelete, onDraftChang
             ? `${node.layout.width} × ${node.layout.height}`
             : "Automatic"}</strong>
         </div>
-        <p>Drag an edge or corner handle to resize. With the module focused, Shift + Arrow changes width or height by 16 design pixels. Apply current property changes first.</p>
+        <p>Drag an edge or corner handle to resize. Alignment and equal-size guides snap nearby geometry; hold Alt during a pointer gesture to bypass them. With the module focused, Shift + Arrow changes width or height by 16 design pixels. Apply current property changes first.</p>
       </section>
       <ConnectedInterfaces document={document} level={level} node={node} onSelect={onSelect} />
       <ContractFields value={inspector} onChange={setInspector} />
