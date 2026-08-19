@@ -263,7 +263,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 
 ## 选择与交叉定位
 
-`SelectionRef` 是 `src/studio/selection.ts` 拥有的单一工作区选择协议，区分 document、level、node、port、connection 与显式 `multiple`。多选只包含 canonical、去重的 `DiagramSelectionRef`，因此只允许可共同直接操作的 node / connection；document、level 与 port 仍保持单选语义。`diagramSelectionItems`、replace、toggle、`selectAllInLevel`、`directInterfaceSelectionExpansion`、contains、exists、key 与上下文查询都由该纯协议拥有，Tree、接口列表、Canvas、DRC 和 Inspector 不各自维护选择集合。
+`SelectionRef` 是 `src/studio/selection.ts` 拥有的单一工作区选择协议，区分 document、level、node、port、connection 与显式 `multiple`。多选只包含 canonical、去重的 `DiagramSelectionRef`，因此只允许可共同直接操作的 node / connection；document、level 与 port 仍保持单选语义。`diagramSelectionItems`、replace、toggle、`selectAllInLevel`、`directInterfaceSelectionExpansion`、`directNeighborhoodSelectionExpansion`、contains、exists、key 与上下文查询都由该纯协议拥有，Tree、接口列表、Canvas、DRC 和 Inspector 不各自维护选择集合。
 
 普通点击和框选替换集合，Shift / Ctrl / Cmd 点击或框选切换成员，Esc 回到当前对象所属 Level。左键空白拖动执行完整包围框选；Alt 在 pointerdown 前成立时强制建立框选，即使起点位于模块、端口或抓手，并把该手势单向升级为几何相交模式，Alt + Shift 因而可批量移出相交对象。直接 move / resize 已经由无 Alt 的 pointerdown 建立后，再按 Alt 只绕过吸附，不会在半途改写手势种类。Alt pointer gesture 在 5 client pixels 内完成时则是 transparent click：`canvasSelection` 从已挂载模块的实际 client bounds 与可见接口的真实 `plannedRoute` 逐线段距离生成命中栈，按显式 node z-index / 文档稳定顺序排序并合并同一接口的重复可见 leg；模块层始终位于线路层之上，不读取偶然 DOM 顺序。当前 canonical selection 本身充当循环游标，跳过首个命中对象的容器祖先后选择下一对象，到栈底即回到顶部，因此没有 hover、上次点击索引或第二套 cycle 状态。Alt + Shift / Ctrl / Cmd 单击只切换最上层命中对象。
 
@@ -273,7 +273,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 
 `Ctrl/⌘ A` 与 Edit → Select All 只把当前 Level 的全部 module / connection 交给 `selectAllInLevel` 构造 canonical 选择；`Select Modules in Level / Select Interfaces in Level` 把同一 Level 和明确的 diagram kind 交给 `selectDiagramKindInLevel`，互斥替换为完整类型集合。`Ctrl/⌘ Shift A` 与 Clear Selection 清空图形对象并回到当前 Level 上下文。四者都复用 `StudioCommands` 的可用性与执行链，不读取 DOM 挂载窗口，不修改 viewport、文档或历史；空类型集合给出明确原因。当事件来自 input、textarea、select 或可编辑元素时，Studio 不拦截浏览器原生全选。
 
-模块直接接口的邻接事实只由 `model/graph.listDirectConnections` 拥有：输入一个 Level 和已有节点集合，按文档顺序返回每条入站、出站或自环 connection 一次。Inspector 的单模块摘要与 `directInterfaceSelectionExpansion` 共用这个查询，避免展示与批量选择各自解释“直接”。选择层只按 Level 对所选模块分组、合并 canonical connection 引用并给出 `no-modules / no-direct-interfaces / all-direct-interfaces-selected` 结果；Edit 与 Command Palette 投影同一个 `StudioCommand`。成功或拒绝都不改变文档、History 或 viewport，未应用 Inspector 草稿仍先经过统一选择保护。
+模块直接接口的邻接事实只由 `model/graph.listDirectConnections` 拥有：输入一个 Level 和已有节点集合，按文档顺序返回每条入站、出站或自环 connection 一次。Inspector 的单模块摘要、`directInterfaceSelectionExpansion` 与 `directNeighborhoodSelectionExpansion` 共用同一 `directSelectionContext`，避免展示、线路扩选和局部子图各自解释“直接”。选择层只按 Level 对所选已有模块分组；直接接口扩选合并 canonical connection，引入邻域时再从同一批 connection 端点派生现存模块引用。两类命令都不隐藏无关对象、不创建 filter，也不改变文档、History 或 viewport；重复执行邻域命令会以当前已选模块为新边界渐进扩展，达到局部闭包后才返回 `all-direct-neighborhood-selected`。未应用 Inspector 草稿仍先经过统一选择保护，真正聚焦继续由正交的 Fit Selection 命令拥有。
 
 多选删除复用单对象级联合同，但只通过一个 Editor-owned `objects/delete` 进入设计事实。Editor 在原始克隆上预检目标非空、无重复且全部存在，再先删除显式接口、后按 Level 深度由深到浅删除模块；单模块逻辑继续拥有相连接口、binding、未使用接口定义和独占后代 Level 的清理，共享 child Level 保留。父级级联已覆盖的后代属于同一闭包而非中途失败；成功只产生一个历史快照，任何预检失败都不改变源文档或 History。
 

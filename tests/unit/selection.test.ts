@@ -3,6 +3,7 @@ import {
   connectionForSelection,
   diagramSelectionItems,
   directInterfaceSelectionExpansion,
+  directNeighborhoodSelectionExpansion,
   hierarchyLevelPath,
   levelForSelection,
   nodeForSelection,
@@ -253,6 +254,107 @@ describe("workspace selection protocol", () => {
       { kind: "connection", levelId: "level-1", connectionId: "layer-2-flow-01" },
       { kind: "connection", levelId: "system", connectionId: "layer-1-flow-00" },
       { kind: "node", levelId: "level-1", nodeId: "relay-1-01" },
+      { kind: "node", levelId: "system", nodeId: "source-00" },
+    ]);
+  });
+
+  it("expands modules to a complete direct neighborhood without duplicating shared endpoints", () => {
+    const document = connectedDesign();
+    const source = { kind: "node", levelId: "system", nodeId: "source" } as const;
+    const target = { kind: "node", levelId: "system", nodeId: "target" } as const;
+    const connection = {
+      kind: "connection",
+      levelId: "system",
+      connectionId: "source-to-target",
+    } as const;
+
+    expect(directNeighborhoodSelectionExpansion(document, source)).toEqual({
+      available: true,
+      selection: { kind: "multiple", items: [connection, source, target] },
+      selectedNodeCount: 1,
+      neighborhoodNodeCount: 2,
+      directInterfaceCount: 1,
+      addedNodeCount: 1,
+      addedInterfaceCount: 1,
+    });
+    expect(directNeighborhoodSelectionExpansion(
+      document,
+      replaceDiagramSelection([source, connection], "system"),
+    )).toMatchObject({
+      available: true,
+      addedNodeCount: 1,
+      addedInterfaceCount: 0,
+    });
+    expect(directNeighborhoodSelectionExpansion(
+      document,
+      replaceDiagramSelection([source, target, connection], "system"),
+    )).toEqual({
+      available: false,
+      reason: "all-direct-neighborhood-selected",
+      selectedNodeCount: 2,
+      neighborhoodNodeCount: 2,
+      directInterfaceCount: 1,
+      addedNodeCount: 0,
+      addedInterfaceCount: 0,
+    });
+
+    document.levels[0].nodes.find((node) => node.id === "source")!.ports.push({
+      id: "loop-in",
+      label: "Loop Input",
+      side: "left",
+      direction: "input",
+      required: false,
+    });
+    document.levels[0].connections.push({
+      id: "source-loop",
+      interfaceId: "source.output",
+      source: { nodeId: "source", portId: "out" },
+      target: { nodeId: "source", portId: "loop-in" },
+    });
+    const loopExpansion = directNeighborhoodSelectionExpansion(document, source);
+    expect(loopExpansion).toMatchObject({
+      available: true,
+      neighborhoodNodeCount: 2,
+      directInterfaceCount: 2,
+      addedNodeCount: 1,
+      addedInterfaceCount: 2,
+    });
+    expect(loopExpansion.available && diagramSelectionItems(loopExpansion.selection)).toEqual([
+      { kind: "connection", levelId: "system", connectionId: "source-loop" },
+      connection,
+      source,
+      target,
+    ]);
+  });
+
+  it("keeps neighborhood expansion consistent across five hierarchy layers", () => {
+    const document = fiveLevelRoutingDesignDocument();
+    expect(directNeighborhoodSelectionExpansion(document, { kind: "level", levelId: "system" }))
+      .toMatchObject({ available: false, reason: "no-modules" });
+    expect(directNeighborhoodSelectionExpansion(document, {
+      kind: "node",
+      levelId: "level-5",
+      nodeId: "target-00",
+    })).toMatchObject({ available: false, reason: "no-direct-interfaces" });
+
+    const expansion = directNeighborhoodSelectionExpansion(document, replaceDiagramSelection([
+      { kind: "node", levelId: "system", nodeId: "source-00" },
+      { kind: "node", levelId: "level-1", nodeId: "relay-1-01" },
+    ], "system"));
+    expect(expansion).toMatchObject({
+      available: true,
+      selectedNodeCount: 2,
+      neighborhoodNodeCount: 4,
+      directInterfaceCount: 2,
+      addedNodeCount: 2,
+      addedInterfaceCount: 2,
+    });
+    expect(expansion.available && diagramSelectionItems(expansion.selection)).toEqual([
+      { kind: "connection", levelId: "level-1", connectionId: "layer-2-flow-01" },
+      { kind: "connection", levelId: "system", connectionId: "layer-1-flow-00" },
+      { kind: "node", levelId: "level-1", nodeId: "layer-2" },
+      { kind: "node", levelId: "level-1", nodeId: "relay-1-01" },
+      { kind: "node", levelId: "system", nodeId: "layer-1" },
       { kind: "node", levelId: "system", nodeId: "source-00" },
     ]);
   });

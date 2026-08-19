@@ -125,6 +125,7 @@ import { findDesignFragmentPlacement } from "./fragmentPlacement";
 import {
   connectionForSelection,
   directInterfaceSelectionExpansion,
+  directNeighborhoodSelectionExpansion,
   hierarchyLevelPath,
   diagramSelectionItems,
   levelForSelection,
@@ -633,6 +634,10 @@ export function BlockDesignStudio({
     () => document ? directInterfaceSelectionExpansion(document, selection) : undefined,
     [document, selection],
   );
+  const directNeighborhoodExpansion = useMemo(
+    () => document ? directNeighborhoodSelectionExpansion(document, selection) : undefined,
+    [document, selection],
+  );
   const requestViewportAction = useCallback((action: CanvasViewportAction) => {
     setViewportActionRequest((current) => ({ revision: current.revision + 1, action }));
   }, []);
@@ -1008,6 +1013,19 @@ export function BlockDesignStudio({
     );
   }, [requestSelection]);
 
+  const selectDirectNeighborhood = useCallback(() => {
+    const currentDocument = documentRef.current;
+    if (!currentDocument) return;
+    const expansion = directNeighborhoodSelectionExpansion(currentDocument, selectionRef.current);
+    if (!expansion.available || !requestSelection(expansion.selection)) return;
+    setCommandError(undefined);
+    setCommandNotice(
+      `Added ${expansion.addedNodeCount} neighboring ${expansion.addedNodeCount === 1 ? "module" : "modules"} ` +
+      `and ${expansion.addedInterfaceCount} direct ${expansion.addedInterfaceCount === 1 ? "interface" : "interfaces"} ` +
+      `for ${expansion.selectedNodeCount} selected ${expansion.selectedNodeCount === 1 ? "module" : "modules"}.`,
+    );
+  }, [requestSelection]);
+
   const canDelete = selection.kind === "node" || selection.kind === "port" ||
     selection.kind === "connection" || selection.kind === "multiple";
   const deleteUnavailableReason = "Select a module, port, or interface first.";
@@ -1019,6 +1037,15 @@ export function BlockDesignStudio({
         ? "The selected modules have no direct interfaces."
         : directInterfaceExpansion?.reason === "all-direct-interfaces-selected"
           ? "All direct interfaces are already selected."
+          : "Select one or more modules first.";
+  const directNeighborhoodUnavailableReason = !document
+    ? "Open or create a design first."
+    : directNeighborhoodExpansion?.available
+      ? "Select one or more modules first."
+      : directNeighborhoodExpansion?.reason === "no-direct-interfaces"
+        ? "The selected modules have no direct interfaces."
+        : directNeighborhoodExpansion?.reason === "all-direct-neighborhood-selected"
+          ? "The complete direct neighborhood is already selected."
           : "Select one or more modules first.";
   const canAddChildDesign = Boolean(selectedNode && !selectedNode.node.hierarchy);
   const canAddConnection = Boolean(activeLevel && firstConnectablePair(activeLevel));
@@ -1155,6 +1182,14 @@ export function BlockDesignStudio({
         directInterfaceUnavailableReason,
       ),
       execute: selectDirectInterfaces,
+    },
+    selectDirectNeighborhood: {
+      id: "selectDirectNeighborhood", label: "Select Direct Neighborhood", icon: Share2,
+      ...commandAvailability(
+        Boolean(directNeighborhoodExpansion?.available),
+        directNeighborhoodUnavailableReason,
+      ),
+      execute: selectDirectNeighborhood,
     },
     clearSelection: {
       id: "clearSelection", label: "Clear Selection", shortcut: "Ctrl/⌘ ⇧ A", icon: CircleOff,
@@ -1344,6 +1379,8 @@ export function BlockDesignStudio({
     diagramMaximized,
     directInterfaceExpansion,
     directInterfaceUnavailableReason,
+    directNeighborhoodExpansion,
+    directNeighborhoodUnavailableReason,
     document,
     distributeUnavailableReason,
     duplicateSelectedModules,
@@ -1368,6 +1405,7 @@ export function BlockDesignStudio({
     requireAppliedInspectorDraft,
     saveCurrent,
     selectDirectInterfaces,
+    selectDirectNeighborhood,
     selectedNode,
     selectedDiagramItemCount,
     toggleDock,

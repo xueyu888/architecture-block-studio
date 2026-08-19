@@ -93,15 +93,17 @@ export type DirectInterfaceSelectionExpansion =
     addedInterfaceCount: 0;
   };
 
-/**
- * Expands selected modules to their incident interfaces without changing the
- * design document. Adjacency comes from the model graph; this layer only owns
- * canonical workspace selection composition across one or more levels.
- */
-export function directInterfaceSelectionExpansion(
+interface DirectSelectionContext {
+  selectedItems: readonly DiagramSelectionRef[];
+  selectedNodeCount: number;
+  directInterfaces: readonly DiagramSelectionRef[];
+  neighborhoodNodes: readonly DiagramSelectionRef[];
+}
+
+function directSelectionContext(
   document: BlockDesignDocument,
   selection: SelectionRef,
-): DirectInterfaceSelectionExpansion {
+): DirectSelectionContext {
   const selectedItems = diagramSelectionItems(selection);
   const existingNodeIdsByLevel = new Map(
     document.levels.map((level) => [level.id, new Set(level.nodes.map((node) => node.id))]),
@@ -115,8 +117,48 @@ export function directInterfaceSelectionExpansion(
     nodeIdsByLevel.set(item.levelId, nodeIds);
   });
 
-  const selectedNodeCount = [...nodeIdsByLevel.values()]
-    .reduce((count, nodeIds) => count + nodeIds.size, 0);
+  const directInterfaces: DiagramSelectionRef[] = [];
+  const neighborhoodNodes: DiagramSelectionRef[] = [];
+  document.levels.forEach((level) => {
+    const selectedNodeIds = nodeIdsByLevel.get(level.id);
+    if (!selectedNodeIds) return;
+    const neighborNodeIds = new Set<string>();
+    listDirectConnections(level, selectedNodeIds).forEach((connection) => {
+      directInterfaces.push({
+        kind: "connection",
+        levelId: level.id,
+        connectionId: connection.id,
+      });
+      neighborNodeIds.add(connection.source.nodeId);
+      neighborNodeIds.add(connection.target.nodeId);
+    });
+    level.nodes.forEach((node) => {
+      if (neighborNodeIds.has(node.id)) {
+        neighborhoodNodes.push({ kind: "node", levelId: level.id, nodeId: node.id });
+      }
+    });
+  });
+
+  return {
+    selectedItems,
+    selectedNodeCount: [...nodeIdsByLevel.values()]
+      .reduce((count, nodeIds) => count + nodeIds.size, 0),
+    directInterfaces,
+    neighborhoodNodes,
+  };
+}
+
+/**
+ * Expands selected modules to their incident interfaces without changing the
+ * design document. Adjacency comes from the model graph; this layer only owns
+ * canonical workspace selection composition across one or more levels.
+ */
+export function directInterfaceSelectionExpansion(
+  document: BlockDesignDocument,
+  selection: SelectionRef,
+): DirectInterfaceSelectionExpansion {
+  const context = directSelectionContext(document, selection);
+  const { selectedItems, selectedNodeCount, directInterfaces } = context;
   if (selectedNodeCount === 0) {
     return {
       available: false,
@@ -127,15 +169,6 @@ export function directInterfaceSelectionExpansion(
     };
   }
 
-  const directInterfaces = document.levels.flatMap((level): DiagramSelectionRef[] => {
-    const nodeIds = nodeIdsByLevel.get(level.id);
-    if (!nodeIds) return [];
-    return listDirectConnections(level, nodeIds).map((connection) => ({
-      kind: "connection",
-      levelId: level.id,
-      connectionId: connection.id,
-    }));
-  });
   if (directInterfaces.length === 0) {
     return {
       available: false,
@@ -168,6 +201,98 @@ export function directInterfaceSelectionExpansion(
     ),
     selectedNodeCount,
     directInterfaceCount: directInterfaces.length,
+    addedInterfaceCount,
+  };
+}
+
+export type DirectNeighborhoodSelectionExpansion =
+  | {
+    available: true;
+    selection: SelectionRef;
+    selectedNodeCount: number;
+    neighborhoodNodeCount: number;
+    directInterfaceCount: number;
+    addedNodeCount: number;
+    addedInterfaceCount: number;
+  }
+  | {
+    available: false;
+    reason: "no-modules" | "no-direct-interfaces" | "all-direct-neighborhood-selected";
+    selectedNodeCount: number;
+    neighborhoodNodeCount: number;
+    directInterfaceCount: number;
+    addedNodeCount: 0;
+    addedInterfaceCount: 0;
+  };
+
+/**
+ * Expands selected modules to the local subgraph formed by every incident
+ * interface and both of its existing endpoint modules. Unrelated selected
+ * objects are preserved; the design and viewport remain outside this owner.
+ */
+export function directNeighborhoodSelectionExpansion(
+  document: BlockDesignDocument,
+  selection: SelectionRef,
+): DirectNeighborhoodSelectionExpansion {
+  const context = directSelectionContext(document, selection);
+  const {
+    selectedItems,
+    selectedNodeCount,
+    directInterfaces,
+    neighborhoodNodes,
+  } = context;
+  if (selectedNodeCount === 0) {
+    return {
+      available: false,
+      reason: "no-modules",
+      selectedNodeCount: 0,
+      neighborhoodNodeCount: 0,
+      directInterfaceCount: 0,
+      addedNodeCount: 0,
+      addedInterfaceCount: 0,
+    };
+  }
+  if (directInterfaces.length === 0) {
+    return {
+      available: false,
+      reason: "no-direct-interfaces",
+      selectedNodeCount,
+      neighborhoodNodeCount: 0,
+      directInterfaceCount: 0,
+      addedNodeCount: 0,
+      addedInterfaceCount: 0,
+    };
+  }
+
+  const selectedKeys = new Set(selectedItems.map(diagramSelectionKey));
+  const addedNodeCount = neighborhoodNodes.filter(
+    (item) => !selectedKeys.has(diagramSelectionKey(item)),
+  ).length;
+  const addedInterfaceCount = directInterfaces.filter(
+    (item) => !selectedKeys.has(diagramSelectionKey(item)),
+  ).length;
+  if (addedNodeCount === 0 && addedInterfaceCount === 0) {
+    return {
+      available: false,
+      reason: "all-direct-neighborhood-selected",
+      selectedNodeCount,
+      neighborhoodNodeCount: neighborhoodNodes.length,
+      directInterfaceCount: directInterfaces.length,
+      addedNodeCount: 0,
+      addedInterfaceCount: 0,
+    };
+  }
+
+  return {
+    available: true,
+    selection: replaceDiagramSelection(
+      [...selectedItems, ...neighborhoodNodes, ...directInterfaces],
+      document.entryLevelId,
+    ),
+    selectedNodeCount,
+    neighborhoodNodeCount: neighborhoodNodes.length,
+    directInterfaceCount: directInterfaces.length,
+    addedNodeCount,
     addedInterfaceCount,
   };
 }

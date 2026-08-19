@@ -12,6 +12,7 @@ export type StudioCommandId =
   | "selectModulesInLevel"
   | "selectInterfacesInLevel"
   | "selectDirectInterfaces"
+  | "selectDirectNeighborhood"
   | "clearSelection"
   | "copySelection"
   | "paste"

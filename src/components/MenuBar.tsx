@@ -34,6 +34,7 @@ const MENU_DEFINITIONS: Array<{
       "selectModulesInLevel",
       "selectInterfacesInLevel",
       "selectDirectInterfaces",
+      "selectDirectNeighborhood",
       "clearSelection",
       "copySelection",
       "paste",

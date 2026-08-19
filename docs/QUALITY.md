@@ -138,6 +138,8 @@ Iteration 93 对照 draw.io `selectConnections` 将当前 cell 的边加入既�
 
 Iteration 94 对照 draw.io `selectVertices / selectEdges` 的完整类型选择边界，在既有 selection Owner 中增加 `selectDiagramKindInLevel`。它只接收当前 `DesignLevel` 与 `node | connection`，把完整文档集合交给 canonical replace；Studio 不遍历当前 DOM 或 React Flow store，两个 `StudioCommand` 统一服务 Edit 与 Command Palette。空 Level 分别给出无模块 / 无接口原因，草稿取消、重复执行、成功替换都不改 JSON、History、viewport、布局或路线。最终 158 / 158 unit（19 files / 1.48 秒）、1899-module build（6.80 秒）、Chromium 76 / 76 + Firefox 75 / 75 = 151 / 151（4.3 分钟）通过；默认图验证 7 modules 与 10 interfaces 互斥替换并审计 10 / 45，五层每层 2 条稀疏线、100 线 Hub 的 101 / 0 与 0 / 100、200 / 400 全量选择均通过。1000 / 2000 单次复验中选择 2000 interfaces / 1000 modules 为 1167 / 626 ms，后续完整压力旅程继续通过。`select-interfaces-in-level.png` 人工复核 10 条线方向、端口、类型色和 Inspector 清晰，0 穿卡、0 线中标签；整体仍未达到 draw.io 同等级别，后续继续迭代。
 
+Iteration 95 把“选中直接接口”扩展为真正可操作的局部依赖子图，但没有新增图事实或隐式聚焦。`directSelectionContext` 一次按 Level 校验所选模块并复用 model-owned `listDirectConnections`，同时派生 canonical connection 与端点 module 引用；`directInterfaceSelectionExpansion` 和新的 `directNeighborhoodSelectionExpansion` 共用它。命令只把当前一跳加入既有选择，因此从默认 Core 第一次得到 5 modules / 8 interfaces，第二次再扩成完整 7 / 10，第三次才给出闭包已选原因；选区与 Fit Selection 保持正交。最终 160 / 160 unit（19 files / 1.52 秒）、1899-module build（6.75 秒）、Chromium 77 / 77 + Firefox 76 / 76 = 153 / 153（4.3 分钟）通过；默认图重跑 10 routes / 45 pairs，偏斜 Hub 从 leaf 得到 2 / 1、从 hub 得到 101 / 100，并在每一步重跑 100 routes / 4,950 pairs。200 / 400 邻域选择 647 ms；1000 / 2000 为 748 ms，总测量内存 95,412,725 bytes。`select-direct-neighborhood.png` 已人工逐线复核：5 个模块选择轮廓一致，8 条接口方向与端口清楚，无穿卡、线中标签或面板遮挡。整体仍未达到 draw.io 同等级别，后续继续迭代。
+
 ## 每次迭代的最小验证门槛
 
 每个完成的迭代必须留下与风险相称的证据：
@@ -187,6 +189,7 @@ Iteration 94 对照 draw.io `selectVertices / selectEdges` 的完整类型选择
 - 模块 move / resize 的背景网格、键盘步长和 pointer 吸附必须消费同一 `DESIGN_GRID_SIZE`；移动时每轴按“正交重叠邻居的等距 → 边缘 / 中心对齐 → 父级相对网格”确定唯一结果，等距只显示两段无文字括号；resize 沿用位置 / 同尺寸 / 网格合同。直接手势开始后按 Alt 必须同时关闭全部吸附，预览和最终 JSON 不得被第三方隐藏吸附再次改写。
 - 多选必须由显式工作区协议拥有，不能把 React Flow 内部 selected 数组或框选矩形当成文档事实；成组移动只提交一次 `nodes/move`，混选删除只提交一次 `objects/delete`，均由一次 Undo 恢复。批量删除必须先验证全部目标，显式接口先删、模块按 Level 由深到浅复用单对象级联；共享子 Level、未使用接口定义和失败原子性不得由 UI 猜测。多选期间隐藏单对象编辑抓手。
 - 直接接口只能由模型层对设计文档做同 Level 邻接查询，Inspector 摘要和选择扩展必须消费同一结果；共享连接、自环和跨 Level 模块选择必须 canonical 去重。扩展选择不改 JSON、History 或 viewport，未应用草稿与重复执行必须给出可验证反馈。
+- 直接邻域只能从同一模型邻接事实派生接口端点，不能按视觉距离、DOM 挂载或 route 穿越猜测；命令每次只扩展当前所选模块的一跳并允许渐进达到闭包，不隐藏无关对象或创建过滤状态。选择与 Fit 必须正交，只有显式视口命令可以改变观察范围。
 - 当前 Level 的全选、仅模块、仅接口和清空必须消费同一 canonical selection 协议；按类型选择读取完整文档集合而不是可见 DOM / 渐进窗口。空类型、草稿拒绝、重复执行和 1000 / 2000 视口裁剪都不得制造截断选择、History 或 viewport 副作用。
 - 多选对齐至少需要 2 个、分布至少需要 3 个同一 Level 的 authored 模块，且每个模块只能有一个可编辑投影；接口混选、跨层、展开 hierarchy、布局未就绪或未应用草稿必须给出同源禁用原因。目标位置只能由纯几何函数计算，一条命令只提交一次 `nodes/move`；selection 与 viewport 保持稳定，布局和路由从新文档几何重算。
 - 空白画布提供清晰的第一步，不迫使新用户猜工具栏图标。
