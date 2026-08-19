@@ -1,5 +1,9 @@
 import { routeBends, routeLength } from "./routingGeometry";
 import { solveRoutingScene } from "./sceneRouter";
+import {
+  createRoutingObstacleCatalog,
+  type RoutingObstacleCatalog,
+} from "./obstacleCatalog";
 import type {
   PlannedRoute,
   RoutingDiagnostic,
@@ -12,7 +16,8 @@ import type {
 import type { RoutePoint } from "./routeInterface";
 
 const PREVIEW_LEG_ID = "__connection_preview_leg__";
-const PREVIEW_POINTER_OBSTACLE_BASE_ID = "__connection_preview_pointer__";
+const PREVIEW_POINTER_PHYSICAL_KEY = "__connection_preview_pointer__";
+export const CONNECTION_PREVIEW_DUPLICATE_REUSE_MS = 30;
 
 export interface RoutingPreviewNodeGeometry {
   id: string;
@@ -55,6 +60,26 @@ export interface ConnectionPreviewResult {
   targetDirection?: RoutingDirection;
 }
 
+export interface ConnectionPreviewSessionStats {
+  requestCount: number;
+  solveCount: number;
+  cacheHitCount: number;
+  registeredObstacleCount: number;
+  disposed: boolean;
+}
+
+export interface ConnectionPreviewSessionSolve {
+  result: ConnectionPreviewResult;
+  cacheHit: boolean;
+  stats: ConnectionPreviewSessionStats;
+}
+
+export interface ConnectionPreviewSession {
+  solve(request: ConnectionPreviewRequest, nowMs?: number): ConnectionPreviewSessionSolve;
+  stats(): ConnectionPreviewSessionStats;
+  dispose(): void;
+}
+
 function quantize(value: number, policy: RoutingPolicy): number {
   return Math.round(value * policy.coordinateScale) / policy.coordinateScale;
 }
@@ -66,17 +91,6 @@ function quantizePoint(point: RoutePoint, policy: RoutingPolicy): RoutePoint {
 function pointWithinBounds(point: RoutePoint, bounds: RoutingRect): boolean {
   return point.x >= bounds.left && point.x <= bounds.right &&
     point.y >= bounds.top && point.y <= bounds.bottom;
-}
-
-function uniquePointerObstacleId(obstacles: readonly RoutingObstacle[]): string {
-  const ids = new Set(obstacles.map((obstacle) => obstacle.id));
-  let id = PREVIEW_POINTER_OBSTACLE_BASE_ID;
-  let suffix = 1;
-  while (ids.has(id)) {
-    id = `${PREVIEW_POINTER_OBSTACLE_BASE_ID}-${suffix}`;
-    suffix += 1;
-  }
-  return id;
 }
 
 function naturalTargetDirections(source: RoutePoint, target: RoutePoint): RoutingDirection[] {
@@ -145,6 +159,7 @@ export function solveConnectionPreview(
   environment: RoutingPreviewEnvironment,
   request: ConnectionPreviewRequest,
   policy: RoutingPolicy,
+  preparedObstacleCatalog?: RoutingObstacleCatalog,
 ): ConnectionPreviewResult {
   const sourceNode = environment.nodes.get(request.source.nodeId);
   const sourceEndpoint = sourceNode?.endpoints.get(request.source.handleId);
@@ -180,22 +195,7 @@ export function solveConnectionPreview(
     ...(targetNode?.ancestorObstacleIds ?? []),
   ])].sort();
   const routingBounds = routingBoundsFor(sourceNode, targetNode, targetPoint);
-  let obstacles = environment.obstacles;
-  let targetObstacleId = targetRequest?.nodeId;
-  if (!targetObstacleId) {
-    targetObstacleId = uniquePointerObstacleId(obstacles);
-    const halfPixel = Math.max(0.5, 1 / policy.coordinateScale);
-    obstacles = [...obstacles, {
-      id: targetObstacleId,
-      kind: "module",
-      bounds: {
-        left: targetPoint.x - halfPixel,
-        right: targetPoint.x + halfPixel,
-        top: targetPoint.y - halfPixel,
-        bottom: targetPoint.y + halfPixel,
-      },
-    }];
-  }
+  const targetObstacleId = targetRequest?.nodeId;
 
   const directions = targetEndpoint
     ? [targetEndpoint.outward]
@@ -204,7 +204,7 @@ export function solveConnectionPreview(
   const diagnostics: RoutingDiagnostic[] = [];
   directions.forEach((targetDirection) => {
     const scene: RoutingScene = {
-      obstacles,
+      obstacles: environment.obstacles,
       gates: [],
       legs: [{
         id: PREVIEW_LEG_ID,
@@ -218,14 +218,14 @@ export function solveConnectionPreview(
         target: {
           point: targetPoint,
           outward: targetDirection,
-          terminalObstacleId: targetObstacleId!,
-          physicalKey: targetEndpoint?.physicalKey ?? `${targetObstacleId}::pointer`,
+          terminalObstacleId: targetObstacleId,
+          physicalKey: targetEndpoint?.physicalKey ?? PREVIEW_POINTER_PHYSICAL_KEY,
         },
         ignoredObstacleIds,
         routingBounds,
       }],
     };
-    const result = solveRoutingScene(scene, previewPolicy(policy));
+    const result = solveRoutingScene(scene, previewPolicy(policy), preparedObstacleCatalog);
     const route = result.routes.get(PREVIEW_LEG_ID);
     if (route && result.certificate.verified) candidates.push({ route, direction: targetDirection });
     diagnostics.push(...result.diagnostics);
@@ -252,5 +252,73 @@ export function solveConnectionPreview(
     diagnostics: [],
     obstacleCount: environment.obstacles.length,
     targetDirection: best.direction,
+  };
+}
+
+function previewRequestKey(request: ConnectionPreviewRequest, policy: RoutingPolicy): string {
+  const source = `${request.source.nodeId}\u0000${request.source.handleId}`;
+  if (request.target.kind === "attached") {
+    return `${source}\u0000attached\u0000${request.target.nodeId}\u0000${request.target.handleId}`;
+  }
+  const point = quantizePoint(request.target.point, policy);
+  return `${source}\u0000pointer\u0000${point.x}\u0000${point.y}`;
+}
+
+/**
+ * Owns only disposable routing resources for one pointer gesture. Static
+ * obstacles are registered once; changed pointer intents solve immediately;
+ * an exactly repeated intent may reuse the latest deterministic result for the
+ * same short boundary used by draw.io's live endpoint preview.
+ */
+export function createConnectionPreviewSession(
+  environment: RoutingPreviewEnvironment,
+  policy: RoutingPolicy,
+): ConnectionPreviewSession {
+  let obstacleCatalog: RoutingObstacleCatalog | undefined = createRoutingObstacleCatalog(
+    environment.obstacles,
+    previewPolicy(policy),
+  );
+  let requestCount = 0;
+  let solveCount = 0;
+  let cacheHitCount = 0;
+  let lastKey: string | undefined;
+  let lastAt = Number.NEGATIVE_INFINITY;
+  let lastResult: ConnectionPreviewResult | undefined;
+  let disposed = false;
+  const snapshot = (): ConnectionPreviewSessionStats => ({
+    requestCount,
+    solveCount,
+    cacheHitCount,
+    registeredObstacleCount: obstacleCatalog?.obstacleCount ?? 0,
+    disposed,
+  });
+
+  return {
+    solve: (request, nowMs = performance.now()) => {
+      if (disposed || !obstacleCatalog) throw new Error("Connection preview session has been disposed.");
+      if (!Number.isFinite(nowMs)) throw new Error("Connection preview session time must be finite.");
+      requestCount += 1;
+      const key = previewRequestKey(request, policy);
+      if (
+        lastResult && key === lastKey && nowMs >= lastAt &&
+        nowMs - lastAt < CONNECTION_PREVIEW_DUPLICATE_REUSE_MS
+      ) {
+        cacheHitCount += 1;
+        return { result: lastResult, cacheHit: true, stats: snapshot() };
+      }
+      const result = solveConnectionPreview(environment, request, policy, obstacleCatalog);
+      solveCount += 1;
+      lastKey = key;
+      lastAt = nowMs;
+      lastResult = result;
+      return { result, cacheHit: false, stats: snapshot() };
+    },
+    stats: snapshot,
+    dispose: () => {
+      disposed = true;
+      obstacleCatalog = undefined;
+      lastKey = undefined;
+      lastResult = undefined;
+    },
   };
 }

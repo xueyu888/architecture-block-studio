@@ -2,6 +2,8 @@ import { describe, expect, test } from "vitest";
 import {
   adaptRouteEndpoints,
   compactOrthogonalPoints,
+  createConnectionPreviewSession,
+  createRoutingObstacleCatalog,
   DEFAULT_ROUTING_POLICY,
   drawOrthogonalRoute,
   planRouteJumps,
@@ -146,6 +148,84 @@ describe("orthogonal route primitives", () => {
     expect(preview.status).toBe("unresolved");
     expect(preview.points).toEqual([]);
     expect(preview.diagnostics.length).toBeGreaterThan(0);
+  });
+
+  test("keeps one obstacle registration per gesture without delaying changed pointer intents", () => {
+    const environment: RoutingPreviewEnvironment = {
+      obstacles: [
+        { id: "source", kind: "module", bounds: { left: 0, right: 100, top: 0, bottom: 100 } },
+        { id: "far", kind: "module", bounds: { left: 900, right: 1000, top: 0, bottom: 100 } },
+      ],
+      nodes: new Map([
+        ["source", {
+          id: "source",
+          ancestorObstacleIds: [],
+          endpoints: new Map([["out", { point: { x: 100, y: 50 }, outward: "right", physicalKey: "source::out" }]]),
+        }],
+      ]),
+    };
+    const session = createConnectionPreviewSession(environment, DEFAULT_ROUTING_POLICY);
+    const request = (x: number) => ({
+      source: { nodeId: "source", handleId: "out" },
+      target: { kind: "pointer" as const, point: { x, y: 180 } },
+    });
+
+    expect(() => session.solve(request(260), Number.NaN)).toThrow("finite");
+    const first = session.solve(request(260), 100);
+    const duplicate = session.solve(request(260), 110);
+    const changed = session.solve(request(264), 111);
+    const expired = session.solve(request(264), 142);
+
+    expect(first.cacheHit).toBe(false);
+    expect(duplicate.cacheHit).toBe(true);
+    expect(duplicate.result).toBe(first.result);
+    expect(changed.cacheHit).toBe(false);
+    expect(changed.result.points.at(-1)).toEqual({ x: 264, y: 180 });
+    expect(expired.cacheHit).toBe(false);
+    expect(expired.stats).toEqual({
+      requestCount: 4,
+      solveCount: 3,
+      cacheHitCount: 1,
+      registeredObstacleCount: 2,
+      disposed: false,
+    });
+
+    session.dispose();
+    expect(session.stats()).toEqual({
+      requestCount: 4,
+      solveCount: 3,
+      cacheHitCount: 1,
+      registeredObstacleCount: 0,
+      disposed: true,
+    });
+    expect(() => session.solve(request(268), 143)).toThrow("disposed");
+  });
+
+  test("indexes relevant obstacles deterministically and rejects a foreign scene catalog", () => {
+    const obstacles = [
+      { id: "left", kind: "module" as const, bounds: { left: 0, right: 100, top: 0, bottom: 100 } },
+      { id: "middle", kind: "module" as const, bounds: { left: 500, right: 600, top: 0, bottom: 100 } },
+      { id: "right", kind: "module" as const, bounds: { left: 1000, right: 1100, top: 0, bottom: 100 } },
+    ];
+    const catalog = createRoutingObstacleCatalog(obstacles, DEFAULT_ROUTING_POLICY);
+
+    expect(catalog.query({ left: 450, right: 650, top: -50, bottom: 150 }).map((entry) => entry.id))
+      .toEqual(["middle"]);
+    expect(catalog.query(
+      { left: -50, right: 1150, top: -50, bottom: 150 },
+      new Set(["middle"]),
+    ).map((entry) => entry.id)).toEqual(["left", "right"]);
+    expect(() => solveConnectionPreview({
+      obstacles: [...obstacles],
+      nodes: new Map([["left", {
+        id: "left",
+        ancestorObstacleIds: [],
+        endpoints: new Map([["out", { point: { x: 100, y: 50 }, outward: "right", physicalKey: "left::out" }]]),
+      }]]),
+    }, {
+      source: { nodeId: "left", handleId: "out" },
+      target: { kind: "pointer", point: { x: 200, y: 50 } },
+    }, DEFAULT_ROUTING_POLICY, catalog)).toThrow("does not match");
   });
 
   test("renders a deterministic bridge for an unavoidable route crossing", () => {

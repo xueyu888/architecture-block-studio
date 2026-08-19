@@ -2,7 +2,6 @@ import type { RoutePoint } from "./routeInterface";
 import {
   boundsMayInteract,
   endpointSideIsRespected,
-  inflateRect,
   oppositeDirection,
   routeBends,
   routeBounds,
@@ -20,6 +19,10 @@ import {
   shortSegmentCount,
   stableTextHash,
 } from "./routingGeometry";
+import {
+  routingObstacleCatalogFor,
+  type RoutingObstacleCatalog,
+} from "./obstacleCatalog";
 import type {
   PlannedRoute,
   RoutingDiagnostic,
@@ -93,7 +96,9 @@ export function verifyRoutingResult(
   scene: RoutingScene,
   routes: ReadonlyMap<string, PlannedRoute>,
   policy: RoutingPolicy,
+  preparedObstacleCatalog?: RoutingObstacleCatalog,
 ): RoutingVerification {
+  const obstacleCatalog = routingObstacleCatalogFor(scene.obstacles, policy, preparedObstacleCatalog);
   const diagnostics: RoutingDiagnostic[] = [];
   const conflictingLegIds = new Set<string>();
   const capacityPairs = new Set<string>();
@@ -101,8 +106,6 @@ export function verifyRoutingResult(
   const auditedLegIds = scene.legs.map((leg) => leg.id).sort();
   let auditedPairCount = 0;
   const legsById = new Map(scene.legs.map((leg) => [leg.id, leg] as const));
-  const obstaclesById = new Map(scene.obstacles.map((obstacle) => [obstacle.id, obstacle] as const));
-  const clearance = policy.clearance + policy.strokeWidth / 2;
 
   scene.legs.forEach((leg) => {
     const route = routes.get(leg.id);
@@ -157,11 +160,11 @@ export function verifyRoutingResult(
 
     const ignored = new Set(leg.ignoredObstacleIds);
     segments.forEach((segment, segmentIndex) => {
-      scene.obstacles.forEach((obstacle) => {
+      obstacleCatalog.entries.forEach((obstacle) => {
         if (ignored.has(obstacle.id)) return;
         if (segmentIndex === 0 && obstacle.id === leg.source.terminalObstacleId) return;
         if (segmentIndex === segments.length - 1 && obstacle.id === leg.target.terminalObstacleId) return;
-        if (segmentIntersectsRectInterior(segment, inflateRect(obstacle.bounds, clearance))) {
+        if (segmentIntersectsRectInterior(segment, obstacle.bounds)) {
           diagnostics.push(diagnostic(`Route crosses obstacle ${obstacle.id}.`, leg.id));
         }
       });
@@ -249,11 +252,11 @@ export function verifyRoutingResult(
   // Keep certificates compact while preserving a stable total-order tie-break.
   objective.signature = stableTextHash(objective.signature);
 
-  // An obstacle id may be absent only for a malformed adapter input; surface it
-  // here rather than silently exempting a terminal from clearance checks.
+  // A declared terminal obstacle must exist. A disposable free pointer leaves
+  // the id absent and therefore receives no terminal-clearance exemption.
   scene.legs.forEach((leg) => {
     [leg.source.terminalObstacleId, leg.target.terminalObstacleId].forEach((id) => {
-      if (!obstaclesById.has(id)) diagnostics.push(diagnostic(`Missing terminal obstacle ${id}.`, leg.id));
+      if (id && !obstacleCatalog.get(id)) diagnostics.push(diagnostic(`Missing terminal obstacle ${id}.`, leg.id));
     });
   });
 

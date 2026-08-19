@@ -8,10 +8,15 @@ export {
   type RouteJump,
 } from "./routeInterface";
 export {
+  CONNECTION_PREVIEW_DUPLICATE_REUSE_MS,
+  createConnectionPreviewSession,
   solveConnectionPreview,
   type ConnectionPreviewAnchor,
   type ConnectionPreviewRequest,
   type ConnectionPreviewResult,
+  type ConnectionPreviewSession,
+  type ConnectionPreviewSessionSolve,
+  type ConnectionPreviewSessionStats,
   type ConnectionPreviewTarget,
   type RoutingPreviewEnvironment,
   type RoutingPreviewNodeGeometry,
@@ -34,6 +39,11 @@ export {
   type RoutingLayoutProjection,
 } from "./layoutSceneAdapter";
 export { verifyRoutingResult } from "./routeVerifier";
+export {
+  createRoutingObstacleCatalog,
+  type RoutingObstacleCatalog,
+  type RoutingObstacleCatalogEntry,
+} from "./obstacleCatalog";
 export { solveRoutingScene } from "./sceneRouter";
 export {
   DEFAULT_ROUTING_POLICY,

@@ -214,6 +214,8 @@ async function clickWithPointer(page: Page, locator: Locator): Promise<void> {
 }
 
 async function altSelectIntersectingNode(page: Page, target: Locator): Promise<void> {
+  const saveState = page.locator(".bd-statusbar span").nth(1);
+  const saveStateBefore = await saveState.textContent();
   await page.evaluate(() => new Promise<void>((resolve) => {
     const viewport = document.querySelector<HTMLElement>(".react-flow__viewport");
     if (!viewport) throw new Error("Canvas viewport is not mounted.");
@@ -257,7 +259,7 @@ async function altSelectIntersectingNode(page: Page, target: Locator): Promise<v
   expect(after).not.toBeNull();
   expect(after!.x).toBeCloseTo(before!.x, 4);
   expect(after!.y).toBeCloseTo(before!.y, 4);
-  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
+  await expect(saveState).toHaveText(saveStateBefore ?? "");
 }
 
 async function altClickCanvasPoint(page: Page, point: { x: number; y: number }): Promise<void> {
@@ -2596,6 +2598,10 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
   await expect(stressPanel).toHaveAttribute("data-connection-status", "valid");
   await expect(stressPanel).toHaveAttribute("data-preview-routing-status", "routed");
   await expect(stressPanel).toHaveAttribute("data-preview-obstacle-count", "101");
+  await expect(stressPanel).toHaveAttribute("data-preview-registered-obstacle-count", "101");
+  expect(Number(await stressPanel.getAttribute("data-preview-request-count"))).toBeGreaterThanOrEqual(
+    Number(await stressPanel.getAttribute("data-preview-solve-count")),
+  );
   expect(Number(await stressPanel.getAttribute("data-preview-peak-duration-ms"))).toBeLessThan(80);
   expect(await connectionPreviewIssues(page)).toEqual({
     collisions: [],
@@ -2702,6 +2708,7 @@ test("expands five hierarchy layers and audits every visible route and pair", as
   await expect(nestedPreviewPanel).toHaveAttribute("data-connection-status", "valid");
   await expect(nestedPreviewPanel).toHaveAttribute("data-preview-routing-status", "routed");
   await expect(nestedPreviewPanel).toHaveAttribute("data-preview-obstacle-count", "17");
+  await expect(nestedPreviewPanel).toHaveAttribute("data-preview-registered-obstacle-count", "17");
   expect(await connectionPreviewIssues(page)).toEqual({
     collisions: [],
     nonOrthogonalSegments: [],
@@ -3173,7 +3180,18 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   metrics.connectionPreviewSolveCount = Number(
     await largePreviewPanel.getAttribute("data-preview-solve-count"),
   );
+  metrics.connectionPreviewRequestCount = Number(
+    await largePreviewPanel.getAttribute("data-preview-request-count"),
+  );
+  metrics.connectionPreviewCacheHitCount = Number(
+    await largePreviewPanel.getAttribute("data-preview-cache-hit-count"),
+  );
+  metrics.connectionPreviewRegisteredObstacleCount = Number(
+    await largePreviewPanel.getAttribute("data-preview-registered-obstacle-count"),
+  );
   expect(metrics.connectionPreviewPeakMs).toBeLessThan(80);
+  expect(metrics.connectionPreviewRegisteredObstacleCount).toBe(nodeCount);
+  expect(metrics.connectionPreviewRequestCount).toBeGreaterThanOrEqual(metrics.connectionPreviewSolveCount);
   expect(await connectionPreviewIssues(page)).toEqual({
     collisions: [],
     nonOrthogonalSegments: [],
@@ -3442,11 +3460,18 @@ test("routes a live pointer connection through the full obstacle scene and commi
   await page.mouse.move(sourceBox!.x + sourceBox!.width / 2, sourceBox!.y + sourceBox!.height / 2);
   await page.mouse.down();
   await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2, { steps: 12 });
+  await page.mouse.move(targetBox!.x + targetBox!.width / 2 + 1, targetBox!.y + targetBox!.height / 2);
+  await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2);
   const panel = page.locator('.bd-connection-gesture-panel[data-connection-mode="create"]');
   const preview = page.locator('.bd-connection-preview[data-connection-status="valid"]');
   await expect(panel).toHaveAttribute("data-connection-status", "valid");
   await expect(panel).toHaveAttribute("data-preview-routing-status", "routed");
   await expect(panel).toHaveAttribute("data-preview-obstacle-count", "3");
+  await expect(panel).toHaveAttribute("data-preview-registered-obstacle-count", "3");
+  expect(Number(await panel.getAttribute("data-preview-request-count"))).toBeGreaterThan(
+    Number(await panel.getAttribute("data-preview-solve-count")),
+  );
+  expect(Number(await panel.getAttribute("data-preview-cache-hit-count"))).toBeGreaterThan(0);
   await expect(preview).toHaveAttribute("data-preview-routing-status", "routed");
   expect(Number(await preview.getAttribute("data-preview-point-count"))).toBeGreaterThanOrEqual(5);
   expect(await connectionPreviewIssues(page)).toEqual({
@@ -3527,6 +3552,9 @@ test("previews, cancels, rejects, preserves, and commits pointer connections con
   await expect(floatingPreview).toHaveAttribute("data-preview-routing-status", "routed");
   await expect(createPanel).toHaveAttribute("data-preview-routing-status", "routed");
   expect(Number(await createPanel.getAttribute("data-preview-obstacle-count"))).toBeGreaterThan(1);
+  expect(await createPanel.getAttribute("data-preview-registered-obstacle-count")).toBe(
+    await createPanel.getAttribute("data-preview-obstacle-count"),
+  );
   const floatingPath = await floatingPreview.locator(".bd-connection-preview-path").getAttribute("d");
   expect(floatingPath).toMatch(/^M .* L /);
   expect(floatingPath).not.toMatch(/[CQ]/);
@@ -3572,6 +3600,9 @@ test("previews, cancels, rejects, preserves, and commits pointer connections con
   await expect(attachedPreview).toBeVisible();
   await expect(attachedPreview).toHaveAttribute("data-preview-routing-status", "routed");
   await expect(reconnectPanel).toHaveAttribute("data-preview-routing-status", "routed");
+  expect(await reconnectPanel.getAttribute("data-preview-registered-obstacle-count")).toBe(
+    await reconnectPanel.getAttribute("data-preview-obstacle-count"),
+  );
   const attachedPath = await attachedPreview.locator(".bd-connection-preview-path").getAttribute("d");
   expect(attachedPath).toMatch(/^M .* L /);
   expect(attachedPath).not.toMatch(/[CQ]/);

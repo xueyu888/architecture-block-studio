@@ -122,7 +122,7 @@ Dock / selection / dialogs / command query ─► disposable workspace state; ne
 | --- | --- | --- | --- |
 | 持久设计事实 | `BlockDesignDocument` | 文档、Level、模块、端口、接口、连接、层级绑定、authored 位置 / 尺寸与手动路由 | 是 |
 | 派生设计结果 | `model` / `layout` / `routing` | DRC issues、模块关联接口摘要、Flow nodes、可视边、ELK 位置、正交路径 | 否，可重建 |
-| 工作区状态 | `BlockDesignStudio` / Canvas / Dockview | 当前选择、展开 Level、面板布局、缩放、Fit 请求、自动布局模式、当前 gesture 的对齐辅助线、内部设计剪贴板与连续粘贴序号 | 否 |
+| 工作区状态 | `BlockDesignStudio` / Canvas / Dockview | 当前选择、展开 Level、面板布局、缩放、Fit 请求、自动布局模式、当前 gesture 的对齐辅助线、连接预览 session 与计数、内部设计剪贴板与连续粘贴序号 | 否 |
 | 未提交编辑草稿 | 各 Inspector / Dialog 表单 | 输入框内容、待创建连接 | 否；提交后才生成 `DesignOperation` |
 | 验证证据 | tests / screenshots / CI | 构建结果、几何检查、浏览器截图 | 否；只验证合同 |
 
@@ -242,7 +242,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 - 线路编辑器区分三种职责：空心菱形是从自动 / 手动路径派生的虚拟线段抓手，拖动会移动整段并物化手动 route；实心方点只投影已确认手动路线的真实折点，可拖动、Arrow 微调、Delete 或双击删除；小实心端点只提示可重连，真正的透明命中圆由 React Flow 管理。它们都不是新的设计事实。
 - 用户拖动线段或折点时，预览是临时 UI 状态；只有坐标真正改变，松手才提交一次 `connection/route`。拖动端点只提交一次 `connection/reconnect`。单击抓手、取消拖动或非法目标不得把自动路径误写成手动事实。
 - 键盘重连与 pointer 重连共享同一事实链。`model/graph` 拥有 source / target 候选、当前连接端点解析和“是否存在替代配对”的纯规则；`StudioCommands` 只表达当前选择下的可用性，Design 菜单、Command Palette 与 Inspector 只投影该命令；Dialog 只保存未提交的端点 key。端点未变化时提交按钮禁用，不调用 Editor；变化后仍只调用既有 `connection/reconnect`，由 Editor 原子校验并清除旧 waypoint。Dialog 关闭后的 Inspector 焦点请求是一次性工作区状态，不进入 JSON、历史或路由。
-- Pointer 创建 / 重连由 Canvas 内一个显式、短生命周期的 connection gesture 拥有：只记录模式、起点、当前 hover target 和提交结果。端口 DOM 上的 `origin / candidate / incompatible` role 与状态面板由该 gesture 和 `model/graph` 的唯一合法性规则派生；线路预览则把当前端点意图交给纯 `solveConnectionPreview`。吸附端点必须用 layout projection 中 `nodeId + handleId` 对应的规范锚点，React Flow 的可点击外框坐标不能成为第二端点事实；自由指针才使用当前 pointer 位置。preview 复用正式场景的全部障碍、clearance、端口法向、祖先忽略、同父级 routing domain、量化和 verifier，但每次只提交一条可丢弃 leg，并关闭没有意义的多线协商。无验证路线时返回空点集并显示 blocked，禁止退回穿卡直线；吸附后成功预览与单线正式提交使用同一几何。预览不画正式 target marker，避免从 input 端起拖时伪造语义方向。Escape、window blur、空白或非法落点会同时清理第三方拖线状态、候选投影和待提交结果；即使稍后的 pointerup 仍到达，也必须被 cancelled guard 拒绝。只有实际变化的合法端点才进入 Studio → Editor；同端点在 Editor 与 History 两层都保持语义 no-op。求解耗时、障碍数、次数、反馈和候选样式均为展示 / 验证状态，不进入 JSON、选择或历史。
+- Pointer 创建 / 重连由 Canvas 内一个显式、短生命周期的 connection gesture 拥有：只记录模式、起点、当前 hover target 和提交结果。端口 DOM 上的 `origin / candidate / incompatible` role 与状态面板由该 gesture 和 `model/graph` 的唯一合法性规则派生；线路预览则把当前端点意图交给 `ConnectionPreviewSession`。session 创建时通过 `RoutingObstacleCatalog` 把静态障碍安全域只注册一次，变化后的 pointer 坐标立即进入 `solveConnectionPreview`；仅量化请求完全相同且不足 30ms 时复用最近确定性结果。吸附端点必须用 layout projection 中 `nodeId + handleId` 对应的规范锚点，React Flow 的可点击外框坐标不能成为第二端点事实；自由指针才使用当前 pointer 位置，并由可选 terminal 类型明确表示它没有模块障碍。preview 复用正式场景的 clearance、端口法向、祖先忽略、同父级 routing domain、量化和 verifier，但每次只提交一条可丢弃 leg，并关闭没有意义的多线协商。无验证路线时返回空点集并显示 blocked，禁止退回穿卡直线；吸附后成功预览与单线正式提交使用同一几何。预览不画正式 target marker，避免从 input 端起拖时伪造语义方向。Escape、window blur、空白或非法落点会同时销毁 session、清理第三方拖线状态、候选投影和待提交结果；即使稍后的 pointerup 仍到达，也必须被 cancelled guard 拒绝。只有实际变化的合法端点才进入 Studio → Editor；同端点在 Editor 与 History 两层都保持语义 no-op。目录、最近结果、求解耗时、障碍数、请求 / 求解 / 命中计数、反馈和候选样式均为展示 / 验证状态，不进入 JSON、选择或历史。
 - React Flow viewport 的 zoom 还派生一个根级 inverse-zoom CSS 变量；线段与折点抓手保持 20–24 CSS px 命中区，内部菱形 / 方点更小；重连仍保留 20 设计像素透明命中圆，但视觉只显示 10 设计像素实心点，避免与真实 Port 形成第二个大圆环。该变量和命中几何只参与交互展示，不改变 waypoint、端点或路由计算。
 - 键盘移动抓手时，每次 Arrow 只提交一个 8 设计像素的 `connection/route` 操作；因为受控 Edge 会在文档投影更新时重建，Canvas 用一次性 `RouteHandleFocusRequest` 按 edge、抓手类型、索引和新坐标等待完全匹配的几何后恢复焦点，不能提前命中旧 DOM。该请求只负责连续输入，不进入设计、历史或路由算法。
 - 手动路由提交与端点位置恢复都复用同一个正交化函数；相邻 waypoints 必须共享 x 或 y，Schema 同样校验这一不变量，外部 JSON 不能产生斜线。

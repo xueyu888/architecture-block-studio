@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useState,
@@ -16,7 +17,8 @@ import {
 import type { ConnectablePortEndpoint } from "../model";
 import {
   drawOrthogonalRoute,
-  solveConnectionPreview,
+  createConnectionPreviewSession,
+  type ConnectionPreviewSession,
   type ConnectionPreviewResult,
   type RoutingPolicy,
   type RoutingPreviewEnvironment,
@@ -36,23 +38,24 @@ export interface ConnectionGestureFeedback {
 }
 
 interface PreviewRuntimeReport {
-  requestKey: string;
   status: ConnectionPreviewResult["status"];
   durationMs: number;
   obstacleCount: number;
   pointCount: number;
+  cacheHit: boolean;
+  requestCount: number;
+  solveCount: number;
+  cacheHitCount: number;
+  registeredObstacleCount: number;
 }
 
 interface PreviewRuntimeState extends PreviewRuntimeReport {
-  environment: RoutingPreviewEnvironment;
-  gesture?: ActiveConnectionGesture;
+  session: ConnectionPreviewSession;
   peakDurationMs: number;
-  solveCount: number;
 }
 
 interface ConnectionPreviewRuntime {
-  environment: RoutingPreviewEnvironment;
-  policy: RoutingPolicy;
+  session?: ConnectionPreviewSession;
   state?: PreviewRuntimeState;
   report: (report: PreviewRuntimeReport) => void;
 }
@@ -71,27 +74,30 @@ export function ConnectionGesturePreviewProvider({
   children: ReactNode;
 }) {
   const [state, setState] = useState<PreviewRuntimeState>();
+  const session = useMemo(
+    () => gesture ? createConnectionPreviewSession(environment, policy) : undefined,
+    [environment, gesture, policy],
+  );
+  useEffect(() => () => session?.dispose(), [session]);
   const report = useCallback((next: PreviewRuntimeReport) => {
+    if (!session) return;
     setState((current) => {
-      const sameGesture = current?.environment === environment && current.gesture === gesture;
+      const sameSession = current?.session === session;
       return {
         ...next,
-        environment,
-        gesture,
-        peakDurationMs: Math.max(sameGesture ? current.peakDurationMs : 0, next.durationMs),
-        solveCount: (sameGesture ? current.solveCount : 0) + 1,
+        session,
+        peakDurationMs: Math.max(sameSession ? current.peakDurationMs : 0, next.durationMs),
       };
     });
-  }, [environment, gesture]);
-  const currentState = state?.environment === environment && state.gesture === gesture
+  }, [session]);
+  const currentState = state?.session === session
     ? state
     : undefined;
   const value = useMemo<ConnectionPreviewRuntime>(() => ({
-    environment,
-    policy,
+    session,
     state: currentState,
     report,
-  }), [currentState, environment, policy, report]);
+  }), [currentState, report, session]);
   return <ConnectionPreviewContext.Provider value={value}>{children}</ConnectionPreviewContext.Provider>;
 }
 
@@ -163,6 +169,10 @@ export function ConnectionGesturePanel({
       data-preview-duration-ms={preview?.durationMs.toFixed(2) ?? "0"}
       data-preview-peak-duration-ms={preview?.peakDurationMs.toFixed(2) ?? "0"}
       data-preview-solve-count={preview?.solveCount ?? 0}
+      data-preview-request-count={preview?.requestCount ?? 0}
+      data-preview-cache-hit-count={preview?.cacheHitCount ?? 0}
+      data-preview-cache-hit={preview?.cacheHit ? "true" : "false"}
+      data-preview-registered-obstacle-count={preview?.registeredObstacleCount ?? 0}
       data-preview-route-point-count={preview?.pointCount ?? 0}
       role="status"
       aria-live="polite"
@@ -214,22 +224,15 @@ export function ConnectionGesturePreview({
 }: ConnectionLineComponentProps<CanvasFlowNode>) {
   const runtime = useContext(ConnectionPreviewContext);
   if (!runtime) throw new Error("ConnectionGesturePreview requires ConnectionGesturePreviewProvider.");
+  if (!runtime.session) throw new Error("ConnectionGesturePreview requires an active gesture session.");
   const targetAttached = Boolean(toHandle && toNode);
   const fromNodeId = fromNode.id;
   const fromHandleId = fromHandle.id ?? "";
   const toNodeId = toNode?.id;
   const toHandleId = toHandle?.id;
-  const requestKey = [
-    fromNodeId,
-    fromHandleId,
-    toNodeId ?? "pointer",
-    toHandleId ?? "",
-    toX,
-    toY,
-  ].join(":");
   const calculation = useMemo(() => {
     const startedAt = performance.now();
-    const result = solveConnectionPreview(runtime.environment, {
+    const solved = runtime.session!.solve({
       source: {
         nodeId: fromNodeId,
         handleId: fromHandleId,
@@ -241,13 +244,12 @@ export function ConnectionGesturePreview({
             handleId: toHandleId ?? "",
           }
         : { kind: "pointer", point: { x: toX, y: toY } },
-    }, runtime.policy);
-    return { result, durationMs: performance.now() - startedAt };
+    });
+    return { ...solved, durationMs: performance.now() - startedAt };
   }, [
     fromHandleId,
     fromNodeId,
-    runtime.environment,
-    runtime.policy,
+    runtime.session,
     targetAttached,
     toHandleId,
     toNodeId,
@@ -256,13 +258,17 @@ export function ConnectionGesturePreview({
   ]);
   useLayoutEffect(() => {
     runtime.report({
-      requestKey,
       status: calculation.result.status,
       durationMs: calculation.durationMs,
       obstacleCount: calculation.result.obstacleCount,
       pointCount: calculation.result.points.length,
+      cacheHit: calculation.cacheHit,
+      requestCount: calculation.stats.requestCount,
+      solveCount: calculation.stats.solveCount,
+      cacheHitCount: calculation.stats.cacheHitCount,
+      registeredObstacleCount: calculation.stats.registeredObstacleCount,
     });
-  }, [calculation, requestKey, runtime.report]);
+  }, [calculation, runtime.report]);
   const points = calculation.result.points;
   const path = drawOrthogonalRoute(points);
   const status = connectionStatus ?? "searching";
@@ -278,6 +284,11 @@ export function ConnectionGesturePreview({
       data-preview-target-node-id={toNodeId ?? ""}
       data-preview-obstacle-count={calculation.result.obstacleCount}
       data-preview-duration-ms={calculation.durationMs.toFixed(2)}
+      data-preview-cache-hit={calculation.cacheHit ? "true" : "false"}
+      data-preview-request-count={calculation.stats.requestCount}
+      data-preview-solve-count={calculation.stats.solveCount}
+      data-preview-cache-hit-count={calculation.stats.cacheHitCount}
+      data-preview-registered-obstacle-count={calculation.stats.registeredObstacleCount}
     >
       <path className="bd-connection-preview-underlay" d={path} aria-hidden="true" />
       <path className="bd-connection-preview-path" d={path} aria-hidden="true" />

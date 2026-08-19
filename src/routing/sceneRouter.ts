@@ -3,7 +3,6 @@ import {
   compareRoutingObjectives,
   boundsMayInteract,
   directionVector,
-  inflateRect,
   pathIsClear,
   pointKey,
   routeBends,
@@ -23,6 +22,10 @@ import {
   stableTextHash,
 } from "./routingGeometry";
 import { verifyRoutingResult } from "./routeVerifier";
+import {
+  routingObstacleCatalogFor,
+  type RoutingObstacleCatalog,
+} from "./obstacleCatalog";
 import {
   DEFAULT_ROUTING_POLICY,
   type PlannedRoute,
@@ -177,13 +180,15 @@ function resolvedStubLength(
   leg: RoutingLeg,
   endpoint: RoutingLeg["source"],
   policy: RoutingPolicy,
+  obstacleCatalog: RoutingObstacleCatalog,
 ): number {
-  const clearance = policy.clearance + policy.strokeWidth / 2;
   const ignored = new Set(leg.ignoredObstacleIds);
   const point = endpoint.point;
-  const terminal = scene.obstacles.find((obstacle) => obstacle.id === endpoint.terminalObstacleId);
+  const terminal = endpoint.terminalObstacleId
+    ? obstacleCatalog.get(endpoint.terminalObstacleId)
+    : undefined;
   const terminalClearance = terminal && !ignored.has(terminal.id)
-    ? inflateRect(terminal.bounds, clearance)
+    ? terminal.bounds
     : undefined;
   const escapeDistance = !terminalClearance
     ? 0
@@ -196,9 +201,9 @@ function resolvedStubLength(
           : Math.max(0, point.y - terminalClearance.top);
   const desired = Math.max(policy.stubLength, policy.minimumSegmentLength, escapeDistance);
   let available = desired;
-  scene.obstacles.forEach((obstacle) => {
+  obstacleCatalog.entries.forEach((obstacle) => {
     if (ignored.has(obstacle.id) || obstacle.id === endpoint.terminalObstacleId) return;
-    const rect = inflateRect(obstacle.bounds, clearance);
+    const rect = obstacle.bounds;
     let distance: number | undefined;
     if (endpoint.outward === "right" && point.y > rect.top && point.y < rect.bottom && rect.left > point.x) {
       distance = rect.left - point.x;
@@ -224,11 +229,23 @@ function resolvedStubLength(
   return Math.max(1 / policy.coordinateScale, available);
 }
 
-function activeObstacleRects(scene: RoutingScene, leg: RoutingLeg, policy: RoutingPolicy): RoutingRect[] {
+function activeObstacleRects(
+  scene: RoutingScene,
+  leg: RoutingLeg,
+  policy: RoutingPolicy,
+  obstacleCatalog: RoutingObstacleCatalog,
+): RoutingRect[] {
   const ignored = new Set(leg.ignoredObstacleIds);
-  const clearance = policy.clearance + policy.strokeWidth / 2;
-  const sourceStub = endpointStub(leg.source.point, leg.source.outward, resolvedStubLength(scene, leg, leg.source, policy));
-  const targetStub = endpointStub(leg.target.point, leg.target.outward, resolvedStubLength(scene, leg, leg.target, policy));
+  const sourceStub = endpointStub(
+    leg.source.point,
+    leg.source.outward,
+    resolvedStubLength(scene, leg, leg.source, policy, obstacleCatalog),
+  );
+  const targetStub = endpointStub(
+    leg.target.point,
+    leg.target.outward,
+    resolvedStubLength(scene, leg, leg.target, policy, obstacleCatalog),
+  );
   const directLength = Math.abs(targetStub.x - sourceStub.x) + Math.abs(targetStub.y - sourceStub.y);
   const detour = policy.maximumAbsoluteDetour + directLength * policy.maximumRelativeDetour;
   const envelope = {
@@ -237,14 +254,7 @@ function activeObstacleRects(scene: RoutingScene, leg: RoutingLeg, policy: Routi
     top: Math.min(sourceStub.y, targetStub.y) - detour,
     bottom: Math.max(sourceStub.y, targetStub.y) + detour,
   };
-  return scene.obstacles.flatMap((obstacle) => {
-    if (ignored.has(obstacle.id)) return [];
-    const inflated = inflateRect(obstacle.bounds, clearance);
-    return inflated.right < envelope.left || inflated.left > envelope.right ||
-      inflated.bottom < envelope.top || inflated.top > envelope.bottom
-      ? []
-      : [inflated];
-  });
+  return obstacleCatalog.query(envelope, ignored).map((obstacle) => obstacle.bounds);
 }
 
 function laneGuidePoints(point: RoutePoint, outward: RoutingDirection, policy: RoutingPolicy): RoutePoint[] {
@@ -316,9 +326,18 @@ function buildVisibilityGraph(
   obstacles: readonly RoutingRect[],
   policy: RoutingPolicy,
   enhancedLanes: boolean,
+  obstacleCatalog: RoutingObstacleCatalog,
 ): VisibilityGraph | undefined {
-  const sourceStub = endpointStub(leg.source.point, leg.source.outward, resolvedStubLength(scene, leg, leg.source, policy));
-  const targetStub = endpointStub(leg.target.point, leg.target.outward, resolvedStubLength(scene, leg, leg.target, policy));
+  const sourceStub = endpointStub(
+    leg.source.point,
+    leg.source.outward,
+    resolvedStubLength(scene, leg, leg.source, policy, obstacleCatalog),
+  );
+  const targetStub = endpointStub(
+    leg.target.point,
+    leg.target.outward,
+    resolvedStubLength(scene, leg, leg.target, policy, obstacleCatalog),
+  );
   const candidates = [
     sourceStub,
     targetStub,
@@ -411,9 +430,18 @@ function bestCorridorRoute(
   occupied: readonly OccupiedRoute[],
   maximumInternalLength: number,
   enhancedLanes: boolean,
+  obstacleCatalog: RoutingObstacleCatalog,
 ): { points: RoutePoint[]; cost: SearchCost } | undefined {
-  const sourceStub = endpointStub(leg.source.point, leg.source.outward, resolvedStubLength(scene, leg, leg.source, policy));
-  const targetStub = endpointStub(leg.target.point, leg.target.outward, resolvedStubLength(scene, leg, leg.target, policy));
+  const sourceStub = endpointStub(
+    leg.source.point,
+    leg.source.outward,
+    resolvedStubLength(scene, leg, leg.source, policy, obstacleCatalog),
+  );
+  const targetStub = endpointStub(
+    leg.target.point,
+    leg.target.outward,
+    resolvedStubLength(scene, leg, leg.target, policy, obstacleCatalog),
+  );
   const xGuides = new Set<number>([sourceStub.x, targetStub.x]);
   const yGuides = new Set<number>([sourceStub.y, targetStub.y]);
   xGuides.add(Math.round(((sourceStub.x + targetStub.x) / 2) * policy.coordinateScale) / policy.coordinateScale);
@@ -567,6 +595,7 @@ function shortestLegRoute(
   scene: RoutingScene,
   leg: RoutingLeg,
   policy: RoutingPolicy,
+  obstacleCatalog: RoutingObstacleCatalog,
   prepared: Map<string, PreparedLegRouting>,
   occupied: readonly OccupiedRoute[],
   maximumInternalLength = Number.POSITIVE_INFINITY,
@@ -575,7 +604,7 @@ function shortestLegRoute(
   const preparationKey = `${leg.id}:${enhancedLanes ? "enhanced" : "base"}`;
   let routing = prepared.get(preparationKey);
   if (!routing) {
-    const obstacles = activeObstacleRects(scene, leg, policy);
+    const obstacles = activeObstacleRects(scene, leg, policy, obstacleCatalog);
     routing = { obstacles };
     prepared.set(preparationKey, routing);
   }
@@ -587,11 +616,12 @@ function shortestLegRoute(
     occupied,
     maximumInternalLength,
     enhancedLanes,
+    obstacleCatalog,
   );
   if (corridor && (!enhancedLanes || corridor.cost.capacity === 0)) return corridor.points;
   if (!routing.graphBuilt) {
     routing.graph = routing.obstacles.length <= policy.maximumRelevantObstacles
-      ? buildVisibilityGraph(scene, leg, routing.obstacles, policy, enhancedLanes)
+      ? buildVisibilityGraph(scene, leg, routing.obstacles, policy, enhancedLanes, obstacleCatalog)
       : undefined;
     routing.graphBuilt = true;
   }
@@ -616,7 +646,11 @@ function shortestLegRoute(
     if (state.vertex === 1 && state.direction !== leg.target.outward) {
       return compactOrthogonalPoints([
         leg.source.point,
-        endpointStub(leg.source.point, leg.source.outward, resolvedStubLength(scene, leg, leg.source, policy)),
+        endpointStub(
+          leg.source.point,
+          leg.source.outward,
+          resolvedStubLength(scene, leg, leg.source, policy, obstacleCatalog),
+        ),
         ...state.points.slice(1),
         leg.target.point,
       ]);
@@ -653,6 +687,7 @@ function shortestLegRoute(
 function plannedRoute(
   scene: RoutingScene,
   policy: RoutingPolicy,
+  obstacleCatalog: RoutingObstacleCatalog,
   leg: RoutingLeg,
   points: readonly RoutePoint[],
   baselineLength: number,
@@ -662,8 +697,16 @@ function plannedRoute(
     legId: leg.id,
     commodityId: leg.commodityId,
     points: compactOrthogonalPoints([...points]),
-    sourceStub: endpointStub(leg.source.point, leg.source.outward, resolvedStubLength(scene, leg, leg.source, policy)),
-    targetStub: endpointStub(leg.target.point, leg.target.outward, resolvedStubLength(scene, leg, leg.target, policy)),
+    sourceStub: endpointStub(
+      leg.source.point,
+      leg.source.outward,
+      resolvedStubLength(scene, leg, leg.source, policy, obstacleCatalog),
+    ),
+    targetStub: endpointStub(
+      leg.target.point,
+      leg.target.outward,
+      resolvedStubLength(scene, leg, leg.target, policy, obstacleCatalog),
+    ),
     locked,
     baselineLength,
     length: routeLength(points),
@@ -738,6 +781,7 @@ function orderedAutoLegs(legs: readonly RoutingLeg[], baselines: ReadonlyMap<str
 function solveOrder(
   scene: RoutingScene,
   policy: RoutingPolicy,
+  obstacleCatalog: RoutingObstacleCatalog,
   baselines: ReadonlyMap<string, PlannedRoute>,
   prepared: Map<string, PreparedLegRouting>,
   iteration: number,
@@ -746,16 +790,24 @@ function solveOrder(
   const occupiedRoutes: OccupiedRoute[] = [];
   scene.legs.filter((leg) => leg.lockedPoints).forEach((leg) => {
     const points = leg.lockedPoints!;
-    const route = plannedRoute(scene, policy, leg, points, routeLength(points), true);
+    const route = plannedRoute(scene, policy, obstacleCatalog, leg, points, routeLength(points), true);
     routes.set(leg.id, route);
     occupiedRoutes.push({ leg, route, segments: routeSegments(route.points), bounds: routeBounds(route.points) });
   });
   orderedAutoLegs(scene.legs.filter((leg) => !leg.lockedPoints), baselines, iteration).forEach((leg) => {
     const baseline = baselines.get(leg.id);
     if (!baseline) return;
-    const points = shortestLegRoute(scene, leg, policy, prepared, occupiedRoutes, maximumInternalLength(baseline, policy));
+    const points = shortestLegRoute(
+      scene,
+      leg,
+      policy,
+      obstacleCatalog,
+      prepared,
+      occupiedRoutes,
+      maximumInternalLength(baseline, policy),
+    );
     if (!points) return;
-    const route = plannedRoute(scene, policy, leg, points, baseline.length, false);
+    const route = plannedRoute(scene, policy, obstacleCatalog, leg, points, baseline.length, false);
     routes.set(leg.id, route);
     occupiedRoutes.push({ leg, route, segments: routeSegments(route.points), bounds: routeBounds(route.points) });
   });
@@ -765,12 +817,13 @@ function solveOrder(
 function improveConflictSweep(
   scene: RoutingScene,
   policy: RoutingPolicy,
+  obstacleCatalog: RoutingObstacleCatalog,
   baselines: ReadonlyMap<string, PlannedRoute>,
   prepared: Map<string, PreparedLegRouting>,
   initial: ReadonlyMap<string, PlannedRoute>,
 ): Map<string, PlannedRoute> {
   let routes = new Map(initial);
-  let current = verifyRoutingResult(scene, routes, policy);
+  let current = verifyRoutingResult(scene, routes, policy, obstacleCatalog);
   for (let iteration = 0; iteration < policy.conflictSweepIterations; iteration += 1) {
     const conflicts = new Set(current.conflictingLegIds);
     if (conflicts.size === 0) break;
@@ -794,15 +847,19 @@ function improveConflictSweep(
         scene,
         leg,
         policy,
+        obstacleCatalog,
         prepared,
         occupied,
         maximumInternalLength(baseline, policy),
         true,
       );
       if (!points) continue;
-      candidateRoutes.set(leg.id, plannedRoute(scene, policy, leg, points, baseline.length, false));
+      candidateRoutes.set(
+        leg.id,
+        plannedRoute(scene, policy, obstacleCatalog, leg, points, baseline.length, false),
+      );
     }
-    const verification = verifyRoutingResult(scene, candidateRoutes, policy);
+    const verification = verifyRoutingResult(scene, candidateRoutes, policy, obstacleCatalog);
     const hardComparison = verification.diagnostics.length - current.diagnostics.length;
     if (hardComparison > 0 || (hardComparison === 0 && compareRoutingObjectives(verification.objective, current.objective) >= 0)) break;
     routes = candidateRoutes;
@@ -814,10 +871,12 @@ function improveConflictSweep(
 export function solveRoutingScene(
   scene: RoutingScene,
   policy: RoutingPolicy = DEFAULT_ROUTING_POLICY,
+  preparedObstacleCatalog?: RoutingObstacleCatalog,
 ): RoutingResult {
+  const obstacleCatalog = routingObstacleCatalogFor(scene.obstacles, policy, preparedObstacleCatalog);
   const signature = inputSignature(scene, policy);
   const invalid = validateInput(scene);
-  const emptyVerification = verifyRoutingResult(scene, new Map(), policy);
+  const emptyVerification = verifyRoutingResult(scene, new Map(), policy, obstacleCatalog);
   if (invalid.length > 0) {
     return {
       status: "InvalidInput",
@@ -840,32 +899,38 @@ export function solveRoutingScene(
   const diagnostics: RoutingDiagnostic[] = [];
   scene.legs.forEach((leg) => {
     if (leg.lockedPoints) {
-      baselines.set(leg.id, plannedRoute(scene, policy, leg, leg.lockedPoints, routeLength(leg.lockedPoints), true));
+      baselines.set(
+        leg.id,
+        plannedRoute(scene, policy, obstacleCatalog, leg, leg.lockedPoints, routeLength(leg.lockedPoints), true),
+      );
       return;
     }
-    const obstacles = activeObstacleRects(scene, leg, policy);
-    const points = shortestLegRoute(scene, leg, policy, prepared, []);
+    const obstacles = activeObstacleRects(scene, leg, policy, obstacleCatalog);
+    const points = shortestLegRoute(scene, leg, policy, obstacleCatalog, prepared, []);
     if (!points) {
       diagnostics.push(obstacles.length > policy.maximumRelevantObstacles
         ? { code: "search-limit", message: "Relevant obstacle set exceeds the bounded browser solver.", legId: leg.id }
         : { code: "route-not-found", message: "No legal route was found in the complete local visibility graph.", legId: leg.id });
       return;
     }
-    baselines.set(leg.id, plannedRoute(scene, policy, leg, points, routeLength(points), false));
+    baselines.set(
+      leg.id,
+      plannedRoute(scene, policy, obstacleCatalog, leg, points, routeLength(points), false),
+    );
   });
 
   let bestRoutes = new Map<string, PlannedRoute>();
-  let bestObjective = verifyRoutingResult(scene, bestRoutes, policy).objective;
+  let bestObjective = verifyRoutingResult(scene, bestRoutes, policy, obstacleCatalog).objective;
   for (let iteration = 0; iteration < Math.max(1, policy.negotiatedIterations); iteration += 1) {
-    const candidate = solveOrder(scene, policy, baselines, prepared, iteration);
-    const objective = verifyRoutingResult(scene, candidate, policy).objective;
+    const candidate = solveOrder(scene, policy, obstacleCatalog, baselines, prepared, iteration);
+    const objective = verifyRoutingResult(scene, candidate, policy, obstacleCatalog).objective;
     if (iteration === 0 || compareRoutingObjectives(objective, bestObjective) < 0) {
       bestRoutes = candidate;
       bestObjective = objective;
     }
   }
-  bestRoutes = improveConflictSweep(scene, policy, baselines, prepared, bestRoutes);
-  const verification = verifyRoutingResult(scene, bestRoutes, policy);
+  bestRoutes = improveConflictSweep(scene, policy, obstacleCatalog, baselines, prepared, bestRoutes);
+  const verification = verifyRoutingResult(scene, bestRoutes, policy, obstacleCatalog);
   const allRouted = bestRoutes.size === scene.legs.length;
   const verificationDiagnostics = verification.diagnostics;
   const lockedLegIds = new Set(scene.legs.filter((leg) => leg.lockedPoints).map((leg) => leg.id));

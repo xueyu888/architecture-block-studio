@@ -18,7 +18,8 @@ export interface RoutingObstacle {
 export interface RoutingEndpoint {
   point: RoutePoint;
   outward: RoutingDirection;
-  terminalObstacleId: string;
+  /** Absent only for a disposable free pointer that has no terminal shape. */
+  terminalObstacleId?: string;
   physicalKey: string;
 }
 
