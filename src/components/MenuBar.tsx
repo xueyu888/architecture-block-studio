@@ -27,7 +27,16 @@ const MENU_DEFINITIONS: Array<{
   {
     id: "edit",
     label: "Edit",
-    commandIds: ["undo", "redo", "copySelection", "paste", "duplicateSelection", "deleteSelection"],
+    commandIds: [
+      "undo",
+      "redo",
+      "selectAll",
+      "clearSelection",
+      "copySelection",
+      "paste",
+      "duplicateSelection",
+      "deleteSelection",
+    ],
   },
   { id: "design", label: "Design", commandIds: ["addBlock", "addPort", "addConnection", "addChildDesign", "regenerateLayout", "optimizeRouting", "validateDesign"] },
   {
@@ -44,7 +53,7 @@ const MENU_DEFINITIONS: Array<{
       "distributeSelectionVertically",
     ],
   },
-  { id: "view", label: "View", commandIds: ["fitDesign", "toggleSources", "toggleProperties", "toggleMessages", "maximizeDiagram", "resetWorkspace", "openCommandPalette"] },
+  { id: "view", label: "View", commandIds: ["fitSelection", "fitDesign", "toggleSources", "toggleProperties", "toggleMessages", "maximizeDiagram", "resetWorkspace", "openCommandPalette"] },
 ];
 
 function Menu({

@@ -1197,7 +1197,7 @@ test("searches and runs the unified command palette without losing workflow focu
   const search = palette.getByRole("combobox", { name: "Search commands" });
   await expect(palette).toBeVisible();
   await expect(search).toBeFocused();
-  await expect(palette.getByRole("option")).toHaveCount(32);
+  await expect(palette.getByRole("option")).toHaveCount(35);
   await expect(palette.getByRole("option", { name: /^Command Palette/ })).toHaveCount(0);
 
   await search.fill("添加端口");
@@ -1828,7 +1828,8 @@ test("filters design issues and cross-probes the reviewed module", async ({ page
   await viewTrigger.focus();
   await page.keyboard.press("Enter");
   const viewMenu = page.getByRole("menu", { name: "View" });
-  await expect(viewMenu.getByRole("menuitem", { name: /^Fit Design/ })).toBeFocused();
+  await expect(viewMenu.getByRole("menuitem", { name: /^Fit Selection/ })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
@@ -3668,6 +3669,82 @@ test("box-selects, toggles, and moves modules as one professional selection", as
   await expect(edge).toHaveClass(/selected/);
   await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
   await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("Session Command RPC");
+});
+
+test("selects and clears every object in the current level with standard edit commands", async ({ page, browserName }) => {
+  const viewportBefore = await canvasViewportTransform(page);
+
+  await page.keyboard.press("ControlOrMeta+A");
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("17 objects selected");
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(7);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(10);
+  await expect(page.locator(".bd-command-notice")).toContainText("Selected 17 diagram objects in System Overview.");
+  expect(await canvasViewportTransform(page)).toBe(viewportBefore);
+  if (process.env.CAPTURE_SELECT_ALL === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/select-all-level.png");
+  }
+
+  await page.keyboard.press("ControlOrMeta+Shift+A");
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("System Overview");
+  await expect(page.locator(".bd-command-notice")).toContainText("Selection cleared.");
+  expect(await canvasViewportTransform(page)).toBe(viewportBefore);
+
+  const core = flowNode(page, "system::rust-agent-core");
+  await core.click({ force: true });
+  const title = page.getByLabel("Title", { exact: true });
+  await title.focus();
+  await page.keyboard.press("ControlOrMeta+A");
+  expect(await title.evaluate((input) => ({
+    start: (input as HTMLInputElement).selectionStart,
+    end: (input as HTMLInputElement).selectionEnd,
+    length: (input as HTMLInputElement).value.length,
+  }))).toEqual({ start: 0, end: 15, length: 15 });
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+
+  await title.blur();
+  await runMenuCommand(page, "Edit", /^Select All in Level/);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("17 objects selected");
+  await runMenuCommand(page, "Edit", /^Clear Selection/);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("System Overview");
+});
+
+test("fits a selected interface and its endpoint modules for focused route review", async ({ page, browserName }) => {
+  const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
+  await clickReachableEdgePoint(page, edge);
+  await expect(edge).toHaveClass(/selected/);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("Session Command RPC");
+  const viewportBefore = await canvasViewportTransform(page);
+
+  await page.keyboard.press("ControlOrMeta+Shift+H");
+  await expect.poll(() => canvasViewportTransform(page)).not.toBe(viewportBefore);
+  await page.waitForTimeout(350);
+  await expect(edge).toHaveClass(/selected/);
+  await expect(page.locator(".bd-command-notice")).toContainText("Fitting 1 selected diagram object.");
+
+  const canvas = await page.locator(".bd-react-flow").boundingBox();
+  const agent = await flowNode(page, "system::agent-ui").boundingBox();
+  const core = await flowNode(page, "system::rust-agent-core").boundingBox();
+  const route = await edge.locator(".bd-interface-route").boundingBox();
+  expect(canvas && agent && core && route).not.toBeNull();
+  for (const box of [agent!, core!, route!]) {
+    expect(box.x).toBeGreaterThanOrEqual(canvas!.x - 1);
+    expect(box.y).toBeGreaterThanOrEqual(canvas!.y - 1);
+    expect(box.x + box.width).toBeLessThanOrEqual(canvas!.x + canvas!.width + 1);
+    expect(box.y + box.height).toBeLessThanOrEqual(canvas!.y + canvas!.height + 1);
+  }
+  expect(route!.width).toBeGreaterThan(120);
+  if (process.env.CAPTURE_FIT_SELECTION === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/fit-selection.png");
+  }
+
+  await page.keyboard.press("ControlOrMeta+Shift+A");
+  await page.getByRole("button", { name: "View", exact: true }).click();
+  const fitSelection = page.getByRole("menu", { name: "View" }).getByRole("menuitem", { name: /^Fit Selection/ });
+  await expect(fitSelection).toHaveAttribute("aria-disabled", "true");
+  await expect(fitSelection).toContainText("Select a module or interface first.");
+  await page.keyboard.press("Escape");
 });
 
 test("resizes a selected module from a corner and persists one atomic geometry change", async ({ page, browserName }) => {

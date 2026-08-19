@@ -14,6 +14,7 @@ import {
   Braces,
   Cable,
   CheckCircle2,
+  CircleOff,
   CircuitBoard,
   ClipboardPaste,
   Copy,
@@ -26,6 +27,7 @@ import {
   LayoutDashboard,
   Maximize2,
   Minimize2,
+  MousePointer2,
   PanelBottom,
   PanelLeft,
   PanelRight,
@@ -34,6 +36,7 @@ import {
   Route,
   Save,
   Scan,
+  ScanSearch,
   Search,
   Share2,
   ShieldCheck,
@@ -115,6 +118,7 @@ import {
   nodeForSelection,
   replaceDiagramSelection,
   sameSelection,
+  selectAllInLevel,
   selectionExists,
   selectionForIssue,
   type SelectionRef,
@@ -186,6 +190,7 @@ export function BlockDesignStudio({
   const [layoutRevision, setLayoutRevision] = useState(0);
   const [routeRevision, setRouteRevision] = useState(0);
   const [fitRequest, setFitRequest] = useState(0);
+  const [fitSelectionRequest, setFitSelectionRequest] = useState(0);
   const [revealSelectionRequest, setRevealSelectionRequest] = useState(0);
   const [messageFocusRequest, setMessageFocusRequest] = useState(0);
   const [workspaceResetRequest, setWorkspaceResetRequest] = useState(0);
@@ -570,6 +575,10 @@ export function BlockDesignStudio({
 
   const activeLevel = document ? levelForSelection(document, selection) : undefined;
   const selectedNode = document ? nodeForSelection(document, selection) : undefined;
+  const selectedDiagramItemCount = diagramSelectionItems(selection).length;
+  const activeLevelDiagramItemCount = activeLevel
+    ? activeLevel.nodes.length + activeLevel.connections.length
+    : 0;
   const arrangementSelection = useMemo<ArrangementSelection>(() => {
     if (!document) return { available: false, reason: "Open or create a design first." };
     if (layoutBusy) return { available: false, reason: "Wait for the diagram layout to finish." };
@@ -939,6 +948,31 @@ export function BlockDesignStudio({
       id: "redo", label: "Redo", toolbarTitle: "重做", shortcut: "Ctrl/⌘ ⇧ Z", icon: Redo2,
       ...commandAvailability(editor.canRedo, "No design changes to redo."), execute: redoDesign,
     },
+    selectAll: {
+      id: "selectAll", label: "Select All in Level", shortcut: "Ctrl/⌘ A", icon: MousePointer2,
+      ...commandAvailability(
+        Boolean(activeLevel && activeLevelDiagramItemCount > 0),
+        "The current design level has no modules or interfaces to select.",
+      ),
+      execute: () => {
+        if (!activeLevel) return;
+        const next = selectAllInLevel(activeLevel);
+        if (!requestSelection(next)) return;
+        setCommandError(undefined);
+        setCommandNotice(
+          `Selected ${activeLevelDiagramItemCount} diagram ${activeLevelDiagramItemCount === 1 ? "object" : "objects"} in ${activeLevel.title}.`,
+        );
+      },
+    },
+    clearSelection: {
+      id: "clearSelection", label: "Clear Selection", shortcut: "Ctrl/⌘ ⇧ A", icon: CircleOff,
+      ...commandAvailability(selectedDiagramItemCount > 0, "No diagram objects are selected."),
+      execute: () => {
+        if (!activeLevel || !requestSelection({ kind: "level", levelId: activeLevel.id })) return;
+        setCommandError(undefined);
+        setCommandNotice("Selection cleared.");
+      },
+    },
     copySelection: {
       id: "copySelection", label: "Copy", shortcut: "Ctrl/⌘ C", icon: Copy,
       ...commandAvailability(canCopySelection, copyUnavailableReason),
@@ -1037,6 +1071,17 @@ export function BlockDesignStudio({
       id: "validateDesign", label: "Validate Design", toolbarTitle: "验证设计", icon: ShieldCheck,
       ...commandAvailability(Boolean(document), "Open or create a design first."), execute: validateDesign,
     },
+    fitSelection: {
+      id: "fitSelection", label: "Fit Selection", shortcut: "Ctrl/⌘ ⇧ H", icon: ScanSearch,
+      ...commandAvailability(selectedDiagramItemCount > 0, "Select a module or interface first."),
+      execute: () => {
+        setFitSelectionRequest((value) => value + 1);
+        setCommandError(undefined);
+        setCommandNotice(
+          `Fitting ${selectedDiagramItemCount} selected diagram ${selectedDiagramItemCount === 1 ? "object" : "objects"}.`,
+        );
+      },
+    },
     fitDesign: {
       id: "fitDesign", label: "Fit Design", toolbarTitle: "适应窗口", icon: Scan,
       ...commandAvailability(Boolean(document), "Open or create a design first."), execute: () => setFitRequest((value) => value + 1),
@@ -1069,6 +1114,8 @@ export function BlockDesignStudio({
     },
   }), [
     alignUnavailableReason,
+    activeLevel,
+    activeLevelDiagramItemCount,
     arrangeModules,
     canAddChildDesign,
     canAddConnection,
@@ -1099,9 +1146,11 @@ export function BlockDesignStudio({
     pasteDesignFragment,
     pasteUnavailableReason,
     redoDesign,
+    requestSelection,
     requireAppliedInspectorDraft,
     saveCurrent,
     selectedNode,
+    selectedDiagramItemCount,
     toggleDock,
     undoDesign,
     validateDesign,
@@ -1127,7 +1176,22 @@ export function BlockDesignStudio({
       const target = event.target as HTMLElement | null;
       const editingText = target?.matches("input, textarea, select, [contenteditable='true']");
       if (editingText) return;
-      if (modifier && !event.shiftKey && key === "c") {
+      if (modifier && !event.shiftKey && key === "a") {
+        if (commands.selectAll.enabled) {
+          event.preventDefault();
+          commands.selectAll.execute();
+        }
+      } else if (modifier && event.shiftKey && key === "a") {
+        if (commands.clearSelection.enabled) {
+          event.preventDefault();
+          commands.clearSelection.execute();
+        }
+      } else if (modifier && event.shiftKey && key === "h") {
+        if (commands.fitSelection.enabled) {
+          event.preventDefault();
+          commands.fitSelection.execute();
+        }
+      } else if (modifier && !event.shiftKey && key === "c") {
         if (commands.copySelection.enabled) {
           event.preventDefault();
           commands.copySelection.execute();
@@ -1205,6 +1269,7 @@ export function BlockDesignStudio({
             layout={layout}
             selection={selection}
             fitRequest={fitRequest}
+            fitSelectionRequest={fitSelectionRequest}
             revealSelectionRequest={revealSelectionRequest}
             routeRevision={routeRevision}
             onSelect={requestSelection}

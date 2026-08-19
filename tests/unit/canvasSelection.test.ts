@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   canvasClientBounds,
+  canvasGeometryBounds,
   reconcileCanvasSelection,
 } from "../../src/components/canvasSelection";
 
@@ -12,6 +13,20 @@ describe("canvas selection projection", () => {
       top: 90,
       bottom: 180,
     });
+  });
+
+  test("unifies selected module rectangles and complete route points into one fit bound", () => {
+    expect(canvasGeometryBounds(
+      [{ x: 100, y: 80, width: 240, height: 160 }],
+      [[{ x: 340, y: 120 }, { x: 520, y: 120 }, { x: 520, y: 400 }]],
+    )).toEqual({ x: 100, y: 80, width: 420, height: 320 });
+    expect(canvasGeometryBounds([], [[{ x: 8, y: 12 }, { x: 8, y: 12 }]])).toEqual({
+      x: 8,
+      y: 12,
+      width: 1,
+      height: 1,
+    });
+    expect(canvasGeometryBounds([], [])).toBeUndefined();
   });
 
   test("changes only newly selected items", () => {

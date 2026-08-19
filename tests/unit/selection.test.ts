@@ -6,6 +6,7 @@ import {
   nodeForSelection,
   replaceDiagramSelection,
   sameSelection,
+  selectAllInLevel,
   selectionContains,
   selectionExists,
   selectionForIssue,
@@ -97,6 +98,21 @@ describe("workspace selection protocol", () => {
     expect(diagramSelectionItems(mixed)).toEqual([connection, source]);
     expect(toggleDiagramSelection(mixed, [connection], "system")).toEqual(source);
     expect(toggleDiagramSelection(source, [source], "system")).toEqual({ kind: "level", levelId: "system" });
+  });
+
+  it("selects every module and interface in one design level without inventing document state", () => {
+    const document = connectedDesign();
+    const level = document.levels.find((candidate) => candidate.id === "system")!;
+
+    expect(diagramSelectionItems(selectAllInLevel(level))).toEqual([
+      { kind: "connection", levelId: "system", connectionId: "source-to-target" },
+      { kind: "node", levelId: "system", nodeId: "source" },
+      { kind: "node", levelId: "system", nodeId: "target" },
+    ]);
+    expect(selectAllInLevel({ ...level, nodes: [], connections: [] })).toEqual({
+      kind: "level",
+      levelId: "system",
+    });
   });
 
   it("validates every member of a multi-selection without persisting it in the document", () => {

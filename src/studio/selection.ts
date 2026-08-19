@@ -44,6 +44,21 @@ export function replaceDiagramSelection(
   return { kind: "multiple", items: canonical };
 }
 
+export function selectAllInLevel(level: DesignLevel): SelectionRef {
+  return replaceDiagramSelection([
+    ...level.nodes.map((node) => ({
+      kind: "node" as const,
+      levelId: level.id,
+      nodeId: node.id,
+    })),
+    ...level.connections.map((connection) => ({
+      kind: "connection" as const,
+      levelId: level.id,
+      connectionId: connection.id,
+    })),
+  ], level.id);
+}
+
 export function toggleDiagramSelection(
   selection: SelectionRef,
   items: readonly DiagramSelectionRef[],

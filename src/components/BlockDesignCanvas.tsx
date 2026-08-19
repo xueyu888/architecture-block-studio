@@ -63,7 +63,7 @@ import {
 import { AlignmentGuideLayer } from "./AlignmentGuideLayer";
 import { BlockNodeComponent } from "./BlockNode";
 import { canvasDetailLevel, type CanvasDetailLevel } from "./canvasDetail";
-import { canvasClientBounds, reconcileCanvasSelection } from "./canvasSelection";
+import { canvasClientBounds, canvasGeometryBounds, reconcileCanvasSelection } from "./canvasSelection";
 import type { CanvasFlowEdge, CanvasFlowNode, RouteHandleFocusTarget } from "./canvasTypes";
 import { InterfaceEdgeComponent } from "./InterfaceEdge";
 import { Tooltip } from "./Tooltip";
@@ -197,6 +197,7 @@ interface CanvasInnerProps {
   layout: LayoutResult;
   selection: SelectionRef;
   fitRequest: number;
+  fitSelectionRequest: number;
   revealSelectionRequest: number;
   routeRevision: number;
   onSelect: (selection: SelectionRef) => boolean;
@@ -269,6 +270,7 @@ const CanvasInner = memo(function CanvasInner({
   layout,
   selection,
   fitRequest,
+  fitSelectionRequest,
   revealSelectionRequest,
   routeRevision,
   onSelect,
@@ -279,7 +281,7 @@ const CanvasInner = memo(function CanvasInner({
   onRouteConnection,
   onReconnectConnection,
 }: CanvasInnerProps) {
-  const { fitView, getViewport, setViewport, zoomIn, zoomOut } = useReactFlow();
+  const { fitBounds, fitView, getViewport, setViewport, zoomIn, zoomOut } = useReactFlow();
   const store = useStoreApi();
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
@@ -629,6 +631,7 @@ const CanvasInner = memo(function CanvasInner({
   selectedEdgeIdsRef.current = new Set(selectedEdgeIds);
   const [selectionRestoreRevision, setSelectionRestoreRevision] = useState(0);
   const handledRevealSelectionRequest = useRef(0);
+  const handledFitSelectionRequest = useRef(0);
   const [edges, setEdges] = useState<CanvasFlowEdge[]>(() =>
     reconcileCanvasSelection(routedEdges, selectedEdgeIdsRef.current),
   );
@@ -775,6 +778,55 @@ const CanvasInner = memo(function CanvasInner({
     const timer = window.setTimeout(() => navigateViewport({ padding: FIT_PADDING, duration: fitDuration() }), 60);
     return () => window.clearTimeout(timer);
   }, [fitRequest, navigateViewport]);
+
+  useEffect(() => {
+    if (fitSelectionRequest <= handledFitSelectionRequest.current) return;
+    const state = store.getState();
+    const selectedEdges = routedEdges.filter((edge) => selectedEdgeIdsRef.current.has(edge.id));
+    const contextualNodeIds = new Set(selectedNodeIdsRef.current);
+    selectedEdges.forEach((edge) => {
+      contextualNodeIds.add(edge.source);
+      contextualNodeIds.add(edge.target);
+    });
+    const rectangles = [...contextualNodeIds].flatMap((id) => {
+      const node = state.nodeLookup.get(id);
+      const width = node?.measured.width ?? node?.width;
+      const height = node?.measured.height ?? node?.height;
+      if (!node || !width || !height) return [];
+      return [{
+        x: node.internals.positionAbsolute.x,
+        y: node.internals.positionAbsolute.y,
+        width,
+        height,
+      }];
+    });
+    const paths = selectedEdges.flatMap((edge) => {
+      const route = routingResult.routes.get(edge.id)?.points;
+      return route ? [route] : [];
+    });
+    const bounds = canvasGeometryBounds(rectangles, paths);
+    if (!bounds) return;
+    handledFitSelectionRequest.current = fitSelectionRequest;
+    const duration = fitDuration();
+    runViewportNavigation(duration, () => fitBounds(bounds, {
+      padding: 0.24,
+      duration,
+      interpolate: navigationInterpolation,
+    }));
+    setCanvasAnnouncement(
+      `Fitted ${selectedDiagramItems.length} selected diagram ${selectedDiagramItems.length === 1 ? "object" : "objects"} to the canvas.`,
+    );
+  }, [
+    fitBounds,
+    fitSelectionRequest,
+    navigationInterpolation,
+    nodes,
+    routedEdges,
+    routingResult.routes,
+    runViewportNavigation,
+    selectedDiagramItems.length,
+    store,
+  ]);
 
   useEffect(() => {
     if (revealSelectionRequest <= handledRevealSelectionRequest.current) return;
@@ -1256,6 +1308,7 @@ export function BlockDesignCanvas(props: BlockDesignCanvasProps) {
         layout={props.layout}
         selection={props.selection}
         fitRequest={props.fitRequest}
+        fitSelectionRequest={props.fitSelectionRequest}
         revealSelectionRequest={props.revealSelectionRequest}
         routeRevision={props.routeRevision}
         onSelect={props.onSelect}
