@@ -2,6 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import type { DockviewApi, EdgeGroupPosition } from "dockview-react";
 import {
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignEndHorizontal,
+  AlignEndVertical,
+  AlignHorizontalDistributeCenter,
+  AlignStartHorizontal,
+  AlignStartVertical,
+  AlignVerticalDistributeCenter,
   Box,
   Braces,
   Cable,
@@ -72,11 +80,16 @@ import {
   suggestedDesignFileName,
 } from "../io/saveDesign";
 import {
+  alignSelection,
+  distributeSelection,
   layoutBlockDesign,
   layoutFrameSignature,
   layoutProjectionSignature,
+  type ArrangementRect,
   type LayoutResult,
   type PlacementMode,
+  type SelectionAlignment,
+  type SelectionDistribution,
 } from "../layout";
 import {
   firstConnectablePair,
@@ -114,6 +127,19 @@ function fileNameFromSource(document: BlockDesignDocument, source: string): stri
   const tail = source.split(/[\\/]/).at(-1);
   return tail?.endsWith(".json") ? tail : suggestedDesignFileName(document);
 }
+
+interface ArrangeableModule extends ArrangementRect {
+  levelId: string;
+  nodeId: string;
+}
+
+type ArrangementSelection =
+  | { available: true; items: readonly ArrangeableModule[] }
+  | { available: false; reason: string };
+
+type ArrangementRequest =
+  | { kind: "align"; alignment: SelectionAlignment }
+  | { kind: "distribute"; direction: SelectionDistribution };
 
 export interface BlockDesignStudioProps {
   initialDocument?: unknown;
@@ -514,6 +540,57 @@ export function BlockDesignStudio({
 
   const activeLevel = document ? levelForSelection(document, selection) : undefined;
   const selectedNode = document ? nodeForSelection(document, selection) : undefined;
+  const arrangementSelection = useMemo<ArrangementSelection>(() => {
+    if (!document) return { available: false, reason: "Open or create a design first." };
+    if (layoutBusy) return { available: false, reason: "Wait for the diagram layout to finish." };
+    if (selection.kind !== "multiple") {
+      return { available: false, reason: "Select at least two modules first." };
+    }
+    if (selection.items.some((item) => item.kind !== "node")) {
+      return { available: false, reason: "Select modules only; interfaces cannot be arranged." };
+    }
+    if (new Set(selection.items.map((item) => item.levelId)).size !== 1) {
+      return { available: false, reason: "Select modules from the same design level." };
+    }
+
+    const projections = new Map<string, typeof layout.nodes>();
+    layout.nodes.forEach((node) => {
+      const identity = `${node.data.levelId}\u0000${node.data.block.id}`;
+      projections.set(identity, [...(projections.get(identity) ?? []), node]);
+    });
+    const items: ArrangeableModule[] = [];
+    for (const item of selection.items) {
+      if (item.kind !== "node") continue;
+      const identity = `${item.levelId}\u0000${item.nodeId}`;
+      const matches = projections.get(identity) ?? [];
+      if (matches.length !== 1) {
+        return {
+          available: false,
+          reason: "Each selected module must have one visible diagram instance.",
+        };
+      }
+      const [node] = matches;
+      if (!node.data.positionEditable || node.data.expanded) {
+        return {
+          available: false,
+          reason: "Collapse expanded hierarchy and use authored placement before arranging modules.",
+        };
+      }
+      if (!node.width || !node.height) {
+        return { available: false, reason: "Wait for the selected module geometry to finish measuring." };
+      }
+      items.push({
+        id: identity,
+        levelId: item.levelId,
+        nodeId: item.nodeId,
+        x: node.data.designPosition.x,
+        y: node.data.designPosition.y,
+        width: node.width,
+        height: node.height,
+      });
+    }
+    return { available: true, items };
+  }, [document, layout.nodes, layoutBusy, selection]);
 
   const openAddBlock = useCallback(() => {
     const currentDocument = documentRef.current;
@@ -547,6 +624,29 @@ export function BlockDesignStudio({
       ? { type: "node/move", ...moves[0] }
       : { type: "nodes/move", moves }));
   }, [requireAppliedInspectorDraft, runOperation]);
+
+  const arrangeModules = useCallback((request: ArrangementRequest) => {
+    if (!arrangementSelection.available) return false;
+    if (!requireAppliedInspectorDraft("arranging the selected modules")) return false;
+    try {
+      const positions = request.kind === "align"
+        ? alignSelection(arrangementSelection.items, request.alignment)
+        : distributeSelection(arrangementSelection.items, request.direction);
+      const modules = new Map(arrangementSelection.items.map((item) => [item.id, item]));
+      const moves = positions.map(({ id, position }) => {
+        const module = modules.get(id)!;
+        return {
+          levelId: module.levelId,
+          nodeId: module.nodeId,
+          position,
+        };
+      });
+      return Boolean(runOperation({ type: "nodes/move", moves }));
+    } catch (error) {
+      setCommandError(errorMessage(error));
+      return false;
+    }
+  }, [arrangementSelection, requireAppliedInspectorDraft, runOperation]);
 
   const resizeNode = useCallback((
     levelId: string,
@@ -604,6 +704,14 @@ export function BlockDesignStudio({
     : "Select a module, port, or interface first.";
   const canAddChildDesign = Boolean(selectedNode && !selectedNode.node.hierarchy);
   const canAddConnection = Boolean(activeLevel && firstConnectablePair(activeLevel));
+  const canAlignSelection = arrangementSelection.available && !inspectorDraftDirty;
+  const alignUnavailableReason = arrangementSelection.available
+    ? "Apply or discard the current Inspector changes before arranging modules."
+    : arrangementSelection.reason;
+  const canDistributeSelection = canAlignSelection && arrangementSelection.items.length >= 3;
+  const distributeUnavailableReason = arrangementSelection.available && arrangementSelection.items.length < 3
+    ? "Select at least three modules to distribute."
+    : alignUnavailableReason;
   const editorDialogOpen = Boolean(
     loadDialogOpen ||
     newDialogOpen ||
@@ -650,6 +758,46 @@ export function BlockDesignStudio({
     deleteSelection: {
       id: "deleteSelection", label: "Delete Selection", toolbarTitle: "删除所选内容", shortcut: "Del", icon: Trash2,
       ...commandAvailability(canDelete, deleteUnavailableReason), execute: deleteSelection,
+    },
+    alignSelectionLeft: {
+      id: "alignSelectionLeft", label: "Align Left", icon: AlignStartVertical,
+      ...commandAvailability(canAlignSelection, alignUnavailableReason),
+      execute: () => { arrangeModules({ kind: "align", alignment: "left" }); },
+    },
+    alignSelectionCenter: {
+      id: "alignSelectionCenter", label: "Align Center", icon: AlignCenterVertical,
+      ...commandAvailability(canAlignSelection, alignUnavailableReason),
+      execute: () => { arrangeModules({ kind: "align", alignment: "center" }); },
+    },
+    alignSelectionRight: {
+      id: "alignSelectionRight", label: "Align Right", icon: AlignEndVertical,
+      ...commandAvailability(canAlignSelection, alignUnavailableReason),
+      execute: () => { arrangeModules({ kind: "align", alignment: "right" }); },
+    },
+    alignSelectionTop: {
+      id: "alignSelectionTop", label: "Align Top", icon: AlignStartHorizontal,
+      ...commandAvailability(canAlignSelection, alignUnavailableReason),
+      execute: () => { arrangeModules({ kind: "align", alignment: "top" }); },
+    },
+    alignSelectionMiddle: {
+      id: "alignSelectionMiddle", label: "Align Middle", icon: AlignCenterHorizontal,
+      ...commandAvailability(canAlignSelection, alignUnavailableReason),
+      execute: () => { arrangeModules({ kind: "align", alignment: "middle" }); },
+    },
+    alignSelectionBottom: {
+      id: "alignSelectionBottom", label: "Align Bottom", icon: AlignEndHorizontal,
+      ...commandAvailability(canAlignSelection, alignUnavailableReason),
+      execute: () => { arrangeModules({ kind: "align", alignment: "bottom" }); },
+    },
+    distributeSelectionHorizontally: {
+      id: "distributeSelectionHorizontally", label: "Distribute Horizontally", icon: AlignHorizontalDistributeCenter,
+      ...commandAvailability(canDistributeSelection, distributeUnavailableReason),
+      execute: () => { arrangeModules({ kind: "distribute", direction: "horizontal" }); },
+    },
+    distributeSelectionVertically: {
+      id: "distributeSelectionVertically", label: "Distribute Vertically", icon: AlignVerticalDistributeCenter,
+      ...commandAvailability(canDistributeSelection, distributeUnavailableReason),
+      execute: () => { arrangeModules({ kind: "distribute", direction: "vertical" }); },
     },
     addBlock: {
       id: "addBlock", label: "Add Module...", toolbarTitle: "添加模块", icon: Box,
@@ -721,13 +869,18 @@ export function BlockDesignStudio({
       },
     },
   }), [
+    alignUnavailableReason,
+    arrangeModules,
     canAddChildDesign,
     canAddConnection,
+    canAlignSelection,
     canDelete,
+    canDistributeSelection,
     deleteUnavailableReason,
     deleteSelection,
     diagramMaximized,
     document,
+    distributeUnavailableReason,
     editor.canRedo,
     editor.canUndo,
     editorDialogOpen,

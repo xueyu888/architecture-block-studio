@@ -3,7 +3,7 @@ import { ExternalLink } from "lucide-react";
 import type { SourceRef } from "../model";
 import type { StudioCommand, StudioCommandId, StudioCommands } from "../studio/commands";
 
-type MenuId = "file" | "edit" | "design" | "view";
+type MenuId = "file" | "edit" | "design" | "arrange" | "view";
 type MenuFocusTarget = "first" | "last";
 
 function printableCharacter(event: {
@@ -26,6 +26,20 @@ const MENU_DEFINITIONS: Array<{
   { id: "file", label: "File", commandIds: ["newDesign", "openDesign", "save", "saveAs", "exportJson"] },
   { id: "edit", label: "Edit", commandIds: ["undo", "redo", "deleteSelection"] },
   { id: "design", label: "Design", commandIds: ["addBlock", "addPort", "addConnection", "addChildDesign", "regenerateLayout", "optimizeRouting", "validateDesign"] },
+  {
+    id: "arrange",
+    label: "Arrange",
+    commandIds: [
+      "alignSelectionLeft",
+      "alignSelectionCenter",
+      "alignSelectionRight",
+      "alignSelectionTop",
+      "alignSelectionMiddle",
+      "alignSelectionBottom",
+      "distributeSelectionHorizontally",
+      "distributeSelectionVertically",
+    ],
+  },
   { id: "view", label: "View", commandIds: ["fitDesign", "toggleSources", "toggleProperties", "toggleMessages", "maximizeDiagram", "resetWorkspace", "openCommandPalette"] },
 ];
 

@@ -57,7 +57,7 @@ import {
 import { AlignmentGuideLayer } from "./AlignmentGuideLayer";
 import { BlockNodeComponent } from "./BlockNode";
 import { canvasDetailLevel, type CanvasDetailLevel } from "./canvasDetail";
-import { reconcileCanvasSelection } from "./canvasSelection";
+import { canvasClientBounds, reconcileCanvasSelection } from "./canvasSelection";
 import type { CanvasFlowEdge, CanvasFlowNode, RouteHandleFocusTarget } from "./canvasTypes";
 import { InterfaceEdgeComponent } from "./InterfaceEdge";
 import { Tooltip } from "./Tooltip";
@@ -291,6 +291,7 @@ const CanvasInner = memo(function CanvasInner({
   const [resizeRestoreRevision, setResizeRestoreRevision] = useState(0);
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
   const alignmentGestureRef = useRef<AlignmentGesture | undefined>(undefined);
+  const boxSelectionStartRef = useRef<{ x: number; y: number } | undefined>(undefined);
   const boxSelectionGestureRef = useRef<BoxSelectionGesture | undefined>(undefined);
   const resizePreviewRef = useRef<ResizePreview | undefined>(undefined);
   const multiSelection = selection.kind === "multiple";
@@ -345,6 +346,18 @@ const CanvasInner = memo(function CanvasInner({
     interruptViewportNavigation();
     const gesture = boxSelectionGestureRef.current;
     if (gesture) gesture.end = { x: event.clientX, y: event.clientY };
+  }, [interruptViewportNavigation]);
+  const onCanvasPointerDownCapture = useCallback((event: ReactPointerEvent) => {
+    interruptViewportNavigation();
+    if (
+      event.button === 0 &&
+      event.target instanceof Element &&
+      event.target.classList.contains("react-flow__pane")
+    ) {
+      boxSelectionStartRef.current = { x: event.clientX, y: event.clientY };
+    } else {
+      boxSelectionStartRef.current = undefined;
+    }
   }, [interruptViewportNavigation]);
   const beginAlignmentGesture = useCallback((
     nodeId: string,
@@ -848,15 +861,17 @@ const CanvasInner = memo(function CanvasInner({
     commitCanvasSelection(next);
   }, [commitCanvasSelection]);
   const onSelectionStart = useCallback((event: ReactMouseEvent) => {
+    const start = boxSelectionStartRef.current ?? { x: event.clientX, y: event.clientY };
     boxSelectionGestureRef.current = {
       base: selectionRef.current,
       toggle: hasToggleModifier(event),
-      start: { x: event.clientX, y: event.clientY },
+      start,
       end: { x: event.clientX, y: event.clientY },
       selectedFlowNodeIds: new Set(),
     };
+    boxSelectionStartRef.current = undefined;
   }, []);
-  const onSelectionEnd = useCallback(() => {
+  const onSelectionEnd = useCallback((event: ReactMouseEvent) => {
     const gesture = boxSelectionGestureRef.current;
     if (!gesture) return;
     const items = [...gesture.selectedFlowNodeIds].flatMap<DiagramSelectionRef>((flowNodeId) => {
@@ -864,15 +879,10 @@ const CanvasInner = memo(function CanvasInner({
       return node ? [{ kind: "node", levelId: node.data.levelId, nodeId: node.data.block.id }] : [];
     });
     const canvasRoot = store.getState().domNode;
-    const renderedSelectionBounds = canvasRoot
-      ?.querySelector<HTMLElement>(".react-flow__selection")
-      ?.getBoundingClientRect();
-    const selectionBounds = renderedSelectionBounds ?? {
-      left: Math.min(gesture.start.x, gesture.end.x),
-      right: Math.max(gesture.start.x, gesture.end.x),
-      top: Math.min(gesture.start.y, gesture.end.y),
-      bottom: Math.max(gesture.start.y, gesture.end.y),
-    };
+    const selectionBounds = canvasClientBounds(gesture.start, {
+      x: event.clientX,
+      y: event.clientY,
+    });
     canvasRoot?.querySelectorAll<SVGGElement>(".react-flow__edge").forEach((element) => {
       const edge = routedEdges.find((candidate) => candidate.id === element.dataset.id);
       if (!edge?.data || edge.data.boundaryContinuation) return;
@@ -1119,6 +1129,7 @@ const CanvasInner = memo(function CanvasInner({
   );
   const onPaneClick = useCallback(
     () => {
+      boxSelectionStartRef.current = undefined;
       alignmentGestureRef.current = undefined;
       resizePreviewRef.current = undefined;
       setAlignmentGuides([]);
@@ -1162,6 +1173,7 @@ const CanvasInner = memo(function CanvasInner({
       onEdgeClick={onEdgeClick}
       onSelectionStart={onSelectionStart}
       onSelectionEnd={onSelectionEnd}
+      onPointerDownCapture={onCanvasPointerDownCapture}
       onPointerMoveCapture={onCanvasPointerMoveCapture}
       onKeyDownCapture={onElementKeyDownCapture}
       onConnect={onConnect}

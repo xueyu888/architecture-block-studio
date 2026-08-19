@@ -113,7 +113,7 @@ function MultiSelectionSummary({ document, selection, onSelect }: {
       {visibleRows.length < rows.length && (
         <p className="bd-multi-overflow">Showing 60 of {rows.length} selected objects.</p>
       )}
-      <p className="bd-multi-help">Shift/Ctrl/⌘ click toggles objects · Drag a selected module to move the group · Esc clears the group.</p>
+      <p className="bd-multi-help">Shift/Ctrl/⌘ click toggles objects · Drag to move · Arrange or Ctrl/⌘ K aligns same-level modules · Esc clears.</p>
     </div>
   );
 }

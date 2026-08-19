@@ -189,7 +189,7 @@ function toolbarButton(page: Page, name: string): Locator {
 
 async function runMenuCommand(
   page: Page,
-  menuName: "Design" | "View",
+  menuName: "Design" | "Arrange" | "View",
   commandName: string | RegExp,
 ): Promise<void> {
   await page.getByRole("button", { name: menuName, exact: true }).click();
@@ -994,7 +994,7 @@ test("searches and runs the unified command palette without losing workflow focu
   const search = palette.getByRole("combobox", { name: "Search commands" });
   await expect(palette).toBeVisible();
   await expect(search).toBeFocused();
-  await expect(palette.getByRole("option")).toHaveCount(21);
+  await expect(palette.getByRole("option")).toHaveCount(29);
   await expect(palette.getByRole("option", { name: /^Command Palette/ })).toHaveCount(0);
 
   await search.fill("添加端口");
@@ -2989,6 +2989,148 @@ test("aligns a pointer-moved module and lets Alt bypass guides for one gesture",
     (candidate: { id: string }) => candidate.id === "project",
   );
   expect(savedNode.layout.position.y).not.toBe(650);
+});
+
+test("aligns and distributes same-level modules as atomic arrangement commands", async ({ page, browserName }) => {
+  const ids = ["agent-ui", "rust-agent-core", "tool-system"];
+  const nodes = ids.map((id) => flowNode(page, `system::${id}`));
+  await nodes[0].click({ force: true });
+  await nodes[1].click({ force: true, modifiers: ["ControlOrMeta"] });
+  await nodes[2].click({ force: true, modifiers: ["ControlOrMeta"] });
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("3 objects selected");
+  await page.waitForTimeout(350);
+
+  const before = await Promise.all(nodes.map((node) => node.boundingBox()));
+  expect(before.every(Boolean)).toBe(true);
+  const viewportBefore = await canvasViewportTransform(page);
+  if (process.env.CAPTURE_ARRANGEMENT === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/arrangement-before.png");
+  }
+
+  await page.keyboard.press("ControlOrMeta+K");
+  const palette = page.getByRole("dialog", { name: "Command Palette" });
+  const search = palette.getByRole("combobox", { name: "Search commands" });
+  await search.fill("align top");
+  const alignTop = palette.getByRole("option", { name: /^Align Top/ });
+  await expect(alignTop).toHaveAttribute("aria-selected", "true");
+  await expect(alignTop).not.toHaveAttribute("aria-disabled", "true");
+  await page.keyboard.press("Enter");
+  await waitForEditorIdle(page);
+
+  const aligned = await Promise.all(nodes.map((node) => node.boundingBox()));
+  expect(aligned.every(Boolean)).toBe(true);
+  expect(Math.max(...aligned.map((box) => box!.y)) - Math.min(...aligned.map((box) => box!.y)))
+    .toBeLessThan(1);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(3);
+  expect(await canvasViewportTransform(page)).toBe(viewportBefore);
+  if (process.env.CAPTURE_ARRANGEMENT === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/arrangement-after.png");
+  }
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect.poll(async () => {
+    const restored = await Promise.all(nodes.map((node) => node.boundingBox()));
+    return restored.map((box) => box && [Math.round(box.x), Math.round(box.y)]);
+  }).toEqual(before.map((box) => [Math.round(box!.x), Math.round(box!.y)]));
+  await page.keyboard.press("ControlOrMeta+Shift+Z");
+  await waitForEditorIdle(page);
+
+  const distributedIds = ["project", "knowledge", "plugin", "platform-provider"];
+  const distributedNodes = distributedIds.map((id) => flowNode(page, `system::${id}`));
+  await distributedNodes[0].click({ force: true });
+  for (const node of distributedNodes.slice(1)) {
+    await node.click({ force: true, modifiers: ["ControlOrMeta"] });
+  }
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("4 objects selected");
+  await runMenuCommand(page, "Arrange", "Distribute Horizontally");
+  await waitForEditorIdle(page);
+
+  const distributed = await Promise.all(distributedNodes.map((node) => node.boundingBox()));
+  expect(distributed.every(Boolean)).toBe(true);
+  const centers = distributed.map((box) => box!.x + box!.width / 2).sort((left, right) => left - right);
+  expect(Math.abs((centers[1] - centers[0]) - (centers[2] - centers[1]))).toBeLessThan(1);
+  expect(Math.abs((centers[2] - centers[1]) - (centers[3] - centers[2]))).toBeLessThan(1);
+  expect(await canvasViewportTransform(page)).toBe(viewportBefore);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await downloadPromise).path();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  const savedLevel = saved.levels.find((level: { id: string }) => level.id === "system");
+  for (const id of [...ids, ...distributedIds]) {
+    const savedNode = savedLevel.nodes.find((node: { id: string }) => node.id === id);
+    expect(savedNode.layout.pinned).toBe(true);
+    expect(Number.isInteger(savedNode.layout.position.x)).toBe(true);
+    expect(Number.isInteger(savedNode.layout.position.y)).toBe(true);
+  }
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    sharedRoutes: [],
+  });
+});
+
+test("explains arrangement eligibility at selection and hierarchy boundaries", async ({ page }) => {
+  const agent = flowNode(page, "system::agent-ui");
+  const core = flowNode(page, "system::rust-agent-core");
+  await agent.click({ force: true });
+  await page.getByRole("button", { name: "Arrange", exact: true }).click();
+  let arrangeMenu = page.getByRole("menu", { name: "Arrange" });
+  let alignLeft = arrangeMenu.getByRole("menuitem", { name: /^Align Left/ });
+  await expect(alignLeft).toHaveAttribute("aria-disabled", "true");
+  await expect(alignLeft).toContainText("Select at least two modules first.");
+  await page.keyboard.press("Escape");
+
+  await core.click({ force: true, modifiers: ["ControlOrMeta"] });
+  await page.getByRole("button", { name: "Arrange", exact: true }).click();
+  arrangeMenu = page.getByRole("menu", { name: "Arrange" });
+  alignLeft = arrangeMenu.getByRole("menuitem", { name: /^Align Left/ });
+  const distribute = arrangeMenu.getByRole("menuitem", { name: /^Distribute Horizontally/ });
+  await expect(alignLeft).not.toHaveAttribute("aria-disabled", "true");
+  await expect(distribute).toHaveAttribute("aria-disabled", "true");
+  await expect(distribute).toContainText("Select at least three modules to distribute.");
+  await page.keyboard.press("Escape");
+
+  const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
+  await page.keyboard.down("Shift");
+  await clickReachableEdgePoint(page, edge);
+  await page.keyboard.up("Shift");
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("3 objects selected");
+  await page.getByRole("button", { name: "Arrange", exact: true }).click();
+  arrangeMenu = page.getByRole("menu", { name: "Arrange" });
+  alignLeft = arrangeMenu.getByRole("menuitem", { name: /^Align Left/ });
+  await expect(alignLeft).toHaveAttribute("aria-disabled", "true");
+  await expect(alignLeft).toContainText("Select modules only; interfaces cannot be arranged.");
+  await page.keyboard.press("Escape");
+
+  await expandHierarchy(page, "Rust Agent Core");
+  const child = flowNode(page, "system/rust-agent-core:core::session-api");
+  await page.locator(
+    '.bd-tree-select[data-level-id="system"][data-node-id="rust-agent-core"]',
+  ).click({ force: true });
+  await child.click({ force: true, modifiers: ["Shift"] });
+  await page.getByRole("button", { name: "Arrange", exact: true }).click();
+  arrangeMenu = page.getByRole("menu", { name: "Arrange" });
+  alignLeft = arrangeMenu.getByRole("menuitem", { name: /^Align Left/ });
+  await expect(alignLeft).toHaveAttribute("aria-disabled", "true");
+  await expect(alignLeft).toContainText("Select modules from the same design level.");
+  await page.keyboard.press("Escape");
+
+  await page.locator(
+    '.bd-tree-select[data-level-id="system"][data-node-id="agent-ui"]',
+  ).click({ force: true });
+  await page.locator(
+    '.bd-tree-select[data-level-id="system"][data-node-id="rust-agent-core"]',
+  ).click({ force: true, modifiers: ["Shift"] });
+  await page.getByRole("button", { name: "Arrange", exact: true }).click();
+  arrangeMenu = page.getByRole("menu", { name: "Arrange" });
+  alignLeft = arrangeMenu.getByRole("menuitem", { name: /^Align Left/ });
+  await expect(alignLeft).toHaveAttribute("aria-disabled", "true");
+  await expect(alignLeft).toContainText("Collapse expanded hierarchy and use authored placement");
 });
 
 test("box-selects, toggles, and moves modules as one professional selection", async ({ page, browserName }) => {

@@ -1,7 +1,19 @@
 import { describe, expect, test } from "vitest";
-import { reconcileCanvasSelection } from "../../src/components/canvasSelection";
+import {
+  canvasClientBounds,
+  reconcileCanvasSelection,
+} from "../../src/components/canvasSelection";
 
 describe("canvas selection projection", () => {
+  test("normalizes gesture endpoints without depending on intermediate rendered frames", () => {
+    expect(canvasClientBounds({ x: 320, y: 180 }, { x: 40, y: 90 })).toEqual({
+      left: 40,
+      right: 320,
+      top: 90,
+      bottom: 180,
+    });
+  });
+
   test("changes only newly selected items", () => {
     const items = [{ id: "one" }, { id: "two" }, { id: "three" }];
     const next = reconcileCanvasSelection(items, new Set(["two"]));
