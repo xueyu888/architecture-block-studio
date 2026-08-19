@@ -88,6 +88,75 @@ describe("alignment guides", () => {
     ]);
   });
 
+  test("snaps a moving subject between its nearest cross-axis neighbors at equal distances", () => {
+    const result = snapMovingRect(
+      rect("subject", 253, 0),
+      [rect("left", 0, -30), rect("right", 500, 30)],
+      8,
+    );
+
+    expect(result.rect).toMatchObject({ x: 250, y: 0 });
+    expect(result.guides.filter((guide) => guide.kind === "distance")).toEqual([
+      expect.objectContaining({ axis: "x", distance: 150, startId: "left", endId: "subject" }),
+      expect.objectContaining({ axis: "x", distance: 150, startId: "subject", endId: "right" }),
+    ]);
+  });
+
+  test("continues the nearest fixed gap when the moving subject is outside the pair", () => {
+    const result = snapMovingRect(
+      rect("subject", 383, 10, 90, 80),
+      [rect("far", 0, 0), rect("near", 180, 20, 120, 80)],
+      8,
+    );
+
+    expect(result.rect.x).toBe(380);
+    expect(result.guides.filter((guide) => guide.kind === "distance")).toEqual([
+      expect.objectContaining({ axis: "x", distance: 80, startId: "far", endId: "near" }),
+      expect.objectContaining({ axis: "x", distance: 80, startId: "near", endId: "subject" }),
+    ]);
+  });
+
+  test("requires real cross-axis overlap and lets distance win over conflicting alignment", () => {
+    const subject = rect("subject", 253, 0);
+    expect(snapMovingRect(
+      subject,
+      [rect("left", 0, 200), rect("right", 500, 200)],
+      8,
+    )).toEqual({ rect: subject, guides: [] });
+    const touching = snapMovingRect(
+      subject,
+      [rect("left", 0, 80), rect("right", 500, 80)],
+      8,
+    );
+    expect(touching.rect.x).toBe(subject.x);
+    expect(touching.guides.filter(
+      (guide) => guide.kind === "distance" && guide.axis === "x",
+    )).toEqual([]);
+
+    const result = snapMovingRect(
+      subject,
+      [rect("left", 0, -30), rect("right", 500, 30), rect("alignment", 252, 300)],
+      8,
+    );
+    expect(result.rect.x).toBe(250);
+    expect(result.guides.filter((guide) => guide.kind === "line" && guide.axis === "x")).toEqual([]);
+    expect(result.guides.filter((guide) => guide.kind === "distance")).toHaveLength(2);
+  });
+
+  test("applies the same equal-distance rule vertically", () => {
+    const result = snapMovingRect(
+      rect("subject", 0, 253),
+      [rect("top", -30, 0), rect("bottom", 30, 500)],
+      8,
+    );
+
+    expect(result.rect.y).toBe(250);
+    expect(result.guides.filter((guide) => guide.kind === "distance")).toEqual([
+      expect.objectContaining({ axis: "y", distance: 170, startId: "top", endId: "subject" }),
+      expect.objectContaining({ axis: "y", distance: 170, startId: "subject", endId: "bottom" }),
+    ]);
+  });
+
   test("leaves moving geometry unchanged outside the screen-derived tolerance", () => {
     const subject = rect("subject", 90, 40);
     expect(snapMovingRect(subject, [rect("target", 200, 200)], 5)).toEqual({

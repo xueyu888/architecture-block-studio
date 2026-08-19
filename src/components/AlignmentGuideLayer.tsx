@@ -1,6 +1,8 @@
 import { ViewportPortal } from "@xyflow/react";
 import type { CSSProperties } from "react";
-import type { AlignmentGuide, AlignmentSizeGuide } from "../layout";
+import type { AlignmentDistanceGuide, AlignmentGuide, AlignmentSizeGuide } from "../layout";
+
+type GuideStyle = CSSProperties & Record<`--${string}`, string>;
 
 function LineGuide({ guide }: { guide: Extract<AlignmentGuide, { kind: "line" }> }) {
   const vertical = guide.axis === "x";
@@ -47,14 +49,41 @@ function SizeGuide({ guide }: { guide: AlignmentSizeGuide }) {
   );
 }
 
+function DistanceGuide({ guide }: { guide: AlignmentDistanceGuide }) {
+  const style = guide.axis === "x"
+    ? { left: guide.from, top: guide.cross, width: guide.to - guide.from }
+    : { left: guide.cross, top: guide.from, height: guide.to - guide.from };
+  return (
+    <div
+      className={`bd-distance-guide bd-distance-guide-${guide.axis}`}
+      data-axis={guide.axis}
+      data-distance={guide.distance}
+      data-start-id={guide.startId}
+      data-end-id={guide.endId}
+      style={{ ...style, "--distance-guide-tick-size": `${guide.tickSize}px` } as GuideStyle}
+    />
+  );
+}
+
+function Guide({ guide }: { guide: AlignmentGuide }) {
+  if (guide.kind === "line") return <LineGuide guide={guide} />;
+  if (guide.kind === "size") return <SizeGuide guide={guide} />;
+  return <DistanceGuide guide={guide} />;
+}
+
 export function AlignmentGuideLayer({ guides }: { guides: readonly AlignmentGuide[] }) {
   if (guides.length === 0) return null;
   return (
     <ViewportPortal>
       <div className="bd-alignment-guide-layer" aria-hidden="true">
-        {guides.map((guide, index) => guide.kind === "line"
-          ? <LineGuide key={`line:${guide.axis}:${guide.targetId}:${index}`} guide={guide} />
-          : <SizeGuide key={`size:${guide.axis}:${guide.targetId}:${index}`} guide={guide} />)}
+        {guides.map((guide, index) => (
+          <Guide
+            key={guide.kind === "distance"
+              ? `distance:${guide.axis}:${guide.startId}:${guide.endId}:${index}`
+              : `${guide.kind}:${guide.axis}:${guide.targetId}:${index}`}
+            guide={guide}
+          />
+        ))}
       </div>
     </ViewportPortal>
   );

@@ -1248,7 +1248,8 @@ button { color: inherit; }
   pointer-events: none;
 }
 .bd-alignment-guide,
-.bd-size-guide {
+.bd-size-guide,
+.bd-distance-guide {
   position: absolute;
   color: var(--alignment-guide);
   pointer-events: none;
@@ -1302,6 +1303,36 @@ button { color: inherit; }
 .bd-size-guide-height::after { left: -3px; width: 7px; height: 1px; }
 .bd-size-guide-height::before { top: 0; }
 .bd-size-guide-height::after { bottom: 0; }
+.bd-distance-guide-x {
+  height: 1px;
+  border-top: 1px solid currentColor;
+}
+.bd-distance-guide-y {
+  width: 1px;
+  border-left: 1px solid currentColor;
+}
+.bd-distance-guide::before,
+.bd-distance-guide::after {
+  position: absolute;
+  background: currentColor;
+  content: "";
+}
+.bd-distance-guide-x::before,
+.bd-distance-guide-x::after {
+  top: calc(var(--distance-guide-tick-size) * -0.5);
+  width: 1px;
+  height: var(--distance-guide-tick-size);
+}
+.bd-distance-guide-x::before { left: 0; }
+.bd-distance-guide-x::after { right: 0; }
+.bd-distance-guide-y::before,
+.bd-distance-guide-y::after {
+  left: calc(var(--distance-guide-tick-size) * -0.5);
+  width: var(--distance-guide-tick-size);
+  height: 1px;
+}
+.bd-distance-guide-y::before { top: 0; }
+.bd-distance-guide-y::after { bottom: 0; }
 
 .bd-block.is-expanded {
   border: var(--block-border-width) solid var(--block-color);

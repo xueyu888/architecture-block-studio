@@ -62,13 +62,13 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 
 模块尺寸编辑复用同一几何 Owner。`minimumNodeDimensions` 从四侧端口和内容区计算可读下限，Canvas 只把这个纯结果投影为四边 / 四角 resize 限制；最大值来自节点几何合同，pointer 网格、键盘移动 / resize 步长和背景点阵共同消费 `DESIGN_GRID_SIZE`。Shift pointer resize 由纯 `preserveNodeAspectRatio` 以 gesture 起始矩形、抓手方向和同一尺寸上下限求解，固定对侧角或对侧边中心；比例不进入文档，并优先于兄弟尺寸吸附。React Flow 只拥有可丢弃预览，松手后只发出一次位置加尺寸意图；Editor 的 `node/resize` 才以一个原子操作写入 `node.layout.position / width / height / pinned`。左边或上边缩放会同时改变锚点和尺寸，因此不能只写 width / height，否则视觉边界与持久几何会漂移。展开的 hierarchy 容器尺寸由子图边界派生，不提供 authored resize 把手。
 
-网格与对齐辅助线沿用同一几何链，但都不拥有设计事实。Canvas 在 move / resize 开始时冻结父级坐标原点，并只收集同一父级、当前视口附近的模块矩形，把 6 CSS px 容差换算为设计坐标；多选移动先由 `alignmentRectBounds` 从全部成员的 absolute rect 冻结一个组包围框，pointer 位移只平移这个 subject。`layout/alignmentGuides` 在每个轴上先选择最近的边缘 / 中心或同宽 / 同高候选，未命中的轴才按父级相对 `DESIGN_GRID_SIZE` 取整；同一 correction 再等量作用到每个成员，因此吸附结果不依赖抓住大卡片还是小卡片，组内相对位置也不会漂移。React Flow 的全局 `snapToGrid` 已关闭，不能在纯策略之前偷偷生成第二份几何。`AlignmentGuideLayer` 只渲染当前 gesture 的临时线和尺寸括号。松手后仍只提交既有 `node/move`、`nodes/move`、`fragment/insert` 或 `node/resize`；先以 pointerdown 建立直接 move / resize，再按住 Alt 时，同时跳过网格和辅助线，原样使用用户预览。Alt 在 pointerdown 前成立则属于选择协议并强制起框。跨父级混选、吸附超出尺寸上下限或 Editor 拒绝提交时，不猜坐标、不建立补偿状态，Canvas 回到文档投影。
+网格、对齐与等距辅助线沿用同一几何链，但都不拥有设计事实。Canvas 在 move / resize 开始时冻结父级坐标原点，并只收集同一父级、当前视口附近的模块矩形，把 6 CSS px 容差换算为设计坐标；多选移动先由 `alignmentRectBounds` 从全部成员的 absolute rect 冻结一个组包围框，pointer 位移只平移这个 subject。`layout/alignmentGuides` 在每个移动轴上先从正交轴真实重叠、与主体保持正间距的候选中确定最近前后邻居；若原始 pointer 几何已经接近“主体位于两邻居之间等距”或“主体延续相邻两模块间距”，就以同一个 `snapMovingRect` 返回唯一 correction 和恰好两段无文字间距括号。该轴未命中等距时才选择最近边缘 / 中心，仍未命中才按父级相对 `DESIGN_GRID_SIZE` 取整；resize 继续在位置、同宽 / 同高和网格之间使用原有确定优先级。等距优先于冲突对齐，候选按距离、关系类型和稳定 id 排序，不能因遍历顺序产生跳动。同一 correction 再等量作用到每个成员，因此吸附结果不依赖抓住大卡片还是小卡片，组内相对位置也不会漂移。React Flow 的全局 `snapToGrid` 已关闭，不能在纯策略之前偷偷生成第二份几何。`AlignmentGuideLayer` 只渲染当前 gesture 的临时直线、尺寸或等距括号；间距值只用于几何断言，不渲染成会遮挡线路的标签。松手后仍只提交既有 `node/move`、`nodes/move`、`fragment/insert` 或 `node/resize`；先以 pointerdown 建立直接 move / resize，再按住 Alt 时，同时跳过等距、对齐和网格，原样使用用户预览。Alt 在 pointerdown 前成立则属于选择协议并强制起框。跨父级混选、无正交重叠、只有单侧一个候选、吸附超出尺寸上下限或 Editor 拒绝提交时，不猜坐标、不建立补偿状态，Canvas 回到文档投影。
 
 ```text
-pointer raw geometry ─► layout snap policy ─► disposable Canvas preview ─► one DesignOperation
-                              │                          │                         │
-                  grid + nearby modules          guides / transform       BlockDesignDocument
-                  (Alt bypasses both)                 (not facts)          (only geometry fact)
+pointer raw geometry ─► one axis snap policy ─► disposable Canvas preview ─► one DesignOperation
+                               │                           │                         │
+                 distance → alignment → grid      guides / transform       BlockDesignDocument
+                    (Alt bypasses all)                 (not facts)          (only geometry fact)
 ```
 
 多选对齐与分布复用 authored 几何，但与临时辅助线是独立能力。`layout/selectionArrangement` 只接收已解析的模块矩形：六种对齐以整个选择包围框为基准，水平 / 垂直分布按中心点等距并固定两端；项目没有隐式“主选择”，因此不会让点击顺序成为第二几何规则。`StudioCommands` 负责确认至少 2 个对齐对象或 3 个分布对象、全部是同一 Level 中具有唯一可编辑投影的 authored 模块，并为接口混选、跨层选择、展开 hierarchy 或未完成布局给出同源禁用原因。Arrange 菜单与 Command Palette 只投影这些命令；执行结果统一生成一次 `nodes/move`，Editor 原子写入各模块的 `node.layout.position / pinned`，随后布局与路由从文档重新派生。任一前提或提交失败时，原文档、历史和视口都不变。

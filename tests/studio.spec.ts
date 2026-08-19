@@ -8,6 +8,10 @@ import { routingStressDesignDocument } from "./fixtures/routingStressDesign";
 import { connectionPreviewDesignDocument } from "./fixtures/connectionPreviewDesign";
 import { viewportAutoPanDesignDocument } from "./fixtures/viewportAutoPanDesign";
 import { groupAlignmentDesignDocument } from "./fixtures/groupAlignmentDesign";
+import {
+  distanceGuideDesignDocument,
+  groupDistanceGuideDesignDocument,
+} from "./fixtures/distanceGuideDesign";
 import { createPerformanceSample, emitPerformanceSample } from "./performance/performanceSample";
 
 const examplePath = fileURLToPath(
@@ -16,6 +20,7 @@ const examplePath = fileURLToPath(
 const invalidPath = fileURLToPath(new URL("./fixtures/invalid.block-design.json", import.meta.url));
 const legacyPath = fileURLToPath(new URL("./fixtures/legacy-v2.0.block-design.json", import.meta.url));
 const browserProblems = new WeakMap<Page, string[]>();
+const canvasGuideSelector = ".bd-alignment-guide, .bd-size-guide, .bd-distance-guide";
 const wcagTags = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 // Axe's color-contrast rule does not complete against this transformed SVG
 // workbench within the normal test budget. It is replaced, not omitted, by
@@ -3041,11 +3046,11 @@ test("loads and operates a deterministic large or stress design", async ({ brows
     await page.mouse.move(guideDragStart.x, guideDragStart.y);
     await page.mouse.down();
     await page.mouse.move(guideDragStart.x + 18, guideDragStart.y, { steps: 6 });
-    await expect(page.locator(".bd-alignment-guide")).not.toHaveCount(0);
+    await expect(page.locator(".bd-alignment-guide, .bd-distance-guide")).not.toHaveCount(0);
     await page.mouse.up();
     await waitForEditorIdle(page);
     metrics.viewportGuideDragMs = Math.round(performance.now() - guideDragStarted);
-    await expect(page.locator(".bd-alignment-guide, .bd-size-guide")).toHaveCount(0);
+    await expect(page.locator(canvasGuideSelector)).toHaveCount(0);
     await expect(selectedFlowNode).toBeVisible({ timeout: 30_000 });
 
     const viewportBeforeCanvasSelection = await canvasViewportTransform(page);
@@ -4099,7 +4104,7 @@ test("aligns a pointer-moved module and lets Alt bypass guides for one gesture",
   await page.mouse.up();
   await waitForEditorIdle(page);
   expect(await canvasViewportTransform(page)).toBe(viewportBeforeMove);
-  await expect(page.locator(".bd-alignment-guide, .bd-size-guide")).toHaveCount(0);
+  await expect(page.locator(canvasGuideSelector)).toHaveCount(0);
 
   let downloadPromise = page.waitForEvent("download");
   await page.keyboard.press("ControlOrMeta+S");
@@ -4115,7 +4120,7 @@ test("aligns a pointer-moved module and lets Alt bypass guides for one gesture",
   await page.keyboard.press("ControlOrMeta+Z");
   await waitForEditorIdle(page);
   await dragBy(32, true);
-  await expect(page.locator(".bd-alignment-guide, .bd-size-guide")).toHaveCount(0);
+  await expect(page.locator(canvasGuideSelector)).toHaveCount(0);
   await page.mouse.up();
   await page.keyboard.up("Alt");
   await waitForEditorIdle(page);
@@ -4130,6 +4135,231 @@ test("aligns a pointer-moved module and lets Alt bypass guides for one gesture",
   expect(savedNode.layout.position.y).toBe(650);
   expect(savedNode.layout.position.x).toBeGreaterThan(370);
   expect(savedNode.layout.position.x % 16).not.toBe(0);
+});
+
+test("snaps a moved module into equal neighboring gaps and persists one atomic move", async ({ page, browserName }) => {
+  await openDesignDialog(page);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "distance-guide-proof.block-design.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(distanceGuideDesignDocument())),
+  });
+  await expect(page.locator(".bd-document-title span")).toHaveText("Equal Distance Guide Proof");
+  await expect(page.locator(".react-flow__node")).toHaveCount(3);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
+  await expect(page.locator(".bd-canvas-busy")).toHaveCount(0);
+  await page.waitForTimeout(350);
+
+  const left = flowNode(page, "system::left");
+  const subject = flowNode(page, "system::subject");
+  const right = flowNode(page, "system::right");
+  const localPosition = (node: Locator) => node.evaluate((element) => {
+    const transform = (element as HTMLElement).style.transform;
+    const match = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(transform);
+    if (!match) throw new Error(`Unexpected node transform ${transform}`);
+    return { x: Number(match[1]), y: Number(match[2]) };
+  });
+  const beginDragTo = async (targetX: number, disableSnap = false) => {
+    const box = await subject.boundingBox();
+    expect(box).not.toBeNull();
+    const original = await localPosition(subject);
+    const start = { x: box!.x + box!.width * 0.54, y: box!.y + 18 };
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    if (disableSnap) await page.keyboard.down("Alt");
+    await page.mouse.move(start.x + 12, start.y);
+    const zoom = await canvasZoom(page);
+    const nearTargetOffset = disableSnap ? 0 : 2;
+    await page.mouse.move(
+      start.x + 12 + (targetX - original.x) * zoom + nearTargetOffset,
+      start.y,
+      { steps: 10 },
+    );
+    await page.waitForTimeout(120);
+  };
+  const endDrag = async (disableSnap = false) => {
+    await page.mouse.up();
+    if (disableSnap) await page.keyboard.up("Alt");
+    await waitForEditorIdle(page);
+  };
+
+  await beginDragTo(500);
+  const horizontalDistanceGuides = page.locator(".bd-distance-guide-x");
+  await expect(horizontalDistanceGuides).toHaveCount(2);
+  await expect(page.locator('.bd-distance-guide-x[data-start-id="system::left"][data-end-id="system::subject"]'))
+    .toHaveCount(1);
+  await expect(page.locator('.bd-distance-guide-x[data-start-id="system::subject"][data-end-id="system::right"]'))
+    .toHaveCount(1);
+  await expect(horizontalDistanceGuides.first()).toHaveAttribute("data-distance", "244");
+  await expect(horizontalDistanceGuides.last()).toHaveAttribute("data-distance", "244");
+  await expect(page.locator(".bd-alignment-guide-x")).toHaveCount(0);
+  expect(await localPosition(subject)).toEqual({ x: 500, y: 240 });
+  const [leftBox, subjectBox, rightBox] = await Promise.all([
+    left.boundingBox(),
+    subject.boundingBox(),
+    right.boundingBox(),
+  ]);
+  expect(leftBox && subjectBox && rightBox).not.toBeNull();
+  expect(Math.abs(
+    subjectBox!.x - leftBox!.x - leftBox!.width
+    - (rightBox!.x - subjectBox!.x - subjectBox!.width),
+  )).toBeLessThan(1);
+  if (process.env.CAPTURE_DISTANCE_GUIDES === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/equal-distance-guides.png");
+  }
+  await endDrag();
+  await expect(page.locator(canvasGuideSelector)).toHaveCount(0);
+  expect(await routeNodeCollisions(page)).toEqual([]);
+
+  let downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  let savedPath = await (await downloadPromise).path();
+  let saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  let savedNode = saved.levels[0].nodes.find((candidate: { id: string }) => candidate.id === "subject");
+  expect(savedNode.layout.position).toEqual({ x: 500, y: 240 });
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  expect(await localPosition(subject)).toEqual({ x: 320, y: 240 });
+
+  await beginDragTo(504, true);
+  await expect(page.locator(canvasGuideSelector)).toHaveCount(0);
+  await endDrag(true);
+  const bypassedPosition = await localPosition(subject);
+  expect(Math.abs(bypassedPosition.x - 504)).toBeLessThan(2);
+  expect(bypassedPosition.x % 16).not.toBe(0);
+  downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  savedPath = await (await downloadPromise).path();
+  saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  savedNode = saved.levels[0].nodes.find((candidate: { id: string }) => candidate.id === "subject");
+  expect(Math.abs(savedNode.layout.position.x - 504)).toBeLessThan(2);
+  expect(savedNode.layout.position.x % 16).not.toBe(0);
+});
+
+test("snaps a differently sized selected group by one equal-distance boundary", async ({ page, browserName }) => {
+  await openDesignDialog(page);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "group-distance-guide-proof.block-design.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(groupDistanceGuideDesignDocument())),
+  });
+  await expect(page.locator(".bd-document-title span")).toHaveText("Group Equal Distance Guide Proof");
+  await expect(page.locator(".react-flow__node")).toHaveCount(4);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(3);
+  await expect(page.locator(".bd-canvas-busy")).toHaveCount(0);
+  await page.waitForTimeout(350);
+
+  const left = flowNode(page, "system::left");
+  const groupA = flowNode(page, "system::group-a");
+  const groupB = flowNode(page, "system::group-b");
+  const right = flowNode(page, "system::right");
+  const groupIds = ["system::group-a", "system::group-b"];
+  const localPositions = () => page.locator(
+    groupIds.map((id) => `.react-flow__node[data-id="${id}"]`).join(", "),
+  ).evaluateAll((elements) => Object.fromEntries(elements.map((element) => {
+    const transform = (element as HTMLElement).style.transform;
+    const match = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(transform);
+    if (!match) throw new Error(`Unexpected node transform ${transform}`);
+    return [element.getAttribute("data-id"), { x: Number(match[1]), y: Number(match[2]) }];
+  })) as Record<string, { x: number; y: number }>);
+  const selectGroup = async () => {
+    await groupA.click({ force: true });
+    await groupB.click({ force: true, modifiers: ["Shift"] });
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
+  };
+  const beginGroupDragTo = async (grabbed: Locator, targetGroupX: number, disableSnap = false) => {
+    await selectGroup();
+    const box = await grabbed.boundingBox();
+    expect(box).not.toBeNull();
+    const start = { x: box!.x + Math.min(72, box!.width * 0.38), y: box!.y + 18 };
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    if (disableSnap) await page.keyboard.down("Alt");
+    await page.mouse.move(start.x + 12, start.y);
+    const zoom = await canvasZoom(page);
+    const nearTargetOffset = disableSnap ? 0 : 2;
+    await page.mouse.move(
+      start.x + 12 + (targetGroupX - 320) * zoom + nearTargetOffset,
+      start.y,
+      { steps: 10 },
+    );
+    await page.waitForTimeout(120);
+  };
+  const endGroupDrag = async (disableSnap = false) => {
+    await page.mouse.up();
+    if (disableSnap) await page.keyboard.up("Alt");
+    await waitForEditorIdle(page);
+  };
+  const expectedSelectionId = "selection:system::group-a|system::group-b";
+  const baseline = await localPositions();
+
+  await beginGroupDragTo(groupA, 544);
+  const horizontalDistanceGuides = page.locator(".bd-distance-guide-x");
+  await expect(horizontalDistanceGuides).toHaveCount(2);
+  await expect(page.locator(
+    `.bd-distance-guide-x[data-start-id="system::left"][data-end-id="${expectedSelectionId}"]`,
+  )).toHaveCount(1);
+  await expect(page.locator(
+    `.bd-distance-guide-x[data-start-id="${expectedSelectionId}"][data-end-id="system::right"]`,
+  )).toHaveCount(1);
+  await expect(horizontalDistanceGuides.first()).toHaveAttribute("data-distance", "288");
+  await expect(horizontalDistanceGuides.last()).toHaveAttribute("data-distance", "288");
+  await expect(page.locator(".bd-alignment-guide-x")).toHaveCount(0);
+  const snapped = await localPositions();
+  expect(snapped["system::group-a"]).toEqual({ x: 544, y: 160 });
+  expect(snapped["system::group-b"]).toEqual({ x: 576, y: 400 });
+  const [leftBox, groupABox, groupBBox, rightBox] = await Promise.all([
+    left.boundingBox(), groupA.boundingBox(), groupB.boundingBox(), right.boundingBox(),
+  ]);
+  expect(leftBox && groupABox && groupBBox && rightBox).not.toBeNull();
+  const groupLeft = Math.min(groupABox!.x, groupBBox!.x);
+  const groupRight = Math.max(
+    groupABox!.x + groupABox!.width,
+    groupBBox!.x + groupBBox!.width,
+  );
+  expect(Math.abs(
+    groupLeft - leftBox!.x - leftBox!.width
+    - (rightBox!.x - groupRight),
+  )).toBeLessThan(1);
+  if (process.env.CAPTURE_DISTANCE_GUIDES === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/equal-distance-group.png");
+  }
+  await endGroupDrag();
+  expect(await routeNodeCollisions(page)).toEqual([]);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await downloadPromise).path();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  expect(Object.fromEntries(saved.levels[0].nodes
+    .filter((candidate: { id: string }) => ["group-a", "group-b"].includes(candidate.id))
+    .map((candidate: { id: string; layout: { position: { x: number; y: number } } }) => [
+      candidate.id,
+      candidate.layout.position,
+    ]))).toEqual({
+    "group-a": { x: 544, y: 160 },
+    "group-b": { x: 576, y: 400 },
+  });
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  expect(await localPositions()).toEqual(baseline);
+  await beginGroupDragTo(groupB, 544);
+  await expect(horizontalDistanceGuides).toHaveCount(2);
+  expect(await localPositions()).toEqual(snapped);
+  await endGroupDrag();
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  expect(await localPositions()).toEqual(baseline);
+
+  await beginGroupDragTo(groupA, 548, true);
+  await expect(page.locator(canvasGuideSelector)).toHaveCount(0);
+  await endGroupDrag(true);
+  const bypassed = await localPositions();
+  expect(Math.abs(bypassed["system::group-a"].x - 548)).toBeLessThan(2);
+  expect(bypassed["system::group-a"].x % 16).not.toBe(0);
+  expect(bypassed["system::group-b"].x - bypassed["system::group-a"].x).toBe(32);
 });
 
 test("snaps a selected group by its full boundary regardless of the grabbed member", async ({ page, browserName }) => {
@@ -5747,7 +5977,7 @@ test("matches a sibling size while resizing and lets Alt bypass size snapping", 
   await page.mouse.up();
   await waitForEditorIdle(page);
   await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("250 × 145");
-  await expect(page.locator(".bd-alignment-guide, .bd-size-guide")).toHaveCount(0);
+  await expect(page.locator(canvasGuideSelector)).toHaveCount(0);
 
   const downloadPromise = page.waitForEvent("download");
   await page.keyboard.press("ControlOrMeta+S");
@@ -5762,7 +5992,7 @@ test("matches a sibling size while resizing and lets Alt bypass size snapping", 
   await waitForEditorIdle(page);
   await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("240 × 145");
   await resizeWidthBy(8, true);
-  await expect(page.locator(".bd-alignment-guide, .bd-size-guide")).toHaveCount(0);
+  await expect(page.locator(canvasGuideSelector)).toHaveCount(0);
   await page.mouse.up();
   await page.keyboard.up("Alt");
   await waitForEditorIdle(page);

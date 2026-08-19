@@ -27,7 +27,19 @@ export interface AlignmentSizeGuide {
   targetId: string;
 }
 
-export type AlignmentGuide = AlignmentLineGuide | AlignmentSizeGuide;
+export interface AlignmentDistanceGuide {
+  kind: "distance";
+  axis: "x" | "y";
+  from: number;
+  to: number;
+  cross: number;
+  distance: number;
+  tickSize: number;
+  startId: string;
+  endId: string;
+}
+
+export type AlignmentGuide = AlignmentLineGuide | AlignmentSizeGuide | AlignmentDistanceGuide;
 
 export interface AlignmentSnapResult {
   rect: AlignmentRect;
@@ -55,6 +67,14 @@ interface AxisMatch {
   subjectAnchor: AlignmentAnchor;
   targetAnchor: AlignmentAnchor;
   target: AlignmentRect;
+}
+
+interface AxisDistanceMatch {
+  axis: "x" | "y";
+  delta: number;
+  distance: number;
+  kind: "middle" | "after" | "before";
+  chain: readonly [AlignmentRect, AlignmentRect, AlignmentRect];
 }
 
 const ANCHORS: readonly AlignmentAnchor[] = ["start", "center", "end"];
@@ -141,26 +161,178 @@ function lineGuide(
   };
 }
 
+function axisStart(rect: AlignmentRect, axis: "x" | "y"): number {
+  return axis === "x" ? rect.x : rect.y;
+}
+
+function axisSize(rect: AlignmentRect, axis: "x" | "y"): number {
+  return axis === "x" ? rect.width : rect.height;
+}
+
+function axisEnd(rect: AlignmentRect, axis: "x" | "y"): number {
+  return axisStart(rect, axis) + axisSize(rect, axis);
+}
+
+function moveAxisStart(rect: AlignmentRect, axis: "x" | "y", start: number): AlignmentRect {
+  return axis === "x" ? { ...rect, x: start } : { ...rect, y: start };
+}
+
+function overlapsCrossAxis(
+  left: AlignmentRect,
+  right: AlignmentRect,
+  axis: "x" | "y",
+): boolean {
+  const crossAxis = axis === "x" ? "y" : "x";
+  return axisStart(left, crossAxis) < axisEnd(right, crossAxis)
+    && axisStart(right, crossAxis) < axisEnd(left, crossAxis);
+}
+
+function preferredDistanceMatch(
+  left: AxisDistanceMatch,
+  right: AxisDistanceMatch,
+): AxisDistanceMatch {
+  const deltaDifference = Math.abs(left.delta) - Math.abs(right.delta);
+  if (Math.abs(deltaDifference) > 0.001) return deltaDifference < 0 ? left : right;
+  const priority = { middle: 0, after: 1, before: 2 } as const;
+  if (priority[left.kind] !== priority[right.kind]) {
+    return priority[left.kind] < priority[right.kind] ? left : right;
+  }
+  const leftKey = left.chain.map((rect) => rect.id).join(":");
+  const rightKey = right.chain.map((rect) => rect.id).join(":");
+  return leftKey.localeCompare(rightKey) <= 0 ? left : right;
+}
+
+function closestDistanceMatch(
+  subject: AlignmentRect,
+  candidates: readonly AlignmentRect[],
+  axis: "x" | "y",
+  tolerance: number,
+): AxisDistanceMatch | undefined {
+  const distanceTolerance = tolerance / 2;
+  const minimumDistance = tolerance * 2 / 3;
+  const subjectStart = axisStart(subject, axis);
+  const subjectEnd = axisEnd(subject, axis);
+  const separated = candidates.filter((candidate) => overlapsCrossAxis(subject, candidate, axis));
+  const before = separated
+    .filter((candidate) => subjectStart - axisEnd(candidate, axis) > minimumDistance)
+    .sort((left, right) =>
+      axisEnd(right, axis) - axisEnd(left, axis)
+      || axisStart(right, axis) - axisStart(left, axis)
+      || left.id.localeCompare(right.id));
+  const after = separated
+    .filter((candidate) => axisStart(candidate, axis) - subjectEnd > minimumDistance)
+    .sort((left, right) =>
+      axisStart(left, axis) - axisStart(right, axis)
+      || axisEnd(left, axis) - axisEnd(right, axis)
+      || left.id.localeCompare(right.id));
+  let best: AxisDistanceMatch | undefined;
+  const consider = (
+    targetStart: number,
+    distance: number,
+    kind: AxisDistanceMatch["kind"],
+    chain: AxisDistanceMatch["chain"],
+  ) => {
+    if (distance <= minimumDistance) return;
+    const match = { axis, delta: targetStart - subjectStart, distance, kind, chain };
+    if (Math.abs(match.delta) > distanceTolerance) return;
+    best = best ? preferredDistanceMatch(best, match) : match;
+  };
+
+  if (before[0] && after[0]) {
+    const available = axisStart(after[0], axis)
+      - axisEnd(before[0], axis)
+      - axisSize(subject, axis);
+    const distance = available / 2;
+    const targetStart = axisEnd(before[0], axis) + distance;
+    consider(targetStart, distance, "middle", [
+      before[0],
+      moveAxisStart(subject, axis, targetStart),
+      after[0],
+    ]);
+  }
+  if (before[0] && before[1]) {
+    const distance = axisStart(before[0], axis) - axisEnd(before[1], axis);
+    const targetStart = axisEnd(before[0], axis) + distance;
+    consider(targetStart, distance, "after", [
+      before[1],
+      before[0],
+      moveAxisStart(subject, axis, targetStart),
+    ]);
+  }
+  if (after[0] && after[1]) {
+    const distance = axisStart(after[1], axis) - axisEnd(after[0], axis);
+    const targetStart = axisStart(after[0], axis) - axisSize(subject, axis) - distance;
+    consider(targetStart, distance, "before", [
+      moveAxisStart(subject, axis, targetStart),
+      after[0],
+      after[1],
+    ]);
+  }
+  return best;
+}
+
+function distanceGuides(
+  match: AxisDistanceMatch,
+  finalSubject: AlignmentRect,
+  tolerance: number,
+): AlignmentDistanceGuide[] {
+  const chain = match.chain.map((rect) => rect.id === finalSubject.id ? finalSubject : rect);
+  const crossAxis = match.axis === "x" ? "y" : "x";
+  const cross = Math.max(...chain.map((rect) => axisEnd(rect, crossAxis))) + tolerance * 2;
+  const tickSize = tolerance;
+  return chain.slice(0, -1).flatMap((startRect, index) => {
+    const endRect = chain[index + 1];
+    const gapStart = axisEnd(startRect, match.axis);
+    const gapEnd = axisStart(endRect, match.axis);
+    if (gapEnd <= gapStart) return [];
+    const inset = Math.min(tolerance * 5 / 6, (gapEnd - gapStart) / 4);
+    return [{
+      kind: "distance" as const,
+      axis: match.axis,
+      from: gapStart + inset,
+      to: gapEnd - inset,
+      cross,
+      distance: gapEnd - gapStart,
+      tickSize,
+      startId: startRect.id,
+      endId: endRect.id,
+    }];
+  });
+}
+
 export function snapMovingRect(
   subject: AlignmentRect,
   candidates: readonly AlignmentRect[],
   tolerance: number,
   grid?: AlignmentGrid,
 ): AlignmentSnapResult {
-  const xMatch = closestAxisMatch(subject, candidates, "x", tolerance);
-  const yMatch = closestAxisMatch(subject, candidates, "y", tolerance);
-  const rect = {
+  const xDistance = closestDistanceMatch(subject, candidates, "x", tolerance);
+  const yDistance = closestDistanceMatch(subject, candidates, "y", tolerance);
+  const distanceSubject = {
     ...subject,
-    x: xMatch
-      ? subject.x + xMatch.delta
-      : snapGridCoordinate(subject.x, grid?.x, grid?.originX),
-    y: yMatch
-      ? subject.y + yMatch.delta
-      : snapGridCoordinate(subject.y, grid?.y, grid?.originY),
+    x: subject.x + (xDistance?.delta ?? 0),
+    y: subject.y + (yDistance?.delta ?? 0),
+  };
+  const xMatch = xDistance ? undefined : closestAxisMatch(distanceSubject, candidates, "x", tolerance);
+  const yMatch = yDistance ? undefined : closestAxisMatch(distanceSubject, candidates, "y", tolerance);
+  const rect = {
+    ...distanceSubject,
+    x: xDistance
+      ? distanceSubject.x
+      : xMatch
+        ? distanceSubject.x + xMatch.delta
+        : snapGridCoordinate(distanceSubject.x, grid?.x, grid?.originX),
+    y: yDistance
+      ? distanceSubject.y
+      : yMatch
+        ? distanceSubject.y + yMatch.delta
+        : snapGridCoordinate(distanceSubject.y, grid?.y, grid?.originY),
   };
   return {
     rect,
     guides: [
+      ...(xDistance ? distanceGuides(xDistance, rect, tolerance) : []),
+      ...(yDistance ? distanceGuides(yDistance, rect, tolerance) : []),
       ...(xMatch ? [lineGuide(rect, "x", xMatch)] : []),
       ...(yMatch ? [lineGuide(rect, "y", yMatch)] : []),
     ],
