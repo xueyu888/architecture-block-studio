@@ -21,6 +21,7 @@ import {
   CopyPlus,
   Download,
   FilePlus2,
+  Focus,
   FolderOpen,
   GitBranchPlus,
   Info,
@@ -43,8 +44,14 @@ import {
   Trash2,
   TriangleAlert,
   Undo2,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
-import { BlockDesignCanvas } from "../components/BlockDesignCanvas";
+import {
+  BlockDesignCanvas,
+  type CanvasViewportAction,
+  type CanvasViewportActionRequest,
+} from "../components/BlockDesignCanvas";
 import { CommandPalette } from "../components/CommandPalette";
 import { DockWorkspace } from "../components/DockWorkspace";
 import {
@@ -191,6 +198,10 @@ export function BlockDesignStudio({
   const [routeRevision, setRouteRevision] = useState(0);
   const [fitRequest, setFitRequest] = useState(0);
   const [fitSelectionRequest, setFitSelectionRequest] = useState(0);
+  const [viewportActionRequest, setViewportActionRequest] = useState<CanvasViewportActionRequest>({
+    revision: 0,
+    action: "actual-size",
+  });
   const [revealSelectionRequest, setRevealSelectionRequest] = useState(0);
   const [messageFocusRequest, setMessageFocusRequest] = useState(0);
   const [workspaceResetRequest, setWorkspaceResetRequest] = useState(0);
@@ -579,6 +590,9 @@ export function BlockDesignStudio({
   const activeLevelDiagramItemCount = activeLevel
     ? activeLevel.nodes.length + activeLevel.connections.length
     : 0;
+  const requestViewportAction = useCallback((action: CanvasViewportAction) => {
+    setViewportActionRequest((current) => ({ revision: current.revision + 1, action }));
+  }, []);
   const arrangementSelection = useMemo<ArrangementSelection>(() => {
     if (!document) return { available: false, reason: "Open or create a design first." };
     if (layoutBusy) return { available: false, reason: "Wait for the diagram layout to finish." };
@@ -1086,6 +1100,21 @@ export function BlockDesignStudio({
       id: "fitDesign", label: "Fit Design", toolbarTitle: "适应窗口", icon: Scan,
       ...commandAvailability(Boolean(document), "Open or create a design first."), execute: () => setFitRequest((value) => value + 1),
     },
+    zoomIn: {
+      id: "zoomIn", label: "Zoom In", shortcut: "Ctrl/⌘ +", icon: ZoomIn,
+      ...commandAvailability(Boolean(document), "Open or create a design first."),
+      execute: () => requestViewportAction("zoom-in"),
+    },
+    zoomOut: {
+      id: "zoomOut", label: "Zoom Out", shortcut: "Ctrl/⌘ −", icon: ZoomOut,
+      ...commandAvailability(Boolean(document), "Open or create a design first."),
+      execute: () => requestViewportAction("zoom-out"),
+    },
+    actualSize: {
+      id: "actualSize", label: "Actual Size (100%)", icon: Focus,
+      ...commandAvailability(Boolean(document), "Open or create a design first."),
+      execute: () => requestViewportAction("actual-size"),
+    },
     openCommandPalette: {
       id: "openCommandPalette", label: "Command Palette...", shortcut: "Ctrl/⌘ K", showInPalette: false, icon: Search,
       ...commandAvailability(!editorDialogOpen, "Close the current dialog first."), execute: () => setCommandPaletteOpen(true),
@@ -1146,6 +1175,7 @@ export function BlockDesignStudio({
     pasteDesignFragment,
     pasteUnavailableReason,
     redoDesign,
+    requestViewportAction,
     requestSelection,
     requireAppliedInspectorDraft,
     saveCurrent,
@@ -1170,6 +1200,20 @@ export function BlockDesignStudio({
         if (commands.openCommandPalette.enabled) {
           event.preventDefault();
           commands.openCommandPalette.execute();
+        }
+        return;
+      }
+      if (modifier && (key === "+" || key === "=")) {
+        if (commands.zoomIn.enabled) {
+          event.preventDefault();
+          commands.zoomIn.execute();
+        }
+        return;
+      }
+      if (modifier && key === "-") {
+        if (commands.zoomOut.enabled) {
+          event.preventDefault();
+          commands.zoomOut.execute();
         }
         return;
       }
@@ -1270,6 +1314,7 @@ export function BlockDesignStudio({
             selection={selection}
             fitRequest={fitRequest}
             fitSelectionRequest={fitSelectionRequest}
+            viewportActionRequest={viewportActionRequest}
             revealSelectionRequest={revealSelectionRequest}
             routeRevision={routeRevision}
             onSelect={requestSelection}

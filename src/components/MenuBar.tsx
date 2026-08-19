@@ -53,7 +53,23 @@ const MENU_DEFINITIONS: Array<{
       "distributeSelectionVertically",
     ],
   },
-  { id: "view", label: "View", commandIds: ["fitSelection", "fitDesign", "toggleSources", "toggleProperties", "toggleMessages", "maximizeDiagram", "resetWorkspace", "openCommandPalette"] },
+  {
+    id: "view",
+    label: "View",
+    commandIds: [
+      "fitSelection",
+      "fitDesign",
+      "zoomIn",
+      "zoomOut",
+      "actualSize",
+      "toggleSources",
+      "toggleProperties",
+      "toggleMessages",
+      "maximizeDiagram",
+      "resetWorkspace",
+      "openCommandPalette",
+    ],
+  },
 ];
 
 function Menu({

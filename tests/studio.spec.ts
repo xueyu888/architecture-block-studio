@@ -212,6 +212,13 @@ async function canvasViewportTransform(page: Page): Promise<string> {
   );
 }
 
+async function canvasZoom(page: Page): Promise<number> {
+  const transform = await canvasViewportTransform(page);
+  const match = /scale\(([^)]+)\)/.exec(transform);
+  if (!match) throw new Error(`Canvas viewport has no scale transform: ${transform}`);
+  return Number(match[1]);
+}
+
 interface CanvasNavigationTiming {
   selectionCommitMs: number;
   targetMountMs: number;
@@ -1197,7 +1204,7 @@ test("searches and runs the unified command palette without losing workflow focu
   const search = palette.getByRole("combobox", { name: "Search commands" });
   await expect(palette).toBeVisible();
   await expect(search).toBeFocused();
-  await expect(palette.getByRole("option")).toHaveCount(35);
+  await expect(palette.getByRole("option")).toHaveCount(38);
   await expect(palette.getByRole("option", { name: /^Command Palette/ })).toHaveCount(0);
 
   await search.fill("添加端口");
@@ -1829,10 +1836,7 @@ test("filters design issues and cross-probes the reviewed module", async ({ page
   await page.keyboard.press("Enter");
   const viewMenu = page.getByRole("menu", { name: "View" });
   await expect(viewMenu.getByRole("menuitem", { name: /^Fit Selection/ })).toBeFocused();
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowDown");
+  for (let index = 0; index < 7; index += 1) await page.keyboard.press("ArrowDown");
   await expect(viewMenu.getByRole("menuitem", { name: /^Toggle Messages/ })).toBeFocused();
   await page.keyboard.press("Enter");
   const messages = page.locator(".bd-messages");
@@ -3745,6 +3749,43 @@ test("fits a selected interface and its endpoint modules for focused route revie
   await expect(fitSelection).toHaveAttribute("aria-disabled", "true");
   await expect(fitSelection).toContainText("Select a module or interface first.");
   await page.keyboard.press("Escape");
+});
+
+test("keeps toolbar, menu, and keyboard viewport zoom on one non-persistent command path", async ({ page, browserName }) => {
+  const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
+  await clickReachableEdgePoint(page, edge);
+  await expect(edge).toHaveClass(/selected/);
+  const initialZoom = await canvasZoom(page);
+
+  await page.keyboard.press("ControlOrMeta+Minus");
+  await expect.poll(() => canvasZoom(page)).toBeLessThan(initialZoom);
+  await page.keyboard.press("ControlOrMeta+Equal");
+  await expect.poll(() => canvasZoom(page)).toBeGreaterThan(initialZoom - 0.01);
+  await expect(edge).toHaveClass(/selected/);
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
+
+  await runMenuCommand(page, "View", /^Actual Size \(100%\)/);
+  await expect.poll(() => canvasZoom(page)).toBeCloseTo(1, 3);
+  const readout = page.getByRole("button", { name: /^Actual size, current zoom/ });
+  await expect(readout).toHaveAccessibleName("Actual size, current zoom 100%");
+
+  await page.getByRole("button", { name: "Zoom out", exact: true }).click();
+  await expect.poll(() => canvasZoom(page)).toBeLessThan(1);
+  await readout.click();
+  await expect.poll(() => canvasZoom(page)).toBeCloseTo(1, 3);
+  await expect(edge).toHaveClass(/selected/);
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
+
+  const viewportBeforeFocusedActualSize = await canvasViewportTransform(page);
+  await page.keyboard.press("ControlOrMeta+Shift+H");
+  await expect.poll(() => canvasViewportTransform(page)).not.toBe(viewportBeforeFocusedActualSize);
+  await page.waitForTimeout(350);
+  await readout.click();
+  await expect.poll(() => canvasZoom(page)).toBeCloseTo(1, 3);
+
+  if (process.env.CAPTURE_VIEWPORT_ZOOM === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/viewport-zoom-controls.png");
+  }
 });
 
 test("resizes a selected module from a corner and persists one atomic geometry change", async ({ page, browserName }) => {

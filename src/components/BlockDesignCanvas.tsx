@@ -113,12 +113,14 @@ const CANVAS_BACKGROUND = (
 function CanvasViewportControls({
   onZoomIn,
   onZoomOut,
+  onActualSize,
   onFit,
   overviewMapOpen,
   onToggleOverviewMap,
 }: {
   onZoomIn: () => void;
   onZoomOut: () => void;
+  onActualSize: () => void;
   onFit: () => void;
   overviewMapOpen: boolean;
   onToggleOverviewMap: () => void;
@@ -153,6 +155,16 @@ function CanvasViewportControls({
           onClick={onZoomOut}
         >
           <Minus aria-hidden="true" size={13} />
+        </ControlButton>
+      </Tooltip>
+      <Tooltip label="Actual size" detail="Reset the canvas to 100%" side="right">
+        <ControlButton
+          type="button"
+          className="bd-canvas-zoom-readout"
+          aria-label={`Actual size, current zoom ${Math.round(zoom * 100)}%`}
+          onClick={onActualSize}
+        >
+          {Math.round(zoom * 100)}%
         </ControlButton>
       </Tooltip>
       <Tooltip label="Fit design" side="right">
@@ -192,12 +204,20 @@ function warnReactFlowError(code: string, message: string): void {
   console.warn(`[React Flow ${code}] ${message}`);
 }
 
+export type CanvasViewportAction = "zoom-in" | "zoom-out" | "actual-size";
+
+export interface CanvasViewportActionRequest {
+  revision: number;
+  action: CanvasViewportAction;
+}
+
 interface CanvasInnerProps {
   entryLevelId: string;
   layout: LayoutResult;
   selection: SelectionRef;
   fitRequest: number;
   fitSelectionRequest: number;
+  viewportActionRequest: CanvasViewportActionRequest;
   revealSelectionRequest: number;
   routeRevision: number;
   onSelect: (selection: SelectionRef) => boolean;
@@ -271,6 +291,7 @@ const CanvasInner = memo(function CanvasInner({
   selection,
   fitRequest,
   fitSelectionRequest,
+  viewportActionRequest,
   revealSelectionRequest,
   routeRevision,
   onSelect,
@@ -281,7 +302,7 @@ const CanvasInner = memo(function CanvasInner({
   onRouteConnection,
   onReconnectConnection,
 }: CanvasInnerProps) {
-  const { fitBounds, fitView, getViewport, setViewport, zoomIn, zoomOut } = useReactFlow();
+  const { fitBounds, fitView, getViewport, setViewport, zoomIn, zoomOut, zoomTo } = useReactFlow();
   const store = useStoreApi();
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
@@ -334,6 +355,10 @@ const CanvasInner = memo(function CanvasInner({
   }, [runViewportNavigation, zoomIn, zoomOut]);
   const zoomInViewport = useCallback(() => zoomViewport("in"), [zoomViewport]);
   const zoomOutViewport = useCallback(() => zoomViewport("out"), [zoomViewport]);
+  const actualSizeViewport = useCallback(() => {
+    const duration = fitDuration();
+    runViewportNavigation(duration, () => zoomTo(1, { duration }));
+  }, [runViewportNavigation, zoomTo]);
   const fitCanvasViewport = useCallback(() => {
     navigateViewport({ ...FIT_VIEW_OPTIONS, duration: fitDuration() });
   }, [navigateViewport]);
@@ -632,6 +657,7 @@ const CanvasInner = memo(function CanvasInner({
   const [selectionRestoreRevision, setSelectionRestoreRevision] = useState(0);
   const handledRevealSelectionRequest = useRef(0);
   const handledFitSelectionRequest = useRef(0);
+  const handledViewportActionRequest = useRef(0);
   const [edges, setEdges] = useState<CanvasFlowEdge[]>(() =>
     reconcileCanvasSelection(routedEdges, selectedEdgeIdsRef.current),
   );
@@ -778,6 +804,14 @@ const CanvasInner = memo(function CanvasInner({
     const timer = window.setTimeout(() => navigateViewport({ padding: FIT_PADDING, duration: fitDuration() }), 60);
     return () => window.clearTimeout(timer);
   }, [fitRequest, navigateViewport]);
+
+  useEffect(() => {
+    if (viewportActionRequest.revision <= handledViewportActionRequest.current) return;
+    handledViewportActionRequest.current = viewportActionRequest.revision;
+    if (viewportActionRequest.action === "zoom-in") zoomInViewport();
+    else if (viewportActionRequest.action === "zoom-out") zoomOutViewport();
+    else actualSizeViewport();
+  }, [actualSizeViewport, viewportActionRequest, zoomInViewport, zoomOutViewport]);
 
   useEffect(() => {
     if (fitSelectionRequest <= handledFitSelectionRequest.current) return;
@@ -1278,6 +1312,7 @@ const CanvasInner = memo(function CanvasInner({
       <CanvasViewportControls
         onZoomIn={zoomInViewport}
         onZoomOut={zoomOutViewport}
+        onActualSize={actualSizeViewport}
         onFit={fitCanvasViewport}
         overviewMapOpen={compactOverviewMapOpen}
         onToggleOverviewMap={() => setCompactOverviewMapOpen((open) => !open)}
@@ -1309,6 +1344,7 @@ export function BlockDesignCanvas(props: BlockDesignCanvasProps) {
         selection={props.selection}
         fitRequest={props.fitRequest}
         fitSelectionRequest={props.fitSelectionRequest}
+        viewportActionRequest={props.viewportActionRequest}
         revealSelectionRequest={props.revealSelectionRequest}
         routeRevision={props.routeRevision}
         onSelect={props.onSelect}

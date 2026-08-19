@@ -40,6 +40,7 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 - 使用普通点击、Shift / Ctrl / Cmd 与左键框选建立多选；成组移动、六向对齐与水平 / 垂直等距分布都只产生一次可撤销操作。
 - 使用 **Ctrl/⌘ A** 一次选择当前 Level 的全部模块和接口，使用 **Ctrl/⌘ Shift A** 清空选择；输入框继续保留浏览器原生全选，不会误选画布对象。
 - 选中任意接口后使用 **Ctrl/⌘ Shift H** 或 **View → Fit Selection**，可把完整正交路径和两端模块一起聚焦到可读范围，便于逐线人工审查。
+- 使用 **Ctrl/⌘ + / −**、View 菜单或画布左下控件缩放；百分比始终显示真实 viewport zoom，点击即可回到 **Actual Size (100%)**，不会改变设计尺寸或导出结果。
 - 使用 **Ctrl/⌘ C、Ctrl/⌘ V、Ctrl/⌘ D** 或 Edit 菜单复制、粘贴和 Duplicate 同层模块子图；内部接口、接口合同和完整子设计一起复制，外部连接明确排除，一次 Undo 即可恢复。
 - 选中连线后拖动正交线段，手动路由随 JSON 保存，也可随时恢复自动布线。
 - 画布不显示线中标签；端口承担局部识别，点击连线后由 Inspector 展示完整合同。
@@ -68,6 +69,10 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 接口聚焦不是只放大某个端口。画布会合并选中线路的全部折点、两端模块矩形和必要留白，再执行一次可中断的 viewport 导航；线路方向、手动 waypoint、selection 和设计坐标保持不变。
 
 ![选中接口及两端模块的完整聚焦](docs/screenshots/fit-selection.png)
+
+缩放入口不各自维护比例。工具按钮、百分比、View 菜单、命令面板和键盘都发出同一类 viewport 请求，由 Canvas 的导航协调器执行；用户开始直接操作时仍可立即中断动画。
+
+![统一缩放命令与 100% 画布](docs/screenshots/viewport-zoom-controls.png)
 
 选中连线后，画布显示可拖动的正交线段把手，Inspector 同步显示手动路由状态和恢复自动布线入口。
 

@@ -37,7 +37,7 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 | `src/io` | 拥有外部 JSON 与已校验文档之间的转换 | `loadDesignFromObject/File/Url`、`serializeDesign`、`downloadDesign` | 不解释模块业务；加载失败保留已安装文档 |
 | `src/layout` | 从文档与展开状态派生纯复合节点、边和位置投影，定义布局真正消费的签名，并提供不持有交互状态的吸附与多选编排几何 | `layoutBlockDesign`、`layoutFrameSignature`、`layoutProjectionSignature`、`snapMovingRect`、`snapResizingRect`、`alignSelection`、`distributeSelection`、`LayoutResult`、`PlacementMode` | 不依赖 Studio 或 React 交互回调，不修改源文档；没有合法吸附候选时原样返回预览几何，非法编排输入或布局失败上抛给 Studio |
 | `src/routing` | 从绝对布局几何和锁定 waypoint 构造 `RoutingScene`，统一拥有版本化正交多连接策略、规模资源预算、确定性求解、证明等级与独立验证；另提供不持有 UI 状态的手工路线编辑几何和由已验证路线派生的线桥 | `createRoutingSceneFromLayout`、`routingPolicyForScene`、`solveRoutingScene`、`verifyRoutingResult`、`planRouteJumps`、`RoutingScene`、`RoutingPolicy`、`RoutingResult`、`editableOrthogonalRoute`、`moveRouteSegment`、`moveRouteBend`、`removeRouteBend` | 设计坐标是路由事实；不移动模块、不改文档、不持有 gesture；规模只收紧同一策略的有界资源，不改变几何与失败语义；`planRouteJumps` 只决定交叉处的绘制表达，不反写路线。失败返回 `Unresolved` / `InvalidInput`，不调用第二套自动 fallback。完整合同见 [`ROUTING.md`](ROUTING.md) |
-| `src/components` | 将纯布局投影组合为可交互 Canvas，拥有选中几何的 viewport framing 投影，并展示用户视图、发出用户意图 | `CanvasBlockNodeData`、`CanvasInterfaceEdgeData`、`canvasGeometryBounds`、Canvas、Node、Edge、Tree、Inspector、Dialogs、Dock、Messages | 交互回调只存在于 Canvas 投影；viewport 只消费节点矩形与线路点集，不直接深改文档，局部表单草稿不得伪装成已提交事实 |
+| `src/components` | 将纯布局投影组合为可交互 Canvas，拥有选中几何的 viewport framing 与具名缩放请求投影，并展示用户视图、发出用户意图 | `CanvasBlockNodeData`、`CanvasInterfaceEdgeData`、`CanvasViewportActionRequest`、`canvasGeometryBounds`、Canvas、Node、Edge、Tree、Inspector、Dialogs、Dock、Messages | 交互回调只存在于 Canvas 投影；viewport 只消费节点矩形、线路点集和可丢弃动作请求，不直接深改文档，局部表单草稿不得伪装成已提交事实 |
 | `src/studio` | 组合公开能力，拥有工作区选择协议、临时设计剪贴板与无碰撞粘贴位置投影 | `BlockDesignStudio`、`BlockDesignStudioProps`、`SelectionRef`、`selectAllInLevel`、`findDesignFragmentPlacement` 及纯选择查询 | 不重新定义 Schema、片段引用、布局或编辑规则；系统剪贴板失败时同源退化，组合失败应可见、可恢复 |
 | `src/App.tsx` | 提供独立应用的默认装配 | 默认示例 URL 与查询参数入口 | 示例不是核心依赖，不拥有设计内容 |
 | `tests/performance` + `scripts/performance-baseline.mjs` | 拥有压力观测样本合同与重复聚合入口 | `performance-sample v1`、`performance-trend-report v1`、`pnpm performance:baseline` | 只验证产品合同，不被运行时代码依赖，不写回设计 JSON；环境或样本漂移时停止生成可信报告 |
@@ -261,6 +261,8 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 多选删除没有复用单对象级联规则：模块、接口与跨层对象混合删除的保留 / 级联合同尚未定义，因此统一命令明确禁用并解释原因，要求先收敛到一个对象。该限制防止 UI 顺手拼接多个 delete operation，造成顺序依赖或多个 Undo 记录。
 
 选择事实与视口导航正交：Canvas 内点击只更新 `SelectionRef`，不改变用户正在观察的 viewport；Sources、Messages、Inspector 和 MiniMap 属于交叉定位入口，在选择被草稿保护规则接受后才发出一次性 `revealSelectionRequest`。Fit Selection 则从既有选择读取选中模块绝对矩形、选中接口的全部 route points 及两端模块上下文，由纯 `canvasGeometryBounds` 求并集后调用 `fitBounds`；几何未测量完成时请求保持待处理，真正得到 bounds 后才消费。两类计数都是可丢弃 UI 请求，不进入文档、历史或保存文件。MiniMap 节点直接点击复用相同的选择保护，并聚焦到可读尺寸。
+
+Zoom In、Zoom Out 与 Actual Size 由 Studio 发送具名、递增 revision 的 `CanvasViewportActionRequest`；View 菜单、Command Palette 和 `Ctrl/⌘ + / −` 不直接调用第三方图实例。Canvas 是 viewport 变换的唯一执行者，左下控件复用同一 `zoomInViewport` / `zoomOutViewport` / `actualSizeViewport`，百分比直接订阅 React Flow transform 并只作展示。Actual Size 以当前视口中心回到 1:1，不改变节点设计坐标、模块 width / height、selection、历史或导出。
 
 平滑定位同样必须服从新的直接操作。Studio Fit、Sources / Messages / Inspector 交叉定位、MiniMap 和 Canvas 缩放 / Fit 控件都调用同一个 Canvas 导航协调器；它以 generation 标识自己发起的动画。只要 pointer 在动画期间进入画布，当前 transform 就以零时长固定，旧动画的异步完成不能重新宣称导航仍在进行。这样鼠标按下时命中的是用户眼前的模块，而不是动画继续移动后暴露的 pane。中断只结束可丢弃 viewport 动画，不改变 `SelectionRef`、设计坐标、布局或历史。
 

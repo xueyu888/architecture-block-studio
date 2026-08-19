@@ -613,6 +613,16 @@ button { color: inherit; }
   background: var(--surface-raised);
 }
 
+.bd-canvas-controls .react-flow__controls-button {
+  width: 38px;
+}
+
+.bd-canvas-zoom-readout.react-flow__controls-button {
+  color: var(--text-secondary);
+  font: 600 9px/1 "SFMono-Regular", Consolas, monospace;
+  letter-spacing: -0.2px;
+}
+
 .react-flow__minimap {
   border: 1px solid var(--control-border);
   border-radius: var(--radius-medium);
