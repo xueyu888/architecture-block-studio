@@ -181,6 +181,12 @@ function flowNode(page: Page, id: string): Locator {
   return page.locator(`.react-flow__node[data-id="${id}"]`);
 }
 
+function toolbarButton(page: Page, name: string): Locator {
+  return page
+    .getByRole("toolbar", { name: "Architecture design tools" })
+    .getByRole("button", { name, exact: true });
+}
+
 async function clickWithPointer(page: Page, locator: Locator): Promise<void> {
   const box = await locator.boundingBox();
   expect(box).not.toBeNull();
@@ -431,7 +437,7 @@ async function captureStudioScreenshot(page: Page, path: string): Promise<void> 
 }
 
 async function addModule(page: Page, values: { title: string; id: string; owner?: string }): Promise<void> {
-  await page.locator('.bd-toolbar button[title="添加模块"]').click({ force: true });
+  await toolbarButton(page, "添加模块").click({ force: true });
   const dialog = page.getByRole("dialog", { name: /Add Module/ });
   await dialog.getByLabel("Module title").fill(values.title);
   await dialog.getByLabel("Module id").fill(values.id);
@@ -447,7 +453,7 @@ async function addPort(page: Page, values: {
   side: "left" | "right" | "top" | "bottom";
   dataType?: string;
 }): Promise<void> {
-  await page.locator('.bd-toolbar button[title="添加端口"]').click({ force: true });
+  await toolbarButton(page, "添加端口").click({ force: true });
   const dialog = page.getByRole("dialog", { name: /Add Port/ });
   await dialog.getByLabel("Port label").fill(values.label);
   await dialog.getByLabel("Port id").fill(values.id);
@@ -734,7 +740,7 @@ test("loads the bundled v2 design without DRC or viewport failures", async ({ pa
 
 test("keeps the compact desktop workbench operable without panel or route obstruction", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
-  await page.locator('.bd-toolbar button[title="适应窗口"]').click({ force: true });
+  await toolbarButton(page, "适应窗口").click({ force: true });
 
   const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
   await clickReachableEdgePoint(page, edge);
@@ -749,7 +755,7 @@ test("keeps the compact desktop workbench operable without panel or route obstru
   await waitForEditorIdle(page);
   await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
 
-  await page.locator('.bd-toolbar button[title="Messages"]').click({ force: true });
+  await toolbarButton(page, "Messages").click({ force: true });
   await expect(page.locator(".bd-messages")).toBeVisible();
   const geometry = await page.evaluate(() => {
     const box = (selector: string) => {
@@ -799,6 +805,86 @@ test("keeps the compact desktop workbench operable without panel or route obstru
   }
 });
 
+test("reveals one unobtrusive tooltip path for toolbar and canvas controls", async ({ page }) => {
+  const tooltip = page.getByRole("tooltip");
+  const save = toolbarButton(page, "保存设计");
+
+  await expect(page.locator(".bd-toolbar button[title], .bd-canvas-controls button[title]")).toHaveCount(0);
+  await save.hover();
+  await expect(tooltip).toHaveCount(0);
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText("保存设计");
+  await expect(tooltip).toContainText("Ctrl/⌘ S");
+
+  const toolbarGeometry = await page.evaluate(() => {
+    const target = document.querySelector<HTMLElement>('.bd-toolbar button[aria-label="保存设计"]');
+    const popup = document.querySelector<HTMLElement>('[role="tooltip"]');
+    if (!target || !popup) throw new Error("Toolbar tooltip geometry is unavailable.");
+    const targetBox = target.getBoundingClientRect();
+    const popupBox = popup.getBoundingClientRect();
+    const overlap = !(
+      popupBox.right <= targetBox.left ||
+      popupBox.left >= targetBox.right ||
+      popupBox.bottom <= targetBox.top ||
+      popupBox.top >= targetBox.bottom
+    );
+    return {
+      overlap,
+      insideViewport: popupBox.left >= 0 && popupBox.top >= 0 &&
+        popupBox.right <= window.innerWidth && popupBox.bottom <= window.innerHeight,
+    };
+  });
+  expect(toolbarGeometry).toEqual({ overlap: false, insideViewport: true });
+
+  await save.focus();
+  await expect(tooltip).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(tooltip).toHaveCount(0);
+  await expect(save).toBeFocused();
+  await page.locator(".bd-react-flow").click({ position: { x: 100, y: 100 } });
+
+  const unavailablePort = page
+    .getByRole("toolbar", { name: "Architecture design tools" })
+    .getByRole("button", { name: /^添加端口 — Select a module first\.$/ });
+  await unavailablePort.hover();
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText("添加端口");
+  await expect(tooltip).toContainText("Select a module first.");
+  expect((await accessibilityResults(page, '[role="tooltip"]')).violations).toEqual([]);
+  expect(await textContrastIssues(page, '[role="tooltip"]')).toEqual([]);
+  if (process.env.CAPTURE_TOOLTIP_PROOF === "1") {
+    await captureStudioScreenshot(page, "docs/screenshots/command-tooltip.png");
+  }
+
+  await page.mouse.move(700, 420);
+  const fit = page.locator(".react-flow__controls-fitview");
+  await fit.focus();
+  await expect(tooltip).toHaveText("Fit design");
+  const canvasGeometry = await page.evaluate(() => {
+    const target = document.querySelector<HTMLElement>(".react-flow__controls-fitview");
+    const popup = document.querySelector<HTMLElement>('[role="tooltip"]');
+    if (!target || !popup) throw new Error("Canvas tooltip geometry is unavailable.");
+    const targetBox = target.getBoundingClientRect();
+    const popupBox = popup.getBoundingClientRect();
+    return {
+      clearsControl: popupBox.left >= targetBox.right,
+      insideViewport: popupBox.left >= 0 && popupBox.top >= 0 &&
+        popupBox.right <= window.innerWidth && popupBox.bottom <= window.innerHeight,
+    };
+  });
+  expect(canvasGeometry).toEqual({ clearsControl: true, insideViewport: true });
+  await page.keyboard.press("Escape");
+  await expect(tooltip).toHaveCount(0);
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await save.focus();
+  await expect(tooltip).toBeVisible();
+  expect(await tooltip.evaluate((element) => ({
+    reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
+    animationSeconds: Number.parseFloat(getComputedStyle(element).animationDuration),
+  }))).toEqual({ reduced: true, animationSeconds: 0.00001 });
+});
+
 test("routes and persists a new interface inside an existing complex design", async ({ page }) => {
   await addModule(page, { title: "Review Gateway", id: "review-gateway", owner: "Architecture Review" });
   const inspector = page.getByRole("region", { name: "Properties" });
@@ -834,7 +920,7 @@ test("routes and persists a new interface inside an existing complex design", as
   await inspector.getByLabel("Failure behavior", { exact: true }).fill("Reports validation failure to the caller without retrying.");
   await inspector.getByRole("button", { name: "Apply Changes" }).click({ force: true });
   await waitForEditorIdle(page);
-  await page.locator('.bd-toolbar button[title="适应窗口"]').click({ force: true });
+  await toolbarButton(page, "适应窗口").click({ force: true });
   await page.waitForTimeout(400);
 
   await expect(page.locator(".react-flow__node")).toHaveCount(8);
@@ -921,7 +1007,7 @@ test("meets automated WCAG rules in the default workbench and open dialog", asyn
     expect(workbench.violations, selector).toEqual([]);
   }
   expect(await textContrastIssues(page, ".bd-studio")).toEqual([]);
-  await page.locator('.bd-toolbar button[title="Messages"]').click({ force: true });
+  await toolbarButton(page, "Messages").click({ force: true });
   await expect(page.locator(".bd-messages")).toBeVisible();
   const messages = await accessibilityResults(page, ".bd-messages");
   expect(messages.violations, ".bd-messages").toEqual([]);
@@ -1097,8 +1183,8 @@ test("explains why context-dependent design commands are unavailable", async ({ 
   const addPortTool = page.getByRole("button", { name: /^添加端口/ });
   const addInterfaceTool = page.getByRole("button", { name: /^添加接口/ });
   const addChildTool = page.getByRole("button", { name: /^创建子设计/ });
-  await expect(addPortTool).toHaveAttribute("title", "添加端口 — Select a module first.");
-  await expect(addInterfaceTool).toHaveAttribute("title", "添加接口 — Add compatible output/input ports to this level first.");
+  await expect(addPortTool).toHaveAttribute("aria-label", "添加端口 — Select a module first.");
+  await expect(addInterfaceTool).toHaveAttribute("aria-label", "添加接口 — Add compatible output/input ports to this level first.");
 
   await emptyState.getByRole("button", { name: "Add first module" }).click();
   await page.getByRole("dialog", { name: /Add Module/ }).getByRole("button", { name: "Add Module", exact: true }).click();
@@ -1120,13 +1206,13 @@ test("explains why context-dependent design commands are unavailable", async ({ 
   await expect(addChild.locator("small")).toHaveText("Use this module's hierarchy control to open its child design.");
   await page.keyboard.press("Escape");
   await expect(addChildTool).toHaveAttribute(
-    "title",
+    "aria-label",
     "创建子设计 — Use this module's hierarchy control to open its child design.",
   );
 });
 
 test("guides a new user from an empty design to the first module", async ({ page }) => {
-  await page.locator('.bd-toolbar button[title="新建设计"]').click({ force: true });
+  await toolbarButton(page, "新建设计").click({ force: true });
   const newDialog = page.getByRole("dialog", { name: "New Design" });
   await newDialog.getByLabel("Design title").fill("Review Workbench");
   await newDialog.getByLabel("Design id").fill("review-workbench");
@@ -1150,7 +1236,7 @@ test("guides a new user from an empty design to the first module", async ({ page
 });
 
 test("keeps suggested identifiers linked until the user customizes them", async ({ page }) => {
-  await page.locator('.bd-toolbar button[title="新建设计"]').click({ force: true });
+  await toolbarButton(page, "新建设计").click({ force: true });
   const newDesign = page.getByRole("dialog", { name: "New Design" });
   await newDesign.getByLabel("Design title").fill("Checkout Platform");
   await expect(newDesign.getByLabel("Design id")).toHaveValue("checkout-platform");
@@ -1160,14 +1246,14 @@ test("keeps suggested identifiers linked until the user customizes them", async 
   await newDesign.getByRole("button", { name: "Create", exact: true }).click({ force: true });
   await waitForEditorIdle(page);
 
-  await page.locator('.bd-toolbar button[title="添加模块"]').click({ force: true });
+  await toolbarButton(page, "添加模块").click({ force: true });
   const firstModule = page.getByRole("dialog", { name: /Add Module/ });
   await firstModule.getByLabel("Module title").fill("Payment Worker");
   await expect(firstModule.getByLabel("Module id")).toHaveValue("payment-worker");
   await firstModule.getByRole("button", { name: "Add Module", exact: true }).click({ force: true });
   await waitForEditorIdle(page);
 
-  await page.locator('.bd-toolbar button[title="添加模块"]').click({ force: true });
+  await toolbarButton(page, "添加模块").click({ force: true });
   const secondModule = page.getByRole("dialog", { name: /Add Module/ });
   await secondModule.getByLabel("Module title").fill("Payment Worker");
   await expect(secondModule.getByLabel("Module id")).toHaveValue("payment-worker-2");
@@ -1177,7 +1263,7 @@ test("keeps suggested identifiers linked until the user customizes them", async 
   await secondModule.getByRole("button", { name: "Add Module", exact: true }).click({ force: true });
   await waitForEditorIdle(page);
 
-  await page.locator('.bd-toolbar button[title="添加端口"]').click({ force: true });
+  await toolbarButton(page, "添加端口").click({ force: true });
   const firstPort = page.getByRole("dialog", { name: /Add Port/ });
   await firstPort.getByLabel("Port label").fill("Session Events");
   await expect(firstPort.getByLabel("Port id")).toHaveValue("session-events");
@@ -1185,7 +1271,7 @@ test("keeps suggested identifiers linked until the user customizes them", async 
   await firstPort.getByRole("button", { name: "Add Port", exact: true }).click({ force: true });
   await waitForEditorIdle(page);
 
-  await page.locator('.bd-toolbar button[title="添加端口"]').click({ force: true });
+  await toolbarButton(page, "添加端口").click({ force: true });
   const secondPort = page.getByRole("dialog", { name: /Add Port/ });
   await secondPort.getByLabel("Port label").fill("Session Events");
   await expect(secondPort.getByLabel("Port id")).toHaveValue("session-events-2");
@@ -1194,7 +1280,7 @@ test("keeps suggested identifiers linked until the user customizes them", async 
   await waitForEditorIdle(page);
 
   await flowNode(page, "system::payment-worker").click({ force: true });
-  await page.locator('.bd-toolbar button[title="创建子设计"]').click({ force: true });
+  await toolbarButton(page, "创建子设计").click({ force: true });
   const childDesign = page.getByRole("dialog", { name: /Create Child Design/ });
   await childDesign.getByLabel("Child design title").fill("Payment Worker Runtime");
   await expect(childDesign.getByLabel("Child level id")).toHaveValue("payment-worker-runtime");
@@ -1269,7 +1355,7 @@ test("protects unapplied Inspector changes across review navigation and save", a
 
   await inspector.getByLabel("Title").fill("Project draft");
   await expect(inspector.getByText("UNAPPLIED", { exact: true })).toBeVisible();
-  await page.locator('.bd-toolbar button[title="保存设计"]').click({ force: true });
+  await toolbarButton(page, "保存设计").click({ force: true });
   await expect(page.locator(".bd-command-error")).toContainText("before saving");
   await expect(inspector.getByLabel("Title")).toHaveValue("Project draft");
 
@@ -1280,7 +1366,7 @@ test("protects unapplied Inspector changes across review navigation and save", a
 });
 
 test("keeps keyboard focus inside dialogs and restores the invoking command", async ({ page }) => {
-  const newButton = page.locator('.bd-toolbar button[title="新建设计"]');
+  const newButton = toolbarButton(page, "新建设计");
   await newButton.focus();
   await newButton.click({ force: true });
   const newDialog = page.getByRole("dialog", { name: "New Design" });
@@ -1296,7 +1382,7 @@ test("keeps keyboard focus inside dialogs and restores the invoking command", as
   await expect(newDialog).toHaveCount(0);
   await expect(newButton).toBeFocused();
 
-  const openButton = page.locator('.bd-toolbar button[title="打开设计"]');
+  const openButton = toolbarButton(page, "打开设计");
   await openButton.focus();
   await openButton.click({ force: true });
   const openDialog = page.getByRole("dialog", { name: "Open Design" });
@@ -1307,7 +1393,7 @@ test("keeps keyboard focus inside dialogs and restores the invoking command", as
 });
 
 test("filters design issues and cross-probes the reviewed module", async ({ page }) => {
-  await page.locator('.bd-toolbar button[title="新建设计"]').click({ force: true });
+  await toolbarButton(page, "新建设计").click({ force: true });
   const newDialog = page.getByRole("dialog", { name: "New Design" });
   await newDialog.getByLabel("Design title").fill("Review Workbench");
   await newDialog.getByLabel("Design id").fill("review-workbench");
@@ -1376,7 +1462,7 @@ test("filters design issues and cross-probes the reviewed module", async ({ page
 });
 
 test("keeps the authoring chrome stable and handles direct commands", async ({ page }) => {
-  const positions = await page.locator('.bd-toolbar button[title="新建设计"]').evaluate(async (button) => {
+  const positions = await toolbarButton(page, "新建设计").evaluate(async (button) => {
     const samples: string[] = [];
     for (let index = 0; index < 12; index += 1) {
       await new Promise<void>((resolve) => setTimeout(resolve, 25));
@@ -1386,7 +1472,7 @@ test("keeps the authoring chrome stable and handles direct commands", async ({ p
     return samples;
   });
   expect(new Set(positions).size).toBe(1);
-  await page.locator('.bd-toolbar button[title="新建设计"]').evaluate((button: HTMLButtonElement) => button.click());
+  await toolbarButton(page, "新建设计").evaluate((button: HTMLButtonElement) => button.click());
   await expect(page.getByRole("dialog", { name: "New Design" })).toBeVisible();
   await page.getByRole("dialog", { name: "New Design" }).getByRole("button", { name: "Cancel" }).evaluate((button: HTMLButtonElement) => button.click());
 });
@@ -1488,7 +1574,7 @@ test("summarizes a module's direct interfaces and opens the selected contract", 
 });
 
 test("creates a typed interface with the keyboard instead of dragging ports", async ({ page }) => {
-  const addInterface = page.locator('.bd-toolbar button[title="添加接口"]');
+  const addInterface = toolbarButton(page, "添加接口");
   await addInterface.focus();
   await page.keyboard.press("Enter");
 
@@ -1664,7 +1750,7 @@ test("completes a design and save journey without switching from the keyboard", 
     await captureStudioScreenshot(page, "docs/screenshots/firefox-apply-focus.png");
   }
 
-  await tabTo(page, page.locator('.bd-toolbar button[title="验证设计"]'), 160, "backward");
+  await tabTo(page, toolbarButton(page, "验证设计"), 160, "backward");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("region", { name: "Messages" })).toBeVisible();
   await page.keyboard.press("ControlOrMeta+Z");
@@ -1686,7 +1772,7 @@ test("completes a design and save journey without switching from the keyboard", 
 
 test("keeps routes outside blocks with both hierarchy containers expanded", async ({ page }) => {
   if (process.env.CAPTURE_ROUTING_PROOF === "1") {
-    await page.locator('.bd-toolbar button[title="适应窗口"]').click({ force: true });
+    await toolbarButton(page, "适应窗口").click({ force: true });
     await page.waitForTimeout(400);
     await captureStudioScreenshot(page, "docs/screenshots/aio-routing-validation.png");
   }
@@ -1725,16 +1811,16 @@ test("resizes, collapses, maximizes, floats and resets dock panels", async ({ pa
   await page.mouse.up();
   expect((await sources.boundingBox())!.width).toBeGreaterThan(initialSources!.width + 50);
 
-  await page.locator('.bd-toolbar button[title="Sources"]').click({ force: true });
+  await toolbarButton(page, "Sources").click({ force: true });
   expect((await sources.boundingBox())!.width).toBeLessThan(60);
-  await page.locator('.bd-toolbar button[title="Sources"]').click({ force: true });
+  await toolbarButton(page, "Sources").click({ force: true });
   expect((await sources.boundingBox())!.width).toBeGreaterThan(250);
 
   const diagramBefore = await page.getByRole("region", { name: "Diagram" }).boundingBox();
-  await page.locator('.bd-toolbar button[title="最大化或还原画布"]').click({ force: true });
+  await toolbarButton(page, "最大化或还原画布").click({ force: true });
   const diagramMaximized = await page.getByRole("region", { name: "Diagram" }).boundingBox();
   expect(diagramMaximized!.width).toBeGreaterThan(diagramBefore!.width + 300);
-  await page.locator('.bd-toolbar button[title="最大化或还原画布"]').click({ force: true });
+  await toolbarButton(page, "最大化或还原画布").click({ force: true });
 
   await page.getByRole("button", { name: "Float Properties" }).click({ force: true });
   await expect(
@@ -1756,10 +1842,10 @@ test("optimizes routes without moving blocks and regenerates placement separatel
   const project = flowNode(page, "system::project");
   const before = await transformOf(project);
 
-  await page.locator('.bd-toolbar button[title="仅优化布线"]').evaluate((button: HTMLButtonElement) => button.click());
+  await toolbarButton(page, "仅优化布线").evaluate((button: HTMLButtonElement) => button.click());
   expect(await transformOf(project)).toBe(before);
 
-  await page.locator('.bd-toolbar button[title="重新生成布局"]').evaluate((button: HTMLButtonElement) => button.click());
+  await toolbarButton(page, "重新生成布局").evaluate((button: HTMLButtonElement) => button.click());
   await expect.poll(() => transformOf(project), { timeout: 30_000 }).not.toBe(before);
   await waitForLayout(page);
 });
@@ -1858,11 +1944,11 @@ test("loads and operates a deterministic large or stress design", async ({ brows
       heapAfterHistory.totalMeasuredBytes - heapBeforeHistory.totalMeasuredBytes,
     );
     const undoStarted = performance.now();
-    await page.locator('.bd-toolbar button[title="撤销"]').click({ force: true });
+    await toolbarButton(page, "撤销").click({ force: true });
     await expect(page.locator(".bd-inspector-title h2")).toContainText("Revision 9");
     metrics.historyUndoMs = Math.round(performance.now() - undoStarted);
     const redoStarted = performance.now();
-    await page.locator('.bd-toolbar button[title="重做"]').click({ force: true });
+    await toolbarButton(page, "重做").click({ force: true });
     await expect(page.locator(".bd-inspector-title h2")).toContainText("Revision 10");
     metrics.historyRedoMs = Math.round(performance.now() - redoStarted);
   }
@@ -1991,7 +2077,7 @@ test("loads and operates a deterministic large or stress design", async ({ brows
 
   const saveStarted = performance.now();
   const downloadPromise = page.waitForEvent("download");
-  await clickWithPointer(page, page.locator('.bd-toolbar button[title="保存设计"]'));
+  await clickWithPointer(page, toolbarButton(page, "保存设计"));
   const download = await downloadPromise;
   const savedPath = await download.path();
   expect(savedPath).not.toBeNull();
@@ -2080,7 +2166,7 @@ test("drags, persists, resets, and restores a manual orthogonal route", async ({
   }
 
   const downloadPromise = page.waitForEvent("download");
-  await page.locator('.bd-toolbar button[title="保存设计"]').click({ force: true });
+  await toolbarButton(page, "保存设计").click({ force: true });
   const download = await downloadPromise;
   const savedPath = await download.path();
   expect(savedPath).not.toBeNull();
@@ -2091,7 +2177,7 @@ test("drags, persists, resets, and restores a manual orthogonal route", async ({
   await inspector.getByRole("button", { name: "Reset to automatic routing" }).click({ force: true });
   await waitForEditorIdle(page);
   await expect(edge.locator('[data-routing-mode="automatic"]')).toBeVisible();
-  await page.locator('.bd-toolbar button[title="撤销"]').click({ force: true });
+  await toolbarButton(page, "撤销").click({ force: true });
   await waitForEditorIdle(page);
   await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
 });
@@ -2236,7 +2322,7 @@ test("authors, connects, nests, undoes, saves, and reloads a local module design
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("pageerror", (error) => browserErrors.push(error.message));
-  await page.locator('.bd-toolbar button[title="新建设计"]').click({ force: true });
+  await toolbarButton(page, "新建设计").click({ force: true });
   const newDialog = page.getByRole("dialog", { name: "New Design" });
   await newDialog.getByLabel("Design title").fill("Payments Architecture");
   await newDialog.getByLabel("Design id").fill("payments-architecture");
@@ -2290,13 +2376,13 @@ test("authors, connects, nests, undoes, saves, and reloads a local module design
   expect(apiPosition).not.toBeNull();
   expect(workerPosition!.x).toBeLessThan(apiPosition!.x);
   if (process.env.CAPTURE_EDITOR_PROOF === "1") {
-    await page.locator('.bd-toolbar button[title="适应窗口"]').click({ force: true });
+    await toolbarButton(page, "适应窗口").click({ force: true });
     await page.waitForTimeout(400);
     await captureStudioScreenshot(page, "docs/screenshots/editor-polished-workbench.png");
   }
 
   await flowNode(page, "system::api").click({ force: true });
-  await page.locator('.bd-toolbar button[title="创建子设计"]').click({ force: true });
+  await toolbarButton(page, "创建子设计").click({ force: true });
   const childDialog = page.getByRole("dialog", { name: /Create Child Design/ });
   await childDialog.getByLabel("Child design title").fill("API Internals");
   await childDialog.getByLabel("Child level id").fill("api-internals");
@@ -2315,9 +2401,9 @@ test("authors, connects, nests, undoes, saves, and reloads a local module design
   await waitForEditorIdle(page);
   await expect(page.locator(".bd-validation-summary")).toContainText("0 errors");
 
-  await page.locator('.bd-toolbar button[title="撤销"]').click({ force: true });
+  await toolbarButton(page, "撤销").click({ force: true });
   await expect(page.locator(".bd-validation-summary")).toContainText("1 errors");
-  await page.locator('.bd-toolbar button[title="重做"]').click({ force: true });
+  await toolbarButton(page, "重做").click({ force: true });
   await expect(page.locator(".bd-validation-summary")).toContainText("0 errors");
   await expect(page.locator(".bd-validation-summary")).toContainText("0 warnings");
   await waitForEditorIdle(page);
@@ -2331,14 +2417,14 @@ test("authors, connects, nests, undoes, saves, and reloads a local module design
   });
   await expect(page.locator(".bd-interface-underlay")).toHaveCount(2);
   if (process.env.CAPTURE_EDITOR_PROOF === "1") {
-    await page.locator('.bd-toolbar button[title="Sources"]').click({ force: true });
-    await page.locator('.bd-toolbar button[title="Properties"]').click({ force: true });
+    await toolbarButton(page, "Sources").click({ force: true });
+    await toolbarButton(page, "Properties").click({ force: true });
     await page.waitForTimeout(400);
-    await page.locator('.bd-toolbar button[title="适应窗口"]').click({ force: true });
+    await toolbarButton(page, "适应窗口").click({ force: true });
     await page.waitForTimeout(400);
     await captureStudioScreenshot(page, "docs/screenshots/editor-routing-validation.png");
-    await page.locator('.bd-toolbar button[title="Sources"]').click({ force: true });
-    await page.locator('.bd-toolbar button[title="Properties"]').click({ force: true });
+    await toolbarButton(page, "Sources").click({ force: true });
+    await toolbarButton(page, "Properties").click({ force: true });
     await page.waitForTimeout(400);
   }
 
@@ -2374,7 +2460,7 @@ test("authors, connects, nests, undoes, saves, and reloads a local module design
   await waitForEditorIdle(page);
   await expect(flowNode(page, "system::api").locator("h3")).toHaveText("Public API v2");
   page.once("dialog", async (dialog) => dialog.dismiss());
-  await page.locator('.bd-toolbar button[title="新建设计"]').click({ force: true });
+  await toolbarButton(page, "新建设计").click({ force: true });
   await expect(page.getByRole("dialog", { name: "New Design" })).toHaveCount(0);
   await expect(page.locator(".bd-document-title span")).toHaveText("Payments Architecture *");
   expect(browserErrors).toEqual([]);
@@ -2387,7 +2473,7 @@ test("moves, edits, deletes, restores, saves, and exports authored facts", async
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("pageerror", (error) => browserErrors.push(error.message));
-  await page.locator('.bd-toolbar button[title="新建设计"]').click({ force: true });
+  await toolbarButton(page, "新建设计").click({ force: true });
   const newDialog = page.getByRole("dialog", { name: "New Design" });
   await newDialog.getByLabel("Design title").fill("Worker Design");
   await newDialog.getByLabel("Design id").fill("worker-design");
@@ -2396,7 +2482,7 @@ test("moves, edits, deletes, restores, saves, and exports authored facts", async
 
   await addModule(page, { title: "Worker", id: "worker", owner: "Runtime Team" });
   const worker = flowNode(page, "system::worker");
-  await page.locator('.bd-toolbar button[title="添加模块"]').click({ force: true });
+  await toolbarButton(page, "添加模块").click({ force: true });
   const duplicateDialog = page.getByRole("dialog", { name: /Add Module/ });
   await duplicateDialog.getByLabel("Module title").fill("Duplicate Worker");
   await duplicateDialog.getByLabel("Module id").fill("worker");
@@ -2427,7 +2513,7 @@ test("moves, edits, deletes, restores, saves, and exports authored facts", async
   await expect(worker.locator(".bd-port-label")).toContainText("events-out");
 
   const saveDownloadPromise = page.waitForEvent("download");
-  await page.locator('.bd-toolbar button[title="保存设计"]').click({ force: true });
+  await toolbarButton(page, "保存设计").click({ force: true });
   const saveDownload = await saveDownloadPromise;
   expect(saveDownload.suggestedFilename()).toBe("worker-design.block-design.json");
   await expect(page.locator(".bd-statusbar")).toContainText("Saved");
@@ -2443,19 +2529,19 @@ test("moves, edits, deletes, restores, saves, and exports authored facts", async
   await expect(page.locator(".bd-statusbar")).toContainText("Unsaved changes");
 
   page.once("dialog", async (dialog) => dialog.accept());
-  await page.locator('.bd-toolbar button[title="删除所选内容"]').click({ force: true });
+  await toolbarButton(page, "删除所选内容").click({ force: true });
   await waitForEditorIdle(page);
   await expect(worker.locator(".bd-port-label")).toHaveCount(0);
-  await page.locator('.bd-toolbar button[title="撤销"]').click({ force: true });
+  await toolbarButton(page, "撤销").click({ force: true });
   await waitForEditorIdle(page);
   await expect(worker.locator(".bd-port-label")).toContainText("events-out");
 
   await worker.click({ force: true });
   page.once("dialog", async (dialog) => dialog.accept());
-  await page.locator('.bd-toolbar button[title="删除所选内容"]').click({ force: true });
+  await toolbarButton(page, "删除所选内容").click({ force: true });
   await waitForEditorIdle(page);
   await expect(page.locator(".react-flow__node")).toHaveCount(0);
-  await page.locator('.bd-toolbar button[title="撤销"]').click({ force: true });
+  await toolbarButton(page, "撤销").click({ force: true });
   await waitForEditorIdle(page);
   await expect(flowNode(page, "system::worker")).toBeVisible();
   expect(browserErrors).toEqual([]);

@@ -1,14 +1,16 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Box, Plus } from "lucide-react";
+import { Box, Minus, Plus, Scan } from "lucide-react";
 import {
   Background,
   BackgroundVariant,
   ConnectionMode,
+  ControlButton,
   Controls,
   MiniMap,
   ReactFlow,
   useNodesState,
   useReactFlow,
+  useStore,
   useStoreApi,
   type EdgeMouseHandler,
   type Connection,
@@ -26,12 +28,15 @@ import { canvasDetailLevel, type CanvasDetailLevel } from "./canvasDetail";
 import { reconcileCanvasSelection } from "./canvasSelection";
 import type { CanvasFlowEdge, CanvasFlowNode } from "./canvasTypes";
 import { InterfaceEdgeComponent } from "./InterfaceEdge";
+import { Tooltip } from "./Tooltip";
 
 const nodeTypes = { block: BlockNodeComponent };
 const edgeTypes = { interface: InterfaceEdgeComponent };
 const FIT_PADDING = 0.28;
 const NO_SELECTED_IDS: readonly string[] = [];
 const SNAP_GRID: [number, number] = [16, 16];
+const MIN_ZOOM = 0.18;
+const MAX_ZOOM = 2.4;
 const NODE_KEYBOARD_DELTAS: Readonly<Record<string, { x: number; y: number; direction: string }>> = {
   ArrowLeft: { x: -SNAP_GRID[0], y: 0, direction: "left" },
   ArrowRight: { x: SNAP_GRID[0], y: 0, direction: "right" },
@@ -54,12 +59,57 @@ const toneColors: Record<string, string> = {
   neutral: "#65716a",
 };
 
-const CANVAS_DECORATIONS = (
-  <>
-    <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--canvas-grid)" />
-    <Controls position="bottom-left" showInteractive={false} />
-  </>
+const CANVAS_BACKGROUND = (
+  <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--canvas-grid)" />
 );
+
+function CanvasViewportControls() {
+  const { fitView, zoomIn, zoomOut } = useReactFlow();
+  const zoom = useStore((state) => state.transform[2]);
+  return (
+    <Controls
+      className="bd-canvas-controls"
+      position="bottom-left"
+      showZoom={false}
+      showFitView={false}
+      showInteractive={false}
+      aria-label="Canvas viewport controls"
+    >
+      <Tooltip label="Zoom in" side="right">
+        <ControlButton
+          type="button"
+          className="react-flow__controls-zoomin"
+          aria-label="Zoom in"
+          disabled={zoom >= MAX_ZOOM - 0.001}
+          onClick={() => void zoomIn({ duration: fitDuration() })}
+        >
+          <Plus aria-hidden="true" size={13} />
+        </ControlButton>
+      </Tooltip>
+      <Tooltip label="Zoom out" side="right">
+        <ControlButton
+          type="button"
+          className="react-flow__controls-zoomout"
+          aria-label="Zoom out"
+          disabled={zoom <= MIN_ZOOM + 0.001}
+          onClick={() => void zoomOut({ duration: fitDuration() })}
+        >
+          <Minus aria-hidden="true" size={13} />
+        </ControlButton>
+      </Tooltip>
+      <Tooltip label="Fit design" side="right">
+        <ControlButton
+          type="button"
+          className="react-flow__controls-fitview"
+          aria-label="Fit design"
+          onClick={() => void fitView({ ...FIT_VIEW_OPTIONS, duration: fitDuration() })}
+        >
+          <Scan aria-hidden="true" size={13} />
+        </ControlButton>
+      </Tooltip>
+    </Controls>
+  );
+}
 
 function miniMapNodeColor(node: CanvasFlowNode): string {
   return toneColors[node.data.block.tone] ?? toneColors.neutral;
@@ -566,8 +616,8 @@ const CanvasInner = memo(function CanvasInner({
       edgesReconnectable={false}
       snapToGrid
       snapGrid={SNAP_GRID}
-      minZoom={0.18}
-      maxZoom={2.4}
+      minZoom={MIN_ZOOM}
+      maxZoom={MAX_ZOOM}
       panOnScroll
       selectionOnDrag
       fitView
@@ -577,7 +627,8 @@ const CanvasInner = memo(function CanvasInner({
       deleteKeyCode={null}
       className="bd-react-flow"
     >
-      {CANVAS_DECORATIONS}
+      {CANVAS_BACKGROUND}
+      <CanvasViewportControls />
       <MiniMap<CanvasFlowNode>
         position="bottom-right"
         pannable

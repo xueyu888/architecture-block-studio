@@ -138,7 +138,6 @@ function Menu({
               role="menuitem"
               tabIndex={-1}
               aria-disabled={command.enabled ? undefined : true}
-              title={command.enabled ? undefined : command.unavailableReason}
               onClick={(event) => {
                 if (!command.enabled) {
                   event.preventDefault();

@@ -1,20 +1,27 @@
 import type { StudioCommand, StudioCommandId, StudioCommands } from "../studio/commands";
+import { Tooltip } from "./Tooltip";
 
 function CommandButton({ command }: { command: StudioCommand }) {
   const Icon = command.icon;
   const title = command.toolbarTitle ?? command.label;
   const accessibleTitle = command.enabled ? title : `${title} — ${command.unavailableReason}`;
   return (
-    <button
-      type="button"
-      className="bd-tool-button"
-      title={accessibleTitle}
-      aria-label={accessibleTitle}
-      disabled={!command.enabled}
-      onClick={command.execute}
+    <Tooltip
+      label={title}
+      shortcut={command.shortcut}
+      detail={command.enabled ? undefined : command.unavailableReason}
+      align="start"
     >
-      <Icon size={15} aria-hidden="true" />
-    </button>
+      <button
+        type="button"
+        className="bd-tool-button"
+        aria-label={accessibleTitle}
+        disabled={!command.enabled}
+        onClick={command.execute}
+      >
+        <Icon size={15} aria-hidden="true" />
+      </button>
+    </Tooltip>
   );
 }
 

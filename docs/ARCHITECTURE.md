@@ -52,9 +52,13 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 
 `src/styles.css` 的 `:root` 是颜色、边界、控件高度、圆角、阴影和动效时长的唯一视觉常量 Owner。组件只通过自身语义 class 表达“这是菜单、节点、属性面板或状态”，不得复制同一 surface、border、selection 或 control 尺寸；React Flow 的网格与 MiniMap 遮罩同样消费该 token 层。`StudioToolbar` 只依据 `StudioCommands` 投影命令，并用具名 `role="group"` 表达视觉分组，不拥有命令状态。视觉 token 只被组件消费，不依赖组件，也不进入 JSON、历史、selection 或布局结果。
 
+`Tooltip` 只拥有 pointer 延迟、focus 即时打开、Esc / pointer down 关闭和 reduced-motion 展示，是命令提示的瞬时 UI Owner。它的公开输入只有 `label`、可选 `shortcut` / `detail` 与 placement；Toolbar 直接传入 `StudioCommands` 已拥有的名称、快捷键和 `unavailableReason`，Canvas viewport controls 传入自身公开动作名。Tooltip 不计算 eligibility、不执行命令、不让禁用按钮获得新的激活路径，也不持久化打开状态。Toolbar 与 Canvas controls 不再保留并行的原生 `title`，Menu 已有可见禁用原因也不再重复 title；事件取消或组件卸载时，待显示计时器被清理，原操作保持不变。
+
 ```text
 BlockDesignDocument ─► model / editor / layout / routing ─► Studio ─► UI components
 StudioCommands ───────────────────────────────────────────► Menu / Toolbar
+Canvas viewport actions ──────────────────────────────────► Canvas controls
+Menu / Toolbar / Canvas controls ── label / detail ───────► Tooltip
 :root visual tokens ──────────────────────────────────────► all UI components
 Dock / selection / dialogs ─► disposable workspace state; never design JSON
 ```

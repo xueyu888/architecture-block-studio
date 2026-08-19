@@ -59,9 +59,9 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 
 ![紧凑工作区中的接口审查与 DRC](docs/screenshots/compact-workbench.png)
 
-菜单获得焦点后，可以直接输入 **F / E / D / V** 定位 File、Edit、Design 或 View；菜单展开后，输入命令首字母会跳到下一个同首字母项并支持环绕。例如在 Design 中重复按 **A** 可依次检查 Add Module、Add Port、Add Interface，用 **C** 直达 Create Child Design。暂不可用的命令仍可由方向键或首字母聚焦，菜单会直接说明成立条件；Enter、Space 和鼠标点击都不会误执行。
+菜单获得焦点后，可以直接输入 **F / E / D / V** 定位 File、Edit、Design 或 View；菜单展开后，输入命令首字母会跳到下一个同首字母项并支持环绕。例如在 Design 中重复按 **A** 可依次检查 Add Module、Add Port、Add Interface，用 **C** 直达 Create Child Design。暂不可用的命令仍可由方向键或首字母聚焦，菜单会直接说明成立条件；Enter、Space 和鼠标点击都不会误执行。工具栏图标在 hover 或键盘 focus 时显示同一命令的名称、快捷键和禁用原因，按 Esc 即可收起。
 
-![可聚焦的禁用命令与恢复提示](docs/screenshots/disabled-menu-focus.png)
+![工具栏命令名称与成立条件提示](docs/screenshots/command-tooltip.png)
 
 ## 5 分钟开始使用
 
