@@ -1,9 +1,10 @@
-import type {
-  BlockConnection,
-  BlockDesignDocument,
-  BlockNode,
-  DesignIssue,
-  DesignLevel,
+import {
+  listDirectConnections,
+  type BlockConnection,
+  type BlockDesignDocument,
+  type BlockNode,
+  type DesignIssue,
+  type DesignLevel,
 } from "../model";
 
 export type DiagramSelectionRef =
@@ -58,6 +59,101 @@ export function selectAllInLevel(level: DesignLevel): SelectionRef {
       connectionId: connection.id,
     })),
   ], level.id);
+}
+
+export type DirectInterfaceSelectionExpansion =
+  | {
+    available: true;
+    selection: SelectionRef;
+    selectedNodeCount: number;
+    directInterfaceCount: number;
+    addedInterfaceCount: number;
+  }
+  | {
+    available: false;
+    reason: "no-modules" | "no-direct-interfaces" | "all-direct-interfaces-selected";
+    selectedNodeCount: number;
+    directInterfaceCount: number;
+    addedInterfaceCount: 0;
+  };
+
+/**
+ * Expands selected modules to their incident interfaces without changing the
+ * design document. Adjacency comes from the model graph; this layer only owns
+ * canonical workspace selection composition across one or more levels.
+ */
+export function directInterfaceSelectionExpansion(
+  document: BlockDesignDocument,
+  selection: SelectionRef,
+): DirectInterfaceSelectionExpansion {
+  const selectedItems = diagramSelectionItems(selection);
+  const existingNodeIdsByLevel = new Map(
+    document.levels.map((level) => [level.id, new Set(level.nodes.map((node) => node.id))]),
+  );
+  const nodeIdsByLevel = new Map<string, Set<string>>();
+  selectedItems.forEach((item) => {
+    if (item.kind !== "node") return;
+    if (!existingNodeIdsByLevel.get(item.levelId)?.has(item.nodeId)) return;
+    const nodeIds = nodeIdsByLevel.get(item.levelId) ?? new Set<string>();
+    nodeIds.add(item.nodeId);
+    nodeIdsByLevel.set(item.levelId, nodeIds);
+  });
+
+  const selectedNodeCount = [...nodeIdsByLevel.values()]
+    .reduce((count, nodeIds) => count + nodeIds.size, 0);
+  if (selectedNodeCount === 0) {
+    return {
+      available: false,
+      reason: "no-modules",
+      selectedNodeCount: 0,
+      directInterfaceCount: 0,
+      addedInterfaceCount: 0,
+    };
+  }
+
+  const directInterfaces = document.levels.flatMap((level): DiagramSelectionRef[] => {
+    const nodeIds = nodeIdsByLevel.get(level.id);
+    if (!nodeIds) return [];
+    return listDirectConnections(level, nodeIds).map((connection) => ({
+      kind: "connection",
+      levelId: level.id,
+      connectionId: connection.id,
+    }));
+  });
+  if (directInterfaces.length === 0) {
+    return {
+      available: false,
+      reason: "no-direct-interfaces",
+      selectedNodeCount,
+      directInterfaceCount: 0,
+      addedInterfaceCount: 0,
+    };
+  }
+
+  const selectedKeys = new Set(selectedItems.map(diagramSelectionKey));
+  const addedInterfaceCount = directInterfaces.filter(
+    (item) => !selectedKeys.has(diagramSelectionKey(item)),
+  ).length;
+  if (addedInterfaceCount === 0) {
+    return {
+      available: false,
+      reason: "all-direct-interfaces-selected",
+      selectedNodeCount,
+      directInterfaceCount: directInterfaces.length,
+      addedInterfaceCount: 0,
+    };
+  }
+
+  return {
+    available: true,
+    selection: replaceDiagramSelection(
+      [...selectedItems, ...directInterfaces],
+      document.entryLevelId,
+    ),
+    selectedNodeCount,
+    directInterfaceCount: directInterfaces.length,
+    addedInterfaceCount,
+  };
 }
 
 export function toggleDiagramSelection(

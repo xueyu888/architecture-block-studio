@@ -1321,7 +1321,7 @@ test("searches and runs the unified command palette without losing workflow focu
   const search = palette.getByRole("combobox", { name: "Search commands" });
   await expect(palette).toBeVisible();
   await expect(search).toBeFocused();
-  await expect(palette.getByRole("option")).toHaveCount(39);
+  await expect(palette.getByRole("option")).toHaveCount(40);
   await expect(palette.getByRole("option", { name: /^Command Palette/ })).toHaveCount(0);
 
   await search.fill("添加端口");
@@ -1344,6 +1344,12 @@ test("searches and runs the unified command palette without losing workflow focu
   await clickWithPointer(page, unavailableReconnect);
   await expect(palette).toBeVisible();
   await expect(search).toBeFocused();
+
+  await search.fill("direct interfaces");
+  const unavailableDirectInterfaces = palette.getByRole("option", { name: /^Select Direct Interfaces/ });
+  await expect(palette.getByRole("option")).toHaveCount(1);
+  await expect(unavailableDirectInterfaces).toHaveAttribute("aria-disabled", "true");
+  await expect(unavailableDirectInterfaces).toContainText("Select one or more modules first.");
 
   await search.fill("no such architecture action");
   await expect(palette.getByText("No matching commands", { exact: true })).toBeVisible();
@@ -2582,6 +2588,19 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
     expect(audit.routeIds).toHaveLength(100);
   };
   await assertCompleteAudit();
+
+  await page.locator('.bd-tree-select[data-level-id="system"][data-node-id="hub"]').click({ force: true });
+  await page.waitForTimeout(300);
+  const selectionViewportBefore = await canvasViewportTransform(page);
+  await runMenuCommand(page, "Edit", /^Select Direct Interfaces/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(100);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("101 objects selected");
+  await expect(page.locator(".bd-multi-metrics dd")).toHaveText(["1", "100", "1"]);
+  expect(await canvasViewportTransform(page)).toBe(selectionViewportBefore);
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
+  await assertCompleteAudit();
+  await page.keyboard.press("ControlOrMeta+Shift+A");
 
   const stressSource = flowNode(page, "system::satellite-left-00")
     .locator('.bd-port-handle-outer[data-handleid="link"]');
@@ -5244,6 +5263,77 @@ test("selects and clears every object in the current level with standard edit co
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("17 objects selected");
   await runMenuCommand(page, "Edit", /^Clear Selection/);
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("System Overview");
+});
+
+test("expands selected modules to every direct interface without changing the design", async ({ page, browserName }) => {
+  const core = flowNode(page, "system::rust-agent-core");
+  const inspector = page.getByRole("region", { name: "Properties" });
+  await core.click({ force: true });
+  const viewportBefore = await canvasViewportTransform(page);
+  const title = inspector.getByLabel("Title", { exact: true });
+  await title.fill("Rust Agent Core draft");
+
+  const discardDialogPromise = page.waitForEvent("dialog");
+  const rejectedExpansion = runMenuCommand(page, "Edit", /^Select Direct Interfaces/);
+  const discardDialog = await discardDialogPromise;
+  expect(discardDialog.message()).toContain("Discard unapplied Inspector changes");
+  await discardDialog.dismiss();
+  await rejectedExpansion;
+  await expect(core).toHaveClass(/selected/);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
+  await expect(title).toHaveValue("Rust Agent Core draft");
+
+  await title.fill("Rust Agent Core");
+  await title.blur();
+  await page.keyboard.press("ControlOrMeta+K");
+  const palette = page.getByRole("dialog", { name: "Command Palette" });
+  await palette.getByRole("combobox", { name: "Search commands" }).fill("direct interfaces");
+  const command = palette.getByRole("option", { name: /^Select Direct Interfaces/ });
+  await expect(command).not.toHaveAttribute("aria-disabled", "true");
+  await page.keyboard.press("Enter");
+
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(8);
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("9 objects selected");
+  await expect(inspector.locator(".bd-multi-metrics dd")).toHaveText(["1", "8", "1"]);
+  await expect(page.locator(".bd-command-notice")).toContainText(
+    "Added 8 direct interfaces for 1 selected module.",
+  );
+  expect(await canvasViewportTransform(page)).toBe(viewportBefore);
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
+  await expect(
+    page.getByRole("toolbar", { name: "Architecture design tools" })
+      .getByRole("button", { name: /^撤销/ }),
+  ).toBeDisabled();
+  for (const connectionId of [
+    "ui-session-command",
+    "core-ui-notification",
+    "project-core-lifecycle",
+    "knowledge-core-lifecycle",
+    "core-tool-catalog",
+    "tool-core-snapshot",
+    "core-tool-invoke",
+    "tool-core-outcome",
+  ]) {
+    await expect(page.locator(`.react-flow__edge[data-id="system::${connectionId}"]`)).toHaveClass(/selected/);
+  }
+  await expect(page.locator('.react-flow__edge[data-id="system::plugin-tool-registration"]')).not.toHaveClass(/selected/);
+  await expect(page.locator('.react-flow__edge[data-id="system::platform-tool-registration"]')).not.toHaveClass(/selected/);
+  expect(await routeNodeCollisions(page)).toEqual([]);
+
+  await page.keyboard.press("ControlOrMeta+K");
+  const disabledPalette = page.getByRole("dialog", { name: "Command Palette" });
+  await disabledPalette.getByRole("combobox", { name: "Search commands" }).fill("direct interfaces");
+  const disabledCommand = disabledPalette.getByRole("option", { name: /^Select Direct Interfaces/ });
+  await expect(disabledCommand).toHaveAttribute("aria-disabled", "true");
+  await expect(disabledCommand).toContainText("All direct interfaces are already selected.");
+  await page.keyboard.press("Escape");
+
+  await runMenuCommand(page, "View", /^Fit Selection/);
+  await page.waitForTimeout(400);
+  if (process.env.CAPTURE_DIRECT_INTERFACES === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/select-direct-interfaces.png");
+  }
 });
 
 test("deletes a mixed module and interface selection as one atomic cascade", async ({ page, browserName }) => {

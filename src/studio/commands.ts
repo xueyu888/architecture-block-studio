@@ -9,6 +9,7 @@ export type StudioCommandId =
   | "undo"
   | "redo"
   | "selectAll"
+  | "selectDirectInterfaces"
   | "clearSelection"
   | "copySelection"
   | "paste"

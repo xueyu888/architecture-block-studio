@@ -145,6 +145,26 @@ export function hasAlternativeConnectionEndpoints(
   return false;
 }
 
+/**
+ * Returns each connection touching at least one existing node in the supplied
+ * set exactly once and in document order. This is the graph-level adjacency
+ * fact used by both inspection and workspace selection projections.
+ */
+export function listDirectConnections(
+  level: DesignLevel,
+  nodeIds: Iterable<string>,
+): BlockConnection[] {
+  const existingNodeIds = new Set(level.nodes.map((node) => node.id));
+  const selectedNodeIds = new Set(
+    [...nodeIds].filter((nodeId) => existingNodeIds.has(nodeId)),
+  );
+  if (selectedNodeIds.size === 0) return [];
+  return level.connections.filter((connection) => (
+    selectedNodeIds.has(connection.source.nodeId) ||
+    selectedNodeIds.has(connection.target.nodeId)
+  ));
+}
+
 export function listModuleInterfaces(
   document: BlockDesignDocument,
   levelId: string,
@@ -153,10 +173,9 @@ export function listModuleInterfaces(
   const level = document.levels.find((candidate) => candidate.id === levelId);
   if (!level || !level.nodes.some((candidate) => candidate.id === nodeId)) return [];
 
-  return level.connections.flatMap((connection): ModuleInterfaceSummary[] => {
+  return listDirectConnections(level, [nodeId]).map((connection): ModuleInterfaceSummary => {
     const isSource = connection.source.nodeId === nodeId;
     const isTarget = connection.target.nodeId === nodeId;
-    if (!isSource && !isTarget) return [];
 
     const direction: ModuleInterfaceDirection = isSource && isTarget
       ? "loopback"
@@ -171,7 +190,7 @@ export function listModuleInterfaces(
     const peerPort = peerNode?.ports.find((candidate) => candidate.id === peerEndpoint.portId);
     const definition = document.interfaceDefinitions[connection.interfaceId];
 
-    return [{
+    return {
       levelId,
       connectionId: connection.id,
       interfaceId: connection.interfaceId,
@@ -184,6 +203,6 @@ export function listModuleInterfaces(
       peerNodeTitle: peerNode?.title ?? peerEndpoint.nodeId,
       peerPortId: peerEndpoint.portId,
       peerPortLabel: peerPort?.label ?? peerEndpoint.portId,
-    }];
+    };
   });
 }

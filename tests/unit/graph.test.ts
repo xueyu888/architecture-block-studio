@@ -6,6 +6,7 @@ import {
   hasAlternativeConnectionEndpoints,
   listConnectionSourceEndpoints,
   listConnectionTargetEndpoints,
+  listDirectConnections,
   listLevelPortEndpoints,
   listModuleInterfaces,
   normalizeConnectionEndpoints,
@@ -50,6 +51,32 @@ describe("module interface summaries", () => {
       peerNodeTitle: "target",
       peerPortLabel: "in",
     })]);
+  });
+
+  test("owns direct adjacency once for shared endpoints and loopbacks", () => {
+    const document = connectedDesign();
+    const level = document.levels[0];
+    level.nodes.find((node) => node.id === "source")!.ports.push({
+      id: "loop-in",
+      label: "Loop Input",
+      side: "left",
+      direction: "input",
+      required: false,
+    });
+    level.connections.push({
+      id: "source-loop",
+      interfaceId: "source.output",
+      source: { nodeId: "source", portId: "out" },
+      target: { nodeId: "source", portId: "loop-in" },
+    });
+
+    expect(listDirectConnections(level, ["source", "target"]).map((connection) => connection.id))
+      .toEqual(["source-to-target", "source-loop"]);
+    expect(listDirectConnections(level, ["missing"])).toEqual([]);
+    expect(listModuleInterfaces(document, "system", "source")).toEqual([
+      expect.objectContaining({ connectionId: "source-to-target", direction: "outgoing" }),
+      expect.objectContaining({ connectionId: "source-loop", direction: "loopback" }),
+    ]);
   });
 });
 

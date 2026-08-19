@@ -31,6 +31,7 @@ const MENU_DEFINITIONS: Array<{
       "undo",
       "redo",
       "selectAll",
+      "selectDirectInterfaces",
       "clearSelection",
       "copySelection",
       "paste",

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   connectionForSelection,
   diagramSelectionItems,
+  directInterfaceSelectionExpansion,
   hierarchyLevelPath,
   levelForSelection,
   nodeForSelection,
@@ -17,6 +18,7 @@ import {
 } from "../../src/studio/selection";
 import type { DesignIssue } from "../../src/model";
 import { connectedDesign, hierarchicalDesign } from "./designFixture";
+import { fiveLevelRoutingDesignDocument } from "../fixtures/fiveLevelRoutingDesign";
 
 describe("workspace selection protocol", () => {
   it("gives each selectable object a stable identity and validates it against the document", () => {
@@ -123,6 +125,110 @@ describe("workspace selection protocol", () => {
       kind: "level",
       levelId: "system",
     });
+  });
+
+  it("expands modules to direct interfaces while preserving canonical selection", () => {
+    const document = connectedDesign();
+    const source = { kind: "node", levelId: "system", nodeId: "source" } as const;
+    const target = { kind: "node", levelId: "system", nodeId: "target" } as const;
+    const connection = {
+      kind: "connection",
+      levelId: "system",
+      connectionId: "source-to-target",
+    } as const;
+
+    expect(directInterfaceSelectionExpansion(document, source)).toEqual({
+      available: true,
+      selection: { kind: "multiple", items: [connection, source] },
+      selectedNodeCount: 1,
+      directInterfaceCount: 1,
+      addedInterfaceCount: 1,
+    });
+    expect(directInterfaceSelectionExpansion(
+      document,
+      replaceDiagramSelection([source, target], "system"),
+    )).toEqual({
+      available: true,
+      selection: { kind: "multiple", items: [connection, source, target] },
+      selectedNodeCount: 2,
+      directInterfaceCount: 1,
+      addedInterfaceCount: 1,
+    });
+    expect(directInterfaceSelectionExpansion(
+      document,
+      replaceDiagramSelection([source, connection], "system"),
+    )).toEqual({
+      available: false,
+      reason: "all-direct-interfaces-selected",
+      selectedNodeCount: 1,
+      directInterfaceCount: 1,
+      addedInterfaceCount: 0,
+    });
+
+    document.levels[0].nodes.find((node) => node.id === "source")!.ports.push({
+      id: "loop-in",
+      label: "Loop Input",
+      side: "left",
+      direction: "input",
+      required: false,
+    });
+    document.levels[0].connections.push({
+      id: "source-loop",
+      interfaceId: "source.output",
+      source: { nodeId: "source", portId: "out" },
+      target: { nodeId: "source", portId: "loop-in" },
+    });
+    const loopExpansion = directInterfaceSelectionExpansion(document, source);
+    expect(loopExpansion).toMatchObject({
+      available: true,
+      directInterfaceCount: 2,
+      addedInterfaceCount: 2,
+    });
+    expect(loopExpansion.available && diagramSelectionItems(loopExpansion.selection)).toEqual([
+      { kind: "connection", levelId: "system", connectionId: "source-loop" },
+      connection,
+      source,
+    ]);
+  });
+
+  it("distinguishes no module, no adjacency, and valid selections across five levels", () => {
+    const document = fiveLevelRoutingDesignDocument();
+    expect(directInterfaceSelectionExpansion(document, { kind: "level", levelId: "system" }))
+      .toEqual({
+        available: false,
+        reason: "no-modules",
+        selectedNodeCount: 0,
+        directInterfaceCount: 0,
+        addedInterfaceCount: 0,
+      });
+    expect(directInterfaceSelectionExpansion(document, {
+      kind: "node",
+      levelId: "level-5",
+      nodeId: "target-00",
+    })).toEqual({
+      available: false,
+      reason: "no-direct-interfaces",
+      selectedNodeCount: 1,
+      directInterfaceCount: 0,
+      addedInterfaceCount: 0,
+    });
+
+    const expansion = directInterfaceSelectionExpansion(document, replaceDiagramSelection([
+      { kind: "node", levelId: "system", nodeId: "source-00" },
+      { kind: "node", levelId: "level-1", nodeId: "relay-1-01" },
+    ], "system"));
+    expect(expansion).toMatchObject({
+      available: true,
+      selectedNodeCount: 2,
+      directInterfaceCount: 2,
+      addedInterfaceCount: 2,
+    });
+    expect(expansion.available && diagramSelectionItems(expansion.selection)).toEqual([
+      { kind: "connection", levelId: "level-1", connectionId: "layer-2-flow-01" },
+      { kind: "connection", levelId: "system", connectionId: "layer-1-flow-00" },
+      { kind: "node", levelId: "level-1", nodeId: "relay-1-01" },
+      { kind: "node", levelId: "system", nodeId: "source-00" },
+    ]);
   });
 
   it("validates every member of a multi-selection without persisting it in the document", () => {
