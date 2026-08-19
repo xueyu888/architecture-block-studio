@@ -37,6 +37,7 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 - 缩放到系统总览时只保留模块标题、端口名和线路，放大后自动恢复 Owner、摘要、类型等完整细节。
 - 选中模块即可从四边或四角调整尺寸；端口和线路实时跟随，结果进入同一份 JSON、Undo / Redo 与保存链。
 - 移动或调整模块时自动显示边缘、中心与同宽 / 同高辅助线；按住 Alt 可临时关闭吸附，画布不会擅自跳回全图视角。
+- 使用普通点击、Shift / Ctrl / Cmd 与左键框选建立多选；成组移动、六向对齐与水平 / 垂直等距分布都只产生一次可撤销操作。
 - 选中连线后拖动正交线段，手动路由随 JSON 保存，也可随时恢复自动布线。
 - 画布不显示线中标签；端口承担局部识别，点击连线后由 Inspector 展示完整合同。
 - 通过 Undo / Redo、事务性加载和 dirty 状态保护编辑过程。
@@ -77,7 +78,7 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 
 ![统一命令面板](docs/screenshots/command-palette.png)
 
-菜单获得焦点后，可以直接输入 **F / E / D / V** 定位 File、Edit、Design 或 View；菜单展开后，输入命令首字母会跳到下一个同首字母项并支持环绕。例如在 Design 中重复按 **A** 可依次检查 Add Module、Add Port、Add Interface，用 **C** 直达 Create Child Design。暂不可用的命令仍可由方向键或首字母聚焦，菜单会直接说明成立条件；Enter、Space 和鼠标点击都不会误执行。工具栏图标在 hover 或键盘 focus 时显示同一命令的名称、快捷键和禁用原因，按 Esc 即可收起。
+菜单获得焦点后，可以直接输入 **F / E / D / A / V** 定位 File、Edit、Design、Arrange 或 View；菜单展开后，输入命令首字母会跳到下一个同首字母项并支持环绕。例如在 Design 中重复按 **A** 可依次检查 Add Module、Add Port、Add Interface，用 **C** 直达 Create Child Design；多选模块后可在 Arrange 中完成对齐与分布。暂不可用的命令仍可由方向键或首字母聚焦，菜单会直接说明成立条件；Enter、Space 和鼠标点击都不会误执行。工具栏图标在 hover 或键盘 focus 时显示同一命令的名称、快捷键和禁用原因，按 Esc 即可收起。
 
 ![工具栏命令名称与成立条件提示](docs/screenshots/command-tooltip.png)
 
