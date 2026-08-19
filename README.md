@@ -79,6 +79,10 @@ Ctrl/⌘ 拖动复用同一份可校验片段合同，但由指针明确给出�
 
 ![Alt 相交框选后的模块选择](docs/screenshots/intersecting-selection.png)
 
+当模块、容器或线路在同一点重叠时，按住 Alt 单击即可按真实视觉层级逐项选择下方对象；当前选择本身就是循环游标，不另存隐藏状态。拖动超过阈值仍是上面的相交框选，Shift / Ctrl / ⌘ 只切换最上层命中对象。
+
+![Alt 单击循环选择重叠对象](docs/screenshots/alt-click-cycle.png)
+
 接口聚焦不是只放大某个端口。画布会合并选中线路的全部折点、两端模块矩形和必要留白，再执行一次可中断的 viewport 导航；线路方向、手动 waypoint、selection 和设计坐标保持不变。
 
 ![选中接口及两端模块的完整聚焦](docs/screenshots/fit-selection.png)

@@ -110,6 +110,8 @@ Iteration 80 完成第九次十轮复评。重新审计 `BlockDesignDocument →
 
 Iteration 81 对照 draw.io 的完整包围、Alt 强制起框、相交选择与 Alt + Shift 移出合同，删除“节点由第三方 select change、线路由 DOM 外接矩形”这两个漂移事实源。`canvasSelection` 现在统一负责模块 client bounds 与真实正交 route segments 的 full / intersecting 判定；Canvas 在 pointerdown 捕获起点与模式，React Flow 只显示 rubberband，结束时才转换为 canonical `SelectionRef`。L 形线路外接矩形中的空白不再误报命中，Controls / MiniMap / 状态提示也不会被 Alt 抢占。第一次完整回归 109 / 113 暴露 Alt 强制起框会破坏既有移动 / resize 绕过吸附；继续核对官方合同后，以时序明确正交边界：Alt 在 pointerdown 前成立时强制框选，直接 move / resize 已开始后再按 Alt 只关闭当前吸附。修正后最终 122 / 122 unit（18 files / 1.50 秒）、1894-module build（7.14 秒）、Chromium 57 / 57 + Firefox 56 / 56 = 113 / 113（3.2 分钟）通过；五层 17 modules / 20 routes、偏斜 101 modules / 100 routes 与 200 modules / 400 connections 都执行真实部分相交框选，最新大图样本首次可交互 1531 ms、多选 865 ms、搜索 1420 ms、接口聚焦 572 ms、保存 112 ms。headed `intersecting-selection.png` 已人工复核选择轮廓、端口、箭头、线路、Inspector 与 Dock 无遮挡。
 
+Iteration 82 对照 draw.io 的 transparent click 源码合同，把 Alt 单击与 Alt 相交框选收敛为同一 pointer gesture 的阈值分支：5 client pixels 内是 point hit，超过阈值继续执行 Iteration 81 的 intersecting rubberband。`canvasSelection` 从模块真实 client bounds 和接口 `plannedRoute` 的逐段距离构造命中栈，使用显式 node z-index、稳定文档顺序和模块高于线路的层级，不读取 DOM 顺序；同一 connection 的 hierarchy legs 先按 canonical key 合并。当前 `SelectionRef` 直接充当循环游标，跳过首个命中模块的容器祖先并在栈底回绕，没有新增 hover、点击索引或 cycle store。最终 124 / 124 unit（18 files / 1.45 秒）、1894-module build（7.04 秒）、Chromium 58 / 58 + Firefox 57 / 57 = 115 / 115（3.3 分钟）通过；五层 17 modules / 20 routes 验证容器祖先不抢占，偏斜 101 modules / 100 routes 验证模块端口与线路循环，200 modules / 400 connections 的完整样本 point hit 为 241 ms；重叠模块旅程同时验证重复循环、modifier toggle 与 Inspector 草稿拒绝。最终 `alt-click-cycle.png` 人工复核为 0 errors / 0 warnings，10 条原有线路、前后卡片边界、底层选择轮廓、Inspector、Dock 与 MiniMap 均清晰无遮挡。
+
 ## 每次迭代的最小验证门槛
 
 每个完成的迭代必须留下与风险相称的证据：

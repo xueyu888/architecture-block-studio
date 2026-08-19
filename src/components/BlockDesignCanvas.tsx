@@ -55,6 +55,7 @@ import {
   type RoutingResult,
 } from "../routing";
 import {
+  diagramSelectionKey,
   diagramSelectionItems,
   replaceDiagramSelection,
   toggleDiagramSelection,
@@ -69,8 +70,11 @@ import {
   canvasBoundsSelectRoute,
   canvasClientBounds,
   canvasGeometryBounds,
+  canvasPointHitStack,
+  nextCanvasPointHitTarget,
   reconcileCanvasSelection,
   type CanvasBoundsSelectionMode,
+  type CanvasPointHitTarget,
 } from "./canvasSelection";
 import type { CanvasFlowEdge, CanvasFlowNode, RouteHandleFocusTarget } from "./canvasTypes";
 import { InterfaceEdgeComponent } from "./InterfaceEdge";
@@ -96,6 +100,9 @@ const VIEWPORT_CULL_EDGE_COUNT = 1000;
 const routingResultCache = new WeakMap<object, { geometrySignature: string; result: RoutingResult }>();
 const ALIGNMENT_TOLERANCE_PX = 6;
 const ALIGNMENT_VIEWPORT_MARGIN_PX = 80;
+const ALT_CLICK_TOLERANCE_PX = 5;
+const EDGE_POINTER_TOLERANCE_PX = 14;
+const NODE_VISUAL_LAYER_BASE = 1_000;
 const CONNECTION_TARGET_MARKER: EdgeMarker = {
   type: MarkerType.ArrowClosed,
   color: "context-stroke",
@@ -285,6 +292,12 @@ interface BoxSelectionGesture {
   end: { x: number; y: number };
 }
 
+interface AltClickGesture {
+  pointerId: number;
+  start: { x: number; y: number };
+  moved: boolean;
+}
+
 function hasToggleModifier(event: Pick<MouseEvent, "shiftKey" | "ctrlKey" | "metaKey">): boolean {
   return event.shiftKey || event.ctrlKey || event.metaKey;
 }
@@ -338,6 +351,8 @@ const CanvasInner = memo(function CanvasInner({
     mode: CanvasBoundsSelectionMode;
   } | undefined>(undefined);
   const boxSelectionGestureRef = useRef<BoxSelectionGesture | undefined>(undefined);
+  const altClickGestureRef = useRef<AltClickGesture | undefined>(undefined);
+  const suppressAltClickRef = useRef(false);
   const resizePreviewRef = useRef<ResizePreview | undefined>(undefined);
   const multiSelection = selection.kind === "multiple";
   const cullViewportElements = layout.nodes.length >= VIEWPORT_CULL_NODE_COUNT
@@ -391,6 +406,12 @@ const CanvasInner = memo(function CanvasInner({
   }, [getViewport, setViewport]);
   const onCanvasPointerMoveCapture = useCallback((event: ReactPointerEvent) => {
     interruptViewportNavigation();
+    const altClickGesture = altClickGestureRef.current;
+    if (altClickGesture?.pointerId === event.pointerId && !altClickGesture.moved) {
+      const deltaX = event.clientX - altClickGesture.start.x;
+      const deltaY = event.clientY - altClickGesture.start.y;
+      altClickGesture.moved = Math.hypot(deltaX, deltaY) > ALT_CLICK_TOLERANCE_PX;
+    }
     const gesture = boxSelectionGestureRef.current;
     if (gesture) {
       gesture.end = { x: event.clientX, y: event.clientY };
@@ -405,6 +426,14 @@ const CanvasInner = memo(function CanvasInner({
     const target = event.target instanceof Element ? event.target : undefined;
     const directPaneGesture = target?.classList.contains("react-flow__pane") ?? false;
     const forcedSelectionGesture = Boolean(event.altKey && target && !target.closest(".nokey"));
+    altClickGestureRef.current = event.button === 0 && event.isPrimary && forcedSelectionGesture
+      ? {
+          pointerId: event.pointerId,
+          start: { x: event.clientX, y: event.clientY },
+          moved: false,
+        }
+      : undefined;
+    suppressAltClickRef.current = false;
     if (event.button === 0 && event.isPrimary && (directPaneGesture || forcedSelectionGesture)) {
       boxSelectionStartRef.current = {
         x: event.clientX,
@@ -976,6 +1005,120 @@ const CanvasInner = memo(function CanvasInner({
     else if (announcement) setCanvasAnnouncement(announcement);
     return accepted;
   }, [onSelect]);
+  const canvasPointHitSelections = useCallback((point: { x: number; y: number }) => {
+    const canvasRoot = store.getState().domNode;
+    const rootBounds = canvasRoot?.getBoundingClientRect();
+    if (!canvasRoot || !rootBounds) return [];
+    const nodeElements = new Map(
+      [...canvasRoot.querySelectorAll<HTMLElement>(".react-flow__node[data-id]")]
+        .map((element) => [element.dataset.id ?? "", element] as const),
+    );
+    const renderedEdgeIds = new Set(
+      [...canvasRoot.querySelectorAll<SVGGElement>(".react-flow__edge[data-id]")]
+        .map((element) => element.dataset.id ?? ""),
+    );
+    const selectionByKey = new Map<string, DiagramSelectionRef>();
+    const targets: CanvasPointHitTarget[] = baseNodes.flatMap((node, order) => {
+      const element = nodeElements.get(node.id);
+      if (!element) return [];
+      const item: DiagramSelectionRef = {
+        kind: "node",
+        levelId: node.data.levelId,
+        nodeId: node.data.block.id,
+      };
+      const selectionKey = diagramSelectionKey(item);
+      selectionByKey.set(selectionKey, item);
+      return [{
+        id: node.id,
+        selectionKey,
+        parentId: node.parentId,
+        layer: NODE_VISUAL_LAYER_BASE + (node.zIndex ?? 0),
+        order,
+        bounds: element.getBoundingClientRect(),
+      }];
+    });
+    const state = store.getState();
+    const [translateX, translateY, zoom] = state.transform;
+    routedEdges.forEach((edge, order) => {
+      if (!edge.data?.plannedRoute || !renderedEdgeIds.has(edge.id)) return;
+      const item: DiagramSelectionRef = {
+        kind: "connection",
+        levelId: edge.data.levelId,
+        connectionId: edge.data.connection.id,
+      };
+      const selectionKey = diagramSelectionKey(item);
+      selectionByKey.set(selectionKey, item);
+      targets.push({
+        id: edge.id,
+        selectionKey,
+        layer: edge.zIndex ?? 0,
+        order,
+        route: edge.data.plannedRoute.map((routePoint) => ({
+          x: rootBounds.left + translateX + routePoint.x * zoom,
+          y: rootBounds.top + translateY + routePoint.y * zoom,
+        })),
+        routeTolerance: EDGE_POINTER_TOLERANCE_PX,
+      });
+    });
+    return canvasPointHitStack(point, targets).flatMap((target) => {
+      const item = selectionByKey.get(target.selectionKey);
+      return item ? [{ target, item }] : [];
+    });
+  }, [baseNodes, routedEdges, store]);
+  const onCanvasPointerUpCapture = useCallback((event: ReactPointerEvent) => {
+    const gesture = altClickGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    altClickGestureRef.current = undefined;
+    if (gesture.moved || !event.altKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    boxSelectionStartRef.current = undefined;
+    boxSelectionGestureRef.current = undefined;
+    suppressAltClickRef.current = true;
+    window.requestAnimationFrame(() => { suppressAltClickRef.current = false; });
+
+    const hits = canvasPointHitSelections({ x: event.clientX, y: event.clientY });
+    const top = hits[0];
+    if (hasToggleModifier(event)) {
+      if (top) {
+        commitCanvasSelection(
+          toggleDiagramSelection(selectionRef.current, [top.item], entryLevelId),
+          "Toggled the top diagram object under the pointer.",
+        );
+      }
+      return;
+    }
+    const selectedKeys = new Set(
+      diagramSelectionItems(selectionRef.current).map(diagramSelectionKey),
+    );
+    const nextTarget = nextCanvasPointHitTarget(
+      hits.map((hit) => hit.target),
+      selectedKeys,
+    );
+    const nextTargetId = nextTarget?.id;
+    const next = hits.find((hit) => hit.target.id === nextTargetId)?.item;
+    if (!nextTargetId || !next) {
+      commitCanvasSelection({ kind: "level", levelId: entryLevelId }, "No diagram object under the pointer.");
+      return;
+    }
+    const index = hits.findIndex((hit) => hit.target.id === nextTargetId);
+    commitCanvasSelection(
+      next,
+      hits.length > 1
+        ? `Selected object ${index + 1} of ${hits.length} under the pointer.`
+        : "Selected the diagram object under the pointer.",
+    );
+  }, [canvasPointHitSelections, commitCanvasSelection, entryLevelId]);
+  const onCanvasClickCapture = useCallback((event: ReactMouseEvent) => {
+    if (!suppressAltClickRef.current) return;
+    suppressAltClickRef.current = false;
+    event.preventDefault();
+    event.stopPropagation();
+  }, []);
+  const onCanvasPointerCancelCapture = useCallback(() => {
+    altClickGestureRef.current = undefined;
+    suppressAltClickRef.current = false;
+  }, []);
   const onNodeClick = useCallback<NodeMouseHandler<CanvasFlowNode>>((event, node) => {
     const item: DiagramSelectionRef = {
       kind: "node",
@@ -1327,6 +1470,9 @@ const CanvasInner = memo(function CanvasInner({
       onSelectionEnd={onSelectionEnd}
       onPointerDownCapture={onCanvasPointerDownCapture}
       onPointerMoveCapture={onCanvasPointerMoveCapture}
+      onPointerUpCapture={onCanvasPointerUpCapture}
+      onPointerCancelCapture={onCanvasPointerCancelCapture}
+      onClickCapture={onCanvasClickCapture}
       onKeyDownCapture={onElementKeyDownCapture}
       onConnect={onConnect}
       onReconnect={onReconnect}

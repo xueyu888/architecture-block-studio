@@ -4,6 +4,8 @@ import {
   canvasBoundsSelectRoute,
   canvasClientBounds,
   canvasGeometryBounds,
+  canvasPointHitStack,
+  nextCanvasPointHitTarget,
   reconcileCanvasSelection,
 } from "../../src/components/canvasSelection";
 
@@ -54,6 +56,65 @@ describe("canvas selection projection", () => {
       crossingRoute,
       "full",
     )).toBe(true);
+  });
+
+  test("orders point hits by explicit visual layers and real route distance", () => {
+    const targets = [
+      {
+        id: "edge-behind",
+        selectionKey: "connection:system:behind",
+        layer: 0,
+        order: 2,
+        route: [{ x: 0, y: 40 }, { x: 200, y: 40 }],
+        routeTolerance: 14,
+      },
+      {
+        id: "empty-l-route",
+        selectionKey: "connection:system:empty",
+        layer: 0,
+        order: 3,
+        route: [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 200 }],
+        routeTolerance: 14,
+      },
+      {
+        id: "node-top",
+        selectionKey: "node:system:top",
+        layer: 1_002,
+        order: 1,
+        bounds: { left: 80, right: 180, top: 20, bottom: 120 },
+      },
+      {
+        id: "edge-duplicate-leg",
+        selectionKey: "connection:system:behind",
+        layer: 0,
+        order: 1,
+        route: [{ x: 100, y: 0 }, { x: 100, y: 200 }],
+        routeTolerance: 14,
+      },
+    ];
+
+    expect(canvasPointHitStack({ x: 100, y: 40 }, targets).map((target) => target.id)).toEqual([
+      "node-top",
+      "edge-behind",
+    ]);
+    expect(canvasPointHitStack({ x: 100, y: 100 }, targets).map((target) => target.id)).toEqual([
+      "node-top",
+      "edge-duplicate-leg",
+    ]);
+  });
+
+  test("cycles below the current selection, skips top-hit ancestors, and wraps", () => {
+    const stack = [
+      { id: "leaf", selectionKey: "node:l5:leaf", parentId: "container", layer: 1_007, order: 3 },
+      { id: "container", selectionKey: "node:l4:container", layer: 1_004, order: 2 },
+      { id: "sibling", selectionKey: "node:l5:sibling", layer: 1_003, order: 1 },
+      { id: "edge", selectionKey: "connection:l5:edge", layer: 0, order: 0 },
+    ];
+
+    expect(nextCanvasPointHitTarget(stack, new Set())?.id).toBe("leaf");
+    expect(nextCanvasPointHitTarget(stack, new Set(["node:l5:leaf"]))?.id).toBe("sibling");
+    expect(nextCanvasPointHitTarget(stack, new Set(["node:l5:sibling"]))?.id).toBe("edge");
+    expect(nextCanvasPointHitTarget(stack, new Set(["connection:l5:edge"]))?.id).toBe("leaf");
   });
 
   test("unifies selected module rectangles and complete route points into one fit bound", () => {

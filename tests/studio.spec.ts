@@ -259,6 +259,12 @@ async function altSelectIntersectingNode(page: Page, target: Locator): Promise<v
   await expect(page.locator(".bd-statusbar")).toContainText("Saved");
 }
 
+async function altClickCanvasPoint(page: Page, point: { x: number; y: number }): Promise<void> {
+  await page.keyboard.down("Alt");
+  await page.mouse.click(point.x, point.y);
+  await page.keyboard.up("Alt");
+}
+
 async function canvasViewportTransform(page: Page): Promise<string> {
   return page.locator(".react-flow__viewport").evaluate(
     (element: HTMLElement) => element.style.transform,
@@ -2531,7 +2537,20 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
   await page.locator(
     '.bd-tree-select[data-level-id="system"][data-node-id="satellite-left-00"]',
   ).click({ force: true });
-  await altSelectIntersectingNode(page, flowNode(page, "system::satellite-left-00"));
+  const satellite = flowNode(page, "system::satellite-left-00");
+  await altSelectIntersectingNode(page, satellite);
+  const satellitePort = await satellite.locator(".bd-port-handle-outer").boundingBox();
+  expect(satellitePort).not.toBeNull();
+  const satellitePortPoint = {
+    x: satellitePort!.x + satellitePort!.width / 2,
+    y: satellitePort!.y + satellitePort!.height / 2,
+  };
+  await altClickCanvasPoint(page, satellitePortPoint);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(1);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("Stress Flow");
+  await altClickCanvasPoint(page, satellitePortPoint);
+  await expect(satellite).toHaveClass(/selected/);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("Satellite left 00");
 });
 
 test("expands five hierarchy layers and audits every visible route and pair", async ({ page, browserName }) => {
@@ -2586,7 +2605,18 @@ test("expands five hierarchy layers and audits every visible route and pair", as
   await page.locator(
     '.bd-tree-select[data-level-id="level-5"][data-node-id="target-00"]',
   ).click({ force: true });
-  await altSelectIntersectingNode(page, diagramNode(page, "level-5", "target-00"));
+  const deepestTarget = diagramNode(page, "level-5", "target-00");
+  await altSelectIntersectingNode(page, deepestTarget);
+  const deepestTargetBounds = await deepestTarget.boundingBox();
+  expect(deepestTargetBounds).not.toBeNull();
+  await altClickCanvasPoint(page, {
+    x: deepestTargetBounds!.x + deepestTargetBounds!.width / 2,
+    y: deepestTargetBounds!.y + deepestTargetBounds!.height / 2,
+  });
+  await expect(deepestTarget).toHaveClass(/selected/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("Target 00");
 });
 
 test("resizes, collapses, maximizes, floats and resets dock panels", async ({ page }) => {
@@ -2783,6 +2813,17 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   await secondModuleButton.click({ force: true, modifiers: ["ControlOrMeta"] });
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("Module 000");
   await altSelectIntersectingNode(page, selectedFlowNode);
+  const selectedBoxForHitCycle = await selectedFlowNode.boundingBox();
+  expect(selectedBoxForHitCycle).not.toBeNull();
+  const hitCycleStarted = performance.now();
+  await altClickCanvasPoint(page, {
+    x: selectedBoxForHitCycle!.x + selectedBoxForHitCycle!.width / 2,
+    y: selectedBoxForHitCycle!.y + selectedBoxForHitCycle!.height / 2,
+  });
+  await expect(selectedFlowNode).toHaveClass(/selected/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
+  metrics.altClickHitCycleMs = Math.round(performance.now() - hitCycleStarted);
   if (stress) {
     const selectedBox = await selectedFlowNode.boundingBox();
     expect(selectedBox).not.toBeNull();
@@ -3912,6 +3953,106 @@ test("forces an intersecting module and route selection box with Alt", async ({ 
   await expect(edge).toHaveClass(/selected/);
   await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
   await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("Session Command RPC");
+});
+
+test("cycles through overlapping diagram objects with Alt-click without storing a second cursor", async ({ page, browserName }) => {
+  const document = JSON.parse(await readFile(examplePath, "utf8"));
+  const system = document.levels.find((level: { id: string }) => level.id === "system");
+  const projectDocumentNode = system.nodes.find((node: { id: string }) => node.id === "project");
+  const knowledgeDocumentNode = system.nodes.find((node: { id: string }) => node.id === "knowledge");
+  const overlapBack = {
+    ...projectDocumentNode,
+    id: "overlap-back",
+    title: "Overlap Back",
+    owner: "Selection Test",
+    summary: "Lower object in a deliberate visual overlap",
+    ports: [],
+    layout: {
+      ...projectDocumentNode.layout,
+      position: { x: 470, y: 850 },
+    },
+  };
+  const overlapFront = {
+    ...knowledgeDocumentNode,
+    id: "overlap-front",
+    title: "Overlap Front",
+    owner: "Selection Test",
+    summary: "Upper object in a deliberate visual overlap",
+    ports: [],
+    layout: {
+      ...knowledgeDocumentNode.layout,
+      position: { x: 518, y: 882 },
+    },
+  };
+  system.nodes.push(overlapBack, overlapFront);
+
+  await openDesignDialog(page);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "overlapping-selection.block-design.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(document)),
+  });
+  await expect(page.locator(".bd-document-title span")).toHaveText("AIO Agent Runtime");
+  await waitForLayout(page);
+  const back = flowNode(page, "system::overlap-back");
+  const front = flowNode(page, "system::overlap-front");
+  const [backBounds, frontBounds] = await Promise.all([
+    back.boundingBox(),
+    front.boundingBox(),
+  ]);
+  expect(backBounds).not.toBeNull();
+  expect(frontBounds).not.toBeNull();
+  const overlapLeft = Math.max(backBounds!.x, frontBounds!.x);
+  const overlapRight = Math.min(backBounds!.x + backBounds!.width, frontBounds!.x + frontBounds!.width);
+  const overlapTop = Math.max(backBounds!.y, frontBounds!.y);
+  const overlapBottom = Math.min(backBounds!.y + backBounds!.height, frontBounds!.y + frontBounds!.height);
+  expect(overlapRight - overlapLeft).toBeGreaterThan(backBounds!.width * 0.5);
+  expect(overlapBottom - overlapTop).toBeGreaterThan(backBounds!.height * 0.5);
+  const overlapPoint = {
+    x: (overlapLeft + overlapRight) / 2,
+    y: (overlapTop + overlapBottom) / 2,
+  };
+
+  await page.keyboard.press("ControlOrMeta+Shift+A");
+  await altClickCanvasPoint(page, overlapPoint);
+  await expect(front).toHaveClass(/selected/);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("Overlap Front");
+
+  const inspector = page.getByRole("region", { name: "Properties" });
+  await inspector.getByLabel("Title", { exact: true }).fill("Overlap Front draft");
+  const discardDialogPromise = page.waitForEvent("dialog");
+  const rejectedCycle = altClickCanvasPoint(page, overlapPoint);
+  const discardDialog = await discardDialogPromise;
+  expect(discardDialog.message()).toContain("Discard unapplied Inspector changes");
+  await discardDialog.dismiss();
+  await rejectedCycle;
+  await expect(front).toHaveClass(/selected/);
+  await expect(back).not.toHaveClass(/selected/);
+  await expect(inspector.getByLabel("Title", { exact: true })).toHaveValue("Overlap Front draft");
+  await inspector.getByLabel("Title", { exact: true }).fill("Overlap Front");
+
+  await altClickCanvasPoint(page, overlapPoint);
+  await expect(back).toHaveClass(/selected/);
+  await expect(front).not.toHaveClass(/selected/);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("Overlap Back");
+  await expect(page.locator(".bd-canvas-announcement")).toHaveText(
+    "Selected object 2 of 2 under the pointer.",
+  );
+  if (process.env.CAPTURE_ALT_CLICK_CYCLE === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/alt-click-cycle.png");
+  }
+
+  await altClickCanvasPoint(page, overlapPoint);
+  await expect(front).toHaveClass(/selected/);
+  await expect(back).not.toHaveClass(/selected/);
+  await page.keyboard.down("Alt");
+  await page.keyboard.down("Shift");
+  await page.mouse.click(overlapPoint.x, overlapPoint.y);
+  await page.keyboard.up("Shift");
+  await page.keyboard.up("Alt");
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("System Overview");
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
 });
 
 test("selects and clears every object in the current level with standard edit commands", async ({ page, browserName }) => {
