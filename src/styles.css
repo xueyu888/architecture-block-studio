@@ -24,6 +24,8 @@
   --green: #397646;
   --amber: #9b641b;
   --purple: #6f52a0;
+  --event: #9b3f76;
+  --stream: #397785;
   --error: #b64237;
   --warning: #a86414;
   --success: #2f7548;
@@ -1185,15 +1187,17 @@ button { color: inherit; }
 .bd-port-handle.react-flow__handle {
   width: 10px;
   height: 10px;
-  border: 1px solid #fff;
-  border-radius: 0;
-  background: var(--block-color);
-  box-shadow: 0 0 0 1px #3d4842;
+  border: 2px solid var(--block-color);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px #fff, 0 0 0 2px #3d4842;
 }
 
-.bd-port-handle-input.react-flow__handle { clip-path: polygon(0 0, 100% 50%, 0 100%); }
-.bd-port-handle-output.react-flow__handle { clip-path: polygon(0 0, 100% 50%, 0 100%); }
-.bd-port-handle-bidirectional.react-flow__handle { clip-path: none; }
+.bd-port:hover .bd-port-handle-outer.react-flow__handle,
+.bd-port:focus-within .bd-port-handle-outer.react-flow__handle {
+  background: color-mix(in srgb, var(--block-color) 18%, #fff);
+  box-shadow: 0 0 0 1px #fff, 0 0 0 3px color-mix(in srgb, var(--block-color) 55%, transparent);
+}
 .bd-port-handle-inner.react-flow__handle,
 .bd-port-handle-binding.react-flow__handle { opacity: 0; pointer-events: none; }
 
@@ -1265,15 +1269,20 @@ button { color: inherit; }
 .bd-route-handle-h { cursor: row-resize; }
 .bd-route-handle-v { cursor: col-resize; }
 .bd-route-handle:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
-.bd-interface-rpc .react-flow__edge-path { stroke: var(--blue); }
-.bd-interface-dto .react-flow__edge-path { stroke: var(--teal); stroke-dasharray: 7 4; }
-.bd-interface-port .react-flow__edge-path { stroke: var(--green); }
-.bd-interface-integration .react-flow__edge-path { stroke: var(--amber); }
-.bd-interface-internal .react-flow__edge-path { stroke: var(--purple); }
-.bd-interface-event .react-flow__edge-path { stroke: #9b3f76; stroke-dasharray: 3 3; }
-.bd-interface-stream .react-flow__edge-path { stroke: #397785; stroke-dasharray: 10 4; }
+.bd-interface { --xy-edge-stroke-selected: var(--interface-color); }
+.bd-interface-rpc { --interface-color: var(--blue); }
+.bd-interface-dto { --interface-color: var(--teal); }
+.bd-interface-port { --interface-color: var(--green); }
+.bd-interface-integration { --interface-color: var(--amber); }
+.bd-interface-internal { --interface-color: var(--purple); }
+.bd-interface-event { --interface-color: var(--event); }
+.bd-interface-stream { --interface-color: var(--stream); }
+.bd-interface .react-flow__edge-path { stroke: var(--interface-color); }
+.bd-interface-dto .react-flow__edge-path { stroke-dasharray: 7 4; }
+.bd-interface-event .react-flow__edge-path { stroke-dasharray: 3 3; }
+.bd-interface-stream .react-flow__edge-path { stroke-dasharray: 10 4; }
 .bd-interface-continuation .react-flow__edge-path { stroke-width: 2.2; }
-.react-flow__edge.selected .react-flow__edge-path { stroke: var(--selection); stroke-width: 3.5; filter: drop-shadow(0 0 1px rgba(236, 159, 34, 0.7)); }
+.react-flow__edge.selected .react-flow__edge-path { stroke-width: 3.5; filter: drop-shadow(0 0 1px rgba(37, 99, 217, 0.62)); }
 .bd-sources-pane { width: 100%; height: 100%; display: grid; grid-template-rows: var(--panel-tab-height) minmax(0, 1fr); overflow: hidden; }
 .bd-dock-tabs { height: var(--panel-tab-height); display: flex; gap: 2px; border-bottom: 1px solid var(--divider-soft); padding: 0 6px; background: var(--panel-subtle); }
 .bd-dock-tabs button { display: flex; align-items: center; gap: 5px; border: 0; border-bottom: 2px solid transparent; padding: 0 8px; background: transparent; color: var(--text-muted); font-size: 10px; cursor: pointer; }

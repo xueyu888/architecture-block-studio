@@ -6,6 +6,7 @@ import {
   ConnectionMode,
   ControlButton,
   Controls,
+  MarkerType,
   MiniMap,
   ReactFlow,
   useNodesState,
@@ -13,6 +14,7 @@ import {
   useStore,
   useStoreApi,
   type EdgeMouseHandler,
+  type EdgeMarker,
   type Connection,
   type FitViewOptions,
   type MiniMapProps,
@@ -50,6 +52,14 @@ const LARGE_GRAPH_NODE_COUNT = 120;
 const LARGE_GRAPH_EDGE_COUNT = 240;
 const VIEWPORT_CULL_NODE_COUNT = 500;
 const VIEWPORT_CULL_EDGE_COUNT = 1000;
+const CONNECTION_TARGET_MARKER: EdgeMarker = {
+  type: MarkerType.ArrowClosed,
+  color: "context-stroke",
+  width: 44,
+  height: 32,
+  markerUnits: "userSpaceOnUse",
+  strokeWidth: 1,
+};
 
 const toneColors: Record<string, string> = {
   ui: "#2878a9",
@@ -274,6 +284,7 @@ const CanvasInner = memo(function CanvasInner({
         const separateTargetEndpoint = (endpointUse.get(targetKey)?.size ?? 0) > 1;
         return {
           ...edge,
+          markerEnd: data.boundaryContinuation ? undefined : CONNECTION_TARGET_MARKER,
           data: {
             ...data,
             largeGraph,

@@ -56,6 +56,8 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 
 `CommandPalette` 是统一命令检索的瞬时 UI Owner，只拥有打开、查询和当前结果索引。它从 `StudioCommands` 实时派生命令列表，以名称、工具栏名称、快捷键和禁用原因匹配，不保存副本、不计算 eligibility；`showInPalette: false` 仅防止“打开命令面板”递归列出自身。可用项先通过共享 Dialog 焦点协议把焦点安全交还调用位置，再执行同一个 `execute`，后续 Editor Dialog 或 Messages 可以接管焦点；禁用项保持可读取但 Enter 与 pointer 都不执行。Esc、点击遮罩或无结果不会产生业务副作用，查询和焦点索引不进入历史、selection 或 JSON。
 
+连接方向与连接点是两个正交的视觉角色。Canvas 只对非 hierarchy continuation 的真实连接投影一个 target marker，marker 的方向完全来自 `BlockConnection.source -> target` 路径末段；Port Handle 只表达“这里可以连接”，使用中性圆点，不用输入 / 输出三角形冒充数据流箭头。接口类型颜色由 edge 上的 `--interface-color` 统一提供给普通路径、React Flow 选中态和 `context-stroke` marker；第三方默认 selected stroke 不能成为第二颜色源。marker、Handle hover 和选中描边都属于可重建展示，不进入 JSON 或历史。
+
 ```text
 BlockDesignDocument ─► model / editor / layout / routing ─► Studio ─► UI components
 StudioCommands ───────────────────────────► Menu / Keyboard / Command Palette（完整）
@@ -74,7 +76,7 @@ Dock / selection / dialogs / command query ─► disposable workspace state; ne
 
 | 类型 | 当前 Owner | 例子 | 是否进入 JSON |
 | --- | --- | --- | --- |
-| 持久设计事实 | `BlockDesignDocument` | 文档、Level、模块、端口、接口、连接、层级绑定、用户拖动位置与手动路由 | 是 |
+| 持久设计事实 | `BlockDesignDocument` | 文档、Level、模块、端口、接口、连接、层级绑定、authored 位置 / 尺寸与手动路由 | 是 |
 | 派生设计结果 | `model` / `layout` / `routing` | DRC issues、模块关联接口摘要、Flow nodes、可视边、ELK 位置、正交路径 | 否，可重建 |
 | 工作区状态 | `BlockDesignStudio` / Dockview | 当前选择、展开 Level、面板布局、缩放、Fit 请求、自动布局模式 | 否 |
 | 未提交编辑草稿 | 各 Inspector / Dialog 表单 | 输入框内容、待创建连接 | 否；提交后才生成 `DesignOperation` |
@@ -174,6 +176,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 - 用户拖动期间的 position 只是 React Flow 预览；松手时 Canvas 向 Editor 请求一次 `node/move`。只有 Editor 接受后，`node.layout.position` 才成为新位置；若草稿保护或可编辑性规则拒绝操作，Canvas 立即恢复同一 base node 的文档投影，不创建补偿操作、不覆盖错误提示或未应用草稿。ELK 自动位置不写回文档。
 - 展开子设计时，子节点使用 compound parent 与相对位置，父模块继续提供上下文和边界。
 - 路径从具名源端口开始，在具名目标端口结束。
+- 每条可见逻辑连接只在真实 target 显示一个语义箭头；内部 hierarchy continuation 不重复显示箭头，Port Handle 不承担方向表达。
 - 路径不得穿过无关模块或无关层级容器。
 - 跨层路径只通过 hierarchy binding 生成 continuation。
 - 自动路由先依端口和障碍物生成最小正交路径；若智能路径已从正确端口侧出入则保持原路径，只有端口侧被违反时才从两端 40 设计像素外向 stub 之间重新寻路。网格寻路和车道偏移留下的微小对角段统一由 `orthogonalizeRoutePoints` 转成显式直角，压缩路径时保留为避开模块所需的同轴折返。
@@ -185,6 +188,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 - 手动路由提交与端点位置恢复都复用同一个正交化函数；相邻 waypoints 必须共享 x 或 y，Schema 同样校验这一不变量，外部 JSON 不能产生斜线。
 - 手动 waypoints 属于连接所在 Level；hierarchy continuation 仍是自动投影，不复制手动事实。
 - 白色衬底保证线与网格、容器和相邻路径可区分。
+- 接口类型颜色在普通态、选中态和 target marker 中保持一致；选择只能增强线宽、阴影和把手，不能抹掉接口类型。
 - 线中不渲染标签；端口名提供局部识别，Inspector 提供完整接口语义。
 - Optimize Routing 只修改路由派生 revision；Regenerate Layout 才请求重新放置模块。
 

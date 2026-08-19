@@ -1692,6 +1692,98 @@ test("keeps the viewport and canvas mounted while applying property edits", asyn
   })).toBe(true);
 });
 
+test("renders one semantic target arrow per connection and neutral port affordances", async ({ page, browserName }) => {
+  const actualRoutes = page.locator('[data-boundary-continuation="false"]');
+  await expect(actualRoutes).toHaveCount(10);
+  for (let index = 0; index < await actualRoutes.count(); index += 1) {
+    const path = actualRoutes.nth(index).locator(".bd-interface-route");
+    await expect(path).toHaveAttribute("marker-end", /url\(.+arrowclosed.+\)/);
+    await expect(path).not.toHaveAttribute("marker-start", /.+/);
+  }
+
+  const projectLifecycle = page.locator(
+    '.react-flow__edge[data-id="system::project-core-lifecycle"] [data-connection-id="project-core-lifecycle"]',
+  );
+  const projectDirection = await projectLifecycle.evaluate((route) => {
+    const path = route.querySelector<SVGPathElement>(".bd-interface-route");
+    const points = [...(path?.getAttribute("d") ?? "").matchAll(
+      /[ML]\s*(-?\d+(?:\.\d+)?),?\s*(-?\d+(?:\.\d+)?)/g,
+    )].map((match) => ({ x: Number(match[1]), y: Number(match[2]) }));
+    const previous = points.at(-2);
+    const target = points.at(-1);
+    return {
+      sourceNodeId: route.getAttribute("data-source-node-id"),
+      targetNodeId: route.getAttribute("data-target-node-id"),
+      markerEnd: path?.getAttribute("marker-end"),
+      orthogonalTargetApproach: Boolean(previous && target && previous.x === target.x && previous.y > target.y),
+    };
+  });
+  expect(projectDirection).toEqual({
+    sourceNodeId: "system::project",
+    targetNodeId: "system::rust-agent-core",
+    markerEnd: expect.stringMatching(/url\(.+arrowclosed.+\)/),
+    orthogonalTargetApproach: true,
+  });
+  await expect(page.locator("marker.react-flow__arrowhead").first())
+    .toHaveAttribute("markerUnits", "userSpaceOnUse");
+  await expect(page.locator("marker.react-flow__arrowhead").first())
+    .toHaveAttribute("markerWidth", "44");
+
+  const portPresentation = await flowNode(page, "system::project")
+    .locator('.bd-port-handle-outer[data-nodeid="system::project"]')
+    .first()
+    .evaluate((handle) => {
+      const style = getComputedStyle(handle);
+      return {
+        clipPath: style.clipPath,
+        borderRadius: style.borderRadius,
+        backgroundColor: style.backgroundColor,
+      };
+    });
+  expect(portPresentation).toEqual({
+    clipPath: "none",
+    borderRadius: "50%",
+    backgroundColor: "rgb(255, 255, 255)",
+  });
+
+  await page.getByRole("tab", { name: "Interfaces", exact: true }).click({ force: true });
+  const filter = page.getByLabel("Filter interfaces");
+  await filter.fill("Project Lifecycle RPC");
+  const result = page.locator(".bd-interface-browser-row");
+  await expect(result).toHaveCount(1);
+  await result.click({ force: true });
+  const selectedProjectRoute = page.locator(
+    '.react-flow__edge[data-id="system::project-core-lifecycle"] .bd-interface-route',
+  );
+  await expect(selectedProjectRoute).toBeVisible();
+  expect(await selectedProjectRoute.evaluate((path) => getComputedStyle(path).stroke))
+    .toBe("rgb(155, 100, 27)");
+
+  if (process.env.CAPTURE_CONNECTION_DIRECTION === "1" && browserName === "chromium") {
+    await page.waitForTimeout(400);
+    await captureStudioScreenshot(page, "docs/screenshots/connection-direction.png");
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await result.click({ force: true });
+    await page.waitForTimeout(400);
+    await captureStudioScreenshot(page, "docs/screenshots/connection-direction-compact.png");
+    await page.setViewportSize({ width: 1680, height: 1050 });
+  }
+  await page.getByRole("tab", { name: "Hierarchy", exact: true }).click({ force: true });
+
+  await expandHierarchy(page, "Rust Agent Core");
+  const continuationRoutes = page.locator('[data-boundary-continuation="true"]');
+  await expect(continuationRoutes).not.toHaveCount(0);
+  for (let index = 0; index < await continuationRoutes.count(); index += 1) {
+    await expect(continuationRoutes.nth(index).locator(".bd-interface-route"))
+      .not.toHaveAttribute("marker-end", /.+/);
+  }
+  const expandedActualRoutes = page.locator('[data-boundary-continuation="false"]');
+  for (let index = 0; index < await expandedActualRoutes.count(); index += 1) {
+    await expect(expandedActualRoutes.nth(index).locator(".bd-interface-route"))
+      .toHaveAttribute("marker-end", /url\(.+arrowclosed.+\)/);
+  }
+});
+
 test("expands Core inline and preserves the parent context and boundary continuity", async ({ page }) => {
   await expandHierarchy(page, "Rust Agent Core");
 
