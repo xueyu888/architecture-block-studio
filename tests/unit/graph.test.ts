@@ -72,6 +72,17 @@ describe("module interface summaries", () => {
 
     expect(listDirectConnections(level, ["source", "target"]).map((connection) => connection.id))
       .toEqual(["source-to-target", "source-loop"]);
+    expect(listDirectConnections(level, ["source"], "incoming").map((connection) => connection.id))
+      .toEqual(["source-loop"]);
+    expect(listDirectConnections(level, ["source"], "outgoing").map((connection) => connection.id))
+      .toEqual(["source-to-target", "source-loop"]);
+    expect(listDirectConnections(level, ["target"], "incoming").map((connection) => connection.id))
+      .toEqual(["source-to-target"]);
+    expect(listDirectConnections(level, ["target"], "outgoing")).toEqual([]);
+    expect(listDirectConnections(level, ["source", "target"], "incoming").map((connection) => connection.id))
+      .toEqual(["source-to-target", "source-loop"]);
+    expect(listDirectConnections(level, ["source", "target"], "outgoing").map((connection) => connection.id))
+      .toEqual(["source-to-target", "source-loop"]);
     expect(listDirectConnections(level, ["missing"])).toEqual([]);
     expect(listModuleInterfaces(document, "system", "source")).toEqual([
       expect.objectContaining({ connectionId: "source-to-target", direction: "outgoing" }),

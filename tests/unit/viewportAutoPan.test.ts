@@ -16,11 +16,16 @@ describe("viewport auto-pan", () => {
     expect(calculateViewportAutoPanDelta({ clientX: 480, clientY: 200 }, BOUNDS)).toEqual({ x: -6, y: 0 });
   });
 
-  test("scales by elapsed time but caps delayed frames", () => {
+  test("scales faster frames but caps delayed frames to one visual step", () => {
     const atReference = calculateViewportAutoPanDelta(
       { clientX: 100, clientY: 200 },
       BOUNDS,
       CANVAS_VIEWPORT_AUTO_PAN_POLICY.referenceFrameMs,
+    );
+    const faster = calculateViewportAutoPanDelta(
+      { clientX: 100, clientY: 200 },
+      BOUNDS,
+      CANVAS_VIEWPORT_AUTO_PAN_POLICY.referenceFrameMs / 2,
     );
     const delayed = calculateViewportAutoPanDelta(
       { clientX: 100, clientY: 200 },
@@ -28,7 +33,8 @@ describe("viewport auto-pan", () => {
       1000,
     );
     expect(atReference.x).toBe(12);
-    expect(delayed.x).toBeCloseTo(23.04, 5);
+    expect(faster.x).toBe(6);
+    expect(delayed.x).toBe(12);
   });
 
   test("rejects non-finite pointer or viewport geometry", () => {

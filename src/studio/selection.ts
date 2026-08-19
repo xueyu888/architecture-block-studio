@@ -5,6 +5,7 @@ import {
   type BlockNode,
   type DesignIssue,
   type DesignLevel,
+  type DirectConnectionDirection,
 } from "../model";
 
 export type DiagramSelectionRef =
@@ -103,6 +104,7 @@ interface DirectSelectionContext {
 function directSelectionContext(
   document: BlockDesignDocument,
   selection: SelectionRef,
+  direction: DirectConnectionDirection,
 ): DirectSelectionContext {
   const selectedItems = diagramSelectionItems(selection);
   const existingNodeIdsByLevel = new Map(
@@ -123,7 +125,7 @@ function directSelectionContext(
     const selectedNodeIds = nodeIdsByLevel.get(level.id);
     if (!selectedNodeIds) return;
     const neighborNodeIds = new Set<string>();
-    listDirectConnections(level, selectedNodeIds).forEach((connection) => {
+    listDirectConnections(level, selectedNodeIds, direction).forEach((connection) => {
       directInterfaces.push({
         kind: "connection",
         levelId: level.id,
@@ -156,8 +158,9 @@ function directSelectionContext(
 export function directInterfaceSelectionExpansion(
   document: BlockDesignDocument,
   selection: SelectionRef,
+  direction: DirectConnectionDirection = "both",
 ): DirectInterfaceSelectionExpansion {
-  const context = directSelectionContext(document, selection);
+  const context = directSelectionContext(document, selection, direction);
   const { selectedItems, selectedNodeCount, directInterfaces } = context;
   if (selectedNodeCount === 0) {
     return {
@@ -233,8 +236,9 @@ export type DirectNeighborhoodSelectionExpansion =
 export function directNeighborhoodSelectionExpansion(
   document: BlockDesignDocument,
   selection: SelectionRef,
+  direction: DirectConnectionDirection = "both",
 ): DirectNeighborhoodSelectionExpansion {
-  const context = directSelectionContext(document, selection);
+  const context = directSelectionContext(document, selection, direction);
   const {
     selectedItems,
     selectedNodeCount,

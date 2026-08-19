@@ -1321,7 +1321,7 @@ test("searches and runs the unified command palette without losing workflow focu
   const search = palette.getByRole("combobox", { name: "Search commands" });
   await expect(palette).toBeVisible();
   await expect(search).toBeFocused();
-  await expect(palette.getByRole("option")).toHaveCount(43);
+  await expect(palette.getByRole("option")).toHaveCount(47);
   await expect(palette.getByRole("option", { name: /^Command Palette/ })).toHaveCount(0);
 
   await search.fill("添加端口");
@@ -1356,6 +1356,18 @@ test("searches and runs the unified command palette without losing workflow focu
   await expect(palette.getByRole("option")).toHaveCount(1);
   await expect(unavailableNeighborhood).toHaveAttribute("aria-disabled", "true");
   await expect(unavailableNeighborhood).toContainText("Select one or more modules first.");
+
+  await search.fill("incoming interfaces");
+  const unavailableIncoming = palette.getByRole("option", { name: /^Select Incoming Interfaces/ });
+  await expect(palette.getByRole("option")).toHaveCount(1);
+  await expect(unavailableIncoming).toHaveAttribute("aria-disabled", "true");
+  await expect(unavailableIncoming).toContainText("Select one or more modules first.");
+
+  await search.fill("outgoing neighborhood");
+  const unavailableOutgoingNeighborhood = palette.getByRole("option", { name: /^Select Outgoing Neighborhood/ });
+  await expect(palette.getByRole("option")).toHaveCount(1);
+  await expect(unavailableOutgoingNeighborhood).toHaveAttribute("aria-disabled", "true");
+  await expect(unavailableOutgoingNeighborhood).toContainText("Select one or more modules first.");
 
   await search.fill("no such architecture action");
   await expect(palette.getByText("No matching commands", { exact: true })).toBeVisible();
@@ -2633,6 +2645,40 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
 
   await page.locator('.bd-tree-select[data-level-id="system"][data-node-id="hub"]').click({ force: true });
   await page.waitForTimeout(300);
+  const directionalViewport = await canvasViewportTransform(page);
+  await runMenuCommand(page, "Edit", /^Select Incoming Interfaces/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(50);
+  await expect(page.locator(".bd-multi-metrics dd")).toHaveText(["1", "50", "1"]);
+  expect(await canvasViewportTransform(page)).toBe(directionalViewport);
+  await assertCompleteAudit();
+
+  await page.locator('.bd-tree-select[data-level-id="system"][data-node-id="hub"]').click({ force: true });
+  await runMenuCommand(page, "Edit", /^Select Outgoing Interfaces/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(50);
+  await expect(page.locator(".bd-multi-metrics dd")).toHaveText(["1", "50", "1"]);
+  expect(await canvasViewportTransform(page)).toBe(directionalViewport);
+  await assertCompleteAudit();
+
+  await page.locator('.bd-tree-select[data-level-id="system"][data-node-id="hub"]').click({ force: true });
+  await runMenuCommand(page, "Edit", /^Select Incoming Neighborhood/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(51);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(50);
+  await expect(page.locator(".bd-multi-metrics dd")).toHaveText(["51", "50", "1"]);
+  expect(await canvasViewportTransform(page)).toBe(directionalViewport);
+  await assertCompleteAudit();
+
+  await page.locator('.bd-tree-select[data-level-id="system"][data-node-id="hub"]').click({ force: true });
+  await runMenuCommand(page, "Edit", /^Select Outgoing Neighborhood/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(51);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(50);
+  await expect(page.locator(".bd-multi-metrics dd")).toHaveText(["51", "50", "1"]);
+  expect(await canvasViewportTransform(page)).toBe(directionalViewport);
+  await assertCompleteAudit();
+
+  await page.locator('.bd-tree-select[data-level-id="system"][data-node-id="hub"]').click({ force: true });
+  await page.waitForTimeout(300);
   const selectionViewportBefore = await canvasViewportTransform(page);
   await runMenuCommand(page, "Edit", /^Select Direct Interfaces/);
   await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
@@ -3099,6 +3145,14 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("7 objects selected");
   await expect(page.locator(".bd-multi-metrics dd")).toHaveText(["4", "3", "1"]);
   metrics.selectDirectNeighborhoodMs = Math.round(performance.now() - directNeighborhoodStarted);
+  expect(await canvasViewportTransform(page)).toBe(directNeighborhoodViewport);
+  await clickWithPointer(page, moduleButton);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("Module 000");
+  const outgoingNeighborhoodStarted = performance.now();
+  await runMenuCommand(page, "Edit", /^Select Outgoing Neighborhood/);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("7 objects selected");
+  await expect(page.locator(".bd-multi-metrics dd")).toHaveText(["4", "3", "1"]);
+  metrics.selectOutgoingNeighborhoodMs = Math.round(performance.now() - outgoingNeighborhoodStarted);
   expect(await canvasViewportTransform(page)).toBe(directNeighborhoodViewport);
   await clickWithPointer(page, moduleButton);
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("Module 000");
@@ -5583,6 +5637,121 @@ test("selects and explicitly focuses a complete direct module neighborhood", asy
   await expect(disabledCommand).toHaveAttribute("aria-disabled", "true");
   await expect(disabledCommand).toContainText("The complete direct neighborhood is already selected.");
   await page.keyboard.press("Escape");
+});
+
+test("selects incoming and outgoing dependency directions without guessing from geometry", async ({ page, browserName }) => {
+  const core = flowNode(page, "system::rust-agent-core");
+  const inspector = page.getByRole("region", { name: "Properties" });
+  await core.click({ force: true });
+  const initialViewport = await canvasViewportTransform(page);
+  const title = inspector.getByLabel("Title", { exact: true });
+  await title.fill("Rust Agent Core draft");
+
+  const discardDialogPromise = page.waitForEvent("dialog");
+  const rejectedSelection = runMenuCommand(page, "Edit", /^Select Incoming Interfaces/);
+  const discardDialog = await discardDialogPromise;
+  expect(discardDialog.message()).toContain("Discard unapplied Inspector changes");
+  await discardDialog.dismiss();
+  await rejectedSelection;
+  await expect(core).toHaveClass(/selected/);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
+  await expect(title).toHaveValue("Rust Agent Core draft");
+
+  await title.fill("Rust Agent Core");
+  await title.blur();
+  await page.keyboard.press("ControlOrMeta+K");
+  const palette = page.getByRole("dialog", { name: "Command Palette" });
+  await palette.getByRole("combobox", { name: "Search commands" }).fill("incoming interfaces");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(5);
+  await expect(inspector.locator(".bd-multi-metrics dd")).toHaveText(["1", "5", "1"]);
+  await expect(page.locator(".bd-command-notice")).toContainText(
+    "Added 5 incoming interfaces for 1 selected module.",
+  );
+  for (const connectionId of [
+    "ui-session-command",
+    "project-core-lifecycle",
+    "knowledge-core-lifecycle",
+    "tool-core-snapshot",
+    "tool-core-outcome",
+  ]) {
+    await expect(page.locator(`.react-flow__edge[data-id="system::${connectionId}"]`)).toHaveClass(/selected/);
+  }
+  for (const connectionId of ["core-ui-notification", "core-tool-catalog", "core-tool-invoke"]) {
+    await expect(page.locator(`.react-flow__edge[data-id="system::${connectionId}"]`)).not.toHaveClass(/selected/);
+  }
+  expect(await canvasViewportTransform(page)).toBe(initialViewport);
+
+  await page.keyboard.press("ControlOrMeta+K");
+  const disabledPalette = page.getByRole("dialog", { name: "Command Palette" });
+  await disabledPalette.getByRole("combobox", { name: "Search commands" }).fill("incoming interfaces");
+  const disabledIncoming = disabledPalette.getByRole("option", { name: /^Select Incoming Interfaces/ });
+  await expect(disabledIncoming).toHaveAttribute("aria-disabled", "true");
+  await expect(disabledIncoming).toContainText("All incoming interfaces are already selected.");
+  await page.keyboard.press("Escape");
+
+  await core.click({ force: true });
+  await runMenuCommand(page, "Edit", /^Select Outgoing Interfaces/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(3);
+  await expect(inspector.locator(".bd-multi-metrics dd")).toHaveText(["1", "3", "1"]);
+  for (const connectionId of ["core-ui-notification", "core-tool-catalog", "core-tool-invoke"]) {
+    await expect(page.locator(`.react-flow__edge[data-id="system::${connectionId}"]`)).toHaveClass(/selected/);
+  }
+  expect(await canvasViewportTransform(page)).toBe(initialViewport);
+
+  await core.click({ force: true });
+  await runMenuCommand(page, "Edit", /^Select Incoming Neighborhood/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(5);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(5);
+  await expect(inspector.locator(".bd-multi-metrics dd")).toHaveText(["5", "5", "1"]);
+  for (const nodeId of ["rust-agent-core", "agent-ui", "project", "knowledge", "tool-system"]) {
+    await expect(flowNode(page, `system::${nodeId}`)).toHaveClass(/selected/);
+  }
+  expect(await canvasViewportTransform(page)).toBe(initialViewport);
+  await runMenuCommand(page, "View", /^Fit Selection/);
+  await page.waitForTimeout(400);
+  if (process.env.CAPTURE_DIRECTIONAL_NEIGHBORHOOD === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/select-incoming-neighborhood.png");
+  }
+
+  await core.click({ force: true });
+  const outgoingViewport = await canvasViewportTransform(page);
+  await runMenuCommand(page, "Edit", /^Select Outgoing Neighborhood/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(3);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(3);
+  await expect(inspector.locator(".bd-multi-metrics dd")).toHaveText(["3", "3", "1"]);
+  for (const nodeId of ["rust-agent-core", "agent-ui", "tool-system"]) {
+    await expect(flowNode(page, `system::${nodeId}`)).toHaveClass(/selected/);
+  }
+  expect(await canvasViewportTransform(page)).toBe(outgoingViewport);
+
+  await flowNode(page, "system::project").click({ force: true });
+  await page.keyboard.press("ControlOrMeta+K");
+  const noIncomingPalette = page.getByRole("dialog", { name: "Command Palette" });
+  await noIncomingPalette.getByRole("combobox", { name: "Search commands" }).fill("incoming neighborhood");
+  const noIncoming = noIncomingPalette.getByRole("option", { name: /^Select Incoming Neighborhood/ });
+  await expect(noIncoming).toHaveAttribute("aria-disabled", "true");
+  await expect(noIncoming).toContainText("The selected modules have no incoming interfaces.");
+  await page.keyboard.press("Escape");
+
+  const audit = await exhaustiveRouteAudit(page);
+  expect(audit).toMatchObject({
+    auditedRouteCount: 10,
+    auditedPairCount: 45,
+    expectedPairCount: 45,
+    duplicateRouteIds: [],
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
+  await expect(
+    page.getByRole("toolbar", { name: "Architecture design tools" })
+      .getByRole("button", { name: /^撤销/ }),
+  ).toBeDisabled();
 });
 
 test("deletes a mixed module and interface selection as one atomic cascade", async ({ page, browserName }) => {

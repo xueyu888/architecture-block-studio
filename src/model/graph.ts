@@ -27,6 +27,7 @@ export interface ConnectionEndpointReference {
 }
 
 export type ModuleInterfaceDirection = "incoming" | "outgoing" | "loopback";
+export type DirectConnectionDirection = "both" | "incoming" | "outgoing";
 
 export interface ModuleInterfaceSummary {
   levelId: string;
@@ -153,16 +154,22 @@ export function hasAlternativeConnectionEndpoints(
 export function listDirectConnections(
   level: DesignLevel,
   nodeIds: Iterable<string>,
+  direction: DirectConnectionDirection = "both",
 ): BlockConnection[] {
   const existingNodeIds = new Set(level.nodes.map((node) => node.id));
   const selectedNodeIds = new Set(
     [...nodeIds].filter((nodeId) => existingNodeIds.has(nodeId)),
   );
   if (selectedNodeIds.size === 0) return [];
-  return level.connections.filter((connection) => (
-    selectedNodeIds.has(connection.source.nodeId) ||
-    selectedNodeIds.has(connection.target.nodeId)
-  ));
+  return level.connections.filter((connection) => {
+    const outgoing = selectedNodeIds.has(connection.source.nodeId);
+    const incoming = selectedNodeIds.has(connection.target.nodeId);
+    return direction === "incoming"
+      ? incoming
+      : direction === "outgoing"
+        ? outgoing
+        : outgoing || incoming;
+  });
 }
 
 export function listModuleInterfaces(

@@ -19,7 +19,6 @@ export interface ViewportAutoPanPolicy {
   edgeThresholdPx: number;
   maximumFrameDistancePx: number;
   referenceFrameMs: number;
-  maximumFrameMs: number;
 }
 
 export const CANVAS_VIEWPORT_AUTO_PAN_POLICY: Readonly<ViewportAutoPanPolicy> = Object.freeze({
@@ -28,7 +27,6 @@ export const CANVAS_VIEWPORT_AUTO_PAN_POLICY: Readonly<ViewportAutoPanPolicy> = 
   edgeThresholdPx: 40,
   maximumFrameDistancePx: 12,
   referenceFrameMs: 1000 / 60,
-  maximumFrameMs: 32,
 });
 
 function axisPressure(position: number, length: number, threshold: number): number {
@@ -54,7 +52,10 @@ export function calculateViewportAutoPanDelta(
   ) {
     throw new Error("Viewport auto-pan requires finite pointer, bounds, and elapsed time values.");
   }
-  const frameScale = Math.min(elapsedMs, policy.maximumFrameMs) / policy.referenceFrameMs;
+  // A delayed animation frame must not turn elapsed wall time into a large
+  // viewport jump. Direct gestures preserve their pointer anchor by capping
+  // each visual step; faster frames still scale down to avoid overspeeding.
+  const frameScale = Math.min(1, elapsedMs / policy.referenceFrameMs);
   const horizontal = axisPressure(
     pointer.clientX - bounds.left,
     bounds.width,

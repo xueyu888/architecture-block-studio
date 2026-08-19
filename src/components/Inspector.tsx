@@ -114,7 +114,7 @@ function MultiSelectionSummary({ document, selection, onSelect }: {
       {visibleRows.length < rows.length && (
         <p className="bd-multi-overflow">Showing 60 of {rows.length} selected objects.</p>
       )}
-      <p className="bd-multi-help">Drag empty canvas to enclose · Alt-drag intersects, even over objects · Shift/Ctrl/⌘ toggles · Edit expands direct interfaces or the full neighborhood · Drag moves · Ctrl/⌘ drag clones · Arrange aligns · Delete removes once · Ctrl/⌘ Shift+H fits · Esc clears.</p>
+      <p className="bd-multi-help">Drag empty canvas to enclose · Alt-drag intersects, even over objects · Shift/Ctrl/⌘ toggles · Edit expands all, incoming, or outgoing dependencies · Drag moves · Ctrl/⌘ drag clones · Arrange aligns · Delete removes once · Ctrl/⌘ Shift+H fits · Esc clears.</p>
     </div>
   );
 }

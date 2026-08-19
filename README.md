@@ -42,6 +42,7 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 - 使用 **Ctrl/⌘ A** 一次选择当前 Level 的全部模块和接口，使用 **Ctrl/⌘ Shift A** 清空选择；输入框继续保留浏览器原生全选，不会误选画布对象。
 - 选择一个或多个模块后，使用 **Edit → Select Direct Interfaces**，或按 **Ctrl/⌘ K** 搜索同名命令，即可把这些模块的全部直接入站、出站和自环接口加入选择；随后可直接聚焦、逐线审查或一次删除，JSON、Undo 与当前视口保持不变。
 - 使用 **Edit → Select Direct Neighborhood** 可把所选模块、全部直接接口及其两端模块合并为一个可操作的局部子图；重复执行会逐层扩展真实依赖，配合 **Fit Selection** 即可在大图中渐进理解和审查代码边界，不会隐藏其他对象或创建第二套过滤状态。
+- 使用 **Select Incoming / Outgoing Interfaces** 与对应的 **Neighborhood** 命令，可严格按 `source → target` 区分上游调用者和下游依赖；方向来自 JSON 中的连接事实，不从卡片位置或箭头朝向反推。
 - 使用 **Edit → Select Modules in Level / Select Interfaces in Level** 可只选择当前层的全部模块或全部接口；这两类对象互斥替换，适合集中排布模块或逐线审查接口，不依赖当前缩放下是否挂载在 DOM 中。
 - 画布获得焦点后，使用 **Tab / Shift + Tab** 按稳定顺序遍历可见模块与接口，使用 **Alt + Tab** 返回可见父模块；按 **Enter** 进入所选模块的端口或所选线路的抓手，按 **Esc** 返回对象。侧栏表单继续使用原生 Tab，不会被画布抢走焦点。
 - 选中任意接口后使用 **Ctrl/⌘ Shift H** 或 **View → Fit Selection**，可把完整正交路径和两端模块一起聚焦到可读范围，便于逐线人工审查。
@@ -97,6 +98,10 @@ Ctrl/⌘ 拖动复用同一份可校验片段合同，但由指针明确给出�
 直接依赖邻域在同一份邻接事实之上补齐接口两端模块。第一次从 Core 展开得到 5 个模块与 8 条接口；再次执行会从新增模块继续扩展下一层。选择命令本身不抢走当前视野，只有显式执行 Fit Selection 才聚焦局部子图，因此“选择什么”和“看向哪里”不会互相绑死。
 
 ![选择并聚焦 Core 的完整一跳依赖邻域](docs/screenshots/select-direct-neighborhood.png)
+
+代码审查经常只关心一个方向：谁正在调用这个模块，或这个模块又依赖谁。方向化选择保留同一份局部子图协议，自环和多模块内部连接不会重复；命令只改变选择，显式 Fit 后才改变观察范围。
+
+![从 Core 选择 5 条入站接口及其上游模块](docs/screenshots/select-incoming-neighborhood.png)
 
 需要把模块和线路分开处理时，按类型选择会从当前 Level 的完整文档集合重建选择，而不是遍历屏幕上看得见的元素。因此即使压力图只挂载视口附近对象，1000 个模块或 2000 条接口也不会被截断；选择仍可用 Clear、Fit、Inspector 和原子 Delete 继续处理。
 

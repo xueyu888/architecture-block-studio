@@ -119,6 +119,7 @@ import {
   type BlockDesignDocument,
   type ConnectionRouting,
   type DesignIssue,
+  type DirectConnectionDirection,
 } from "../model";
 import type { StudioCommandAvailability, StudioCommands } from "./commands";
 import { findDesignFragmentPlacement } from "./fragmentPlacement";
@@ -151,6 +152,25 @@ function commandAvailability(
   unavailableReason: string,
 ): StudioCommandAvailability {
   return enabled ? { enabled: true } : { enabled: false, unavailableReason };
+}
+
+function directSelectionUnavailableReason(
+  hasDocument: boolean,
+  reason: string | undefined,
+  direction: DirectConnectionDirection,
+): string {
+  if (!hasDocument) return "Open or create a design first.";
+  const directionLabel = direction === "both" ? "direct" : direction;
+  if (reason === "no-direct-interfaces") {
+    return `The selected modules have no ${directionLabel} interfaces.`;
+  }
+  if (reason === "all-direct-interfaces-selected") {
+    return `All ${directionLabel} interfaces are already selected.`;
+  }
+  if (reason === "all-direct-neighborhood-selected") {
+    return `The complete ${directionLabel} neighborhood is already selected.`;
+  }
+  return "Select one or more modules first.";
 }
 
 function fileNameFromSource(document: BlockDesignDocument, source: string): string {
@@ -638,6 +658,22 @@ export function BlockDesignStudio({
     () => document ? directNeighborhoodSelectionExpansion(document, selection) : undefined,
     [document, selection],
   );
+  const incomingInterfaceExpansion = useMemo(
+    () => document ? directInterfaceSelectionExpansion(document, selection, "incoming") : undefined,
+    [document, selection],
+  );
+  const outgoingInterfaceExpansion = useMemo(
+    () => document ? directInterfaceSelectionExpansion(document, selection, "outgoing") : undefined,
+    [document, selection],
+  );
+  const incomingNeighborhoodExpansion = useMemo(
+    () => document ? directNeighborhoodSelectionExpansion(document, selection, "incoming") : undefined,
+    [document, selection],
+  );
+  const outgoingNeighborhoodExpansion = useMemo(
+    () => document ? directNeighborhoodSelectionExpansion(document, selection, "outgoing") : undefined,
+    [document, selection],
+  );
   const requestViewportAction = useCallback((action: CanvasViewportAction) => {
     setViewportActionRequest((current) => ({ revision: current.revision + 1, action }));
   }, []);
@@ -1001,27 +1037,29 @@ export function BlockDesignStudio({
     }) ? "changed" : "rejected";
   }, [requireAppliedInspectorDraft, runOperation]);
 
-  const selectDirectInterfaces = useCallback(() => {
+  const selectDirectInterfaces = useCallback((direction: DirectConnectionDirection = "both") => {
     const currentDocument = documentRef.current;
     if (!currentDocument) return;
-    const expansion = directInterfaceSelectionExpansion(currentDocument, selectionRef.current);
+    const expansion = directInterfaceSelectionExpansion(currentDocument, selectionRef.current, direction);
     if (!expansion.available || !requestSelection(expansion.selection)) return;
+    const directionLabel = direction === "both" ? "direct" : direction;
     setCommandError(undefined);
     setCommandNotice(
-      `Added ${expansion.addedInterfaceCount} direct ${expansion.addedInterfaceCount === 1 ? "interface" : "interfaces"} ` +
+      `Added ${expansion.addedInterfaceCount} ${directionLabel} ${expansion.addedInterfaceCount === 1 ? "interface" : "interfaces"} ` +
       `for ${expansion.selectedNodeCount} selected ${expansion.selectedNodeCount === 1 ? "module" : "modules"}.`,
     );
   }, [requestSelection]);
 
-  const selectDirectNeighborhood = useCallback(() => {
+  const selectDirectNeighborhood = useCallback((direction: DirectConnectionDirection = "both") => {
     const currentDocument = documentRef.current;
     if (!currentDocument) return;
-    const expansion = directNeighborhoodSelectionExpansion(currentDocument, selectionRef.current);
+    const expansion = directNeighborhoodSelectionExpansion(currentDocument, selectionRef.current, direction);
     if (!expansion.available || !requestSelection(expansion.selection)) return;
+    const directionLabel = direction === "both" ? "direct" : direction;
     setCommandError(undefined);
     setCommandNotice(
       `Added ${expansion.addedNodeCount} neighboring ${expansion.addedNodeCount === 1 ? "module" : "modules"} ` +
-      `and ${expansion.addedInterfaceCount} direct ${expansion.addedInterfaceCount === 1 ? "interface" : "interfaces"} ` +
+      `and ${expansion.addedInterfaceCount} ${directionLabel} ${expansion.addedInterfaceCount === 1 ? "interface" : "interfaces"} ` +
       `for ${expansion.selectedNodeCount} selected ${expansion.selectedNodeCount === 1 ? "module" : "modules"}.`,
     );
   }, [requestSelection]);
@@ -1029,24 +1067,30 @@ export function BlockDesignStudio({
   const canDelete = selection.kind === "node" || selection.kind === "port" ||
     selection.kind === "connection" || selection.kind === "multiple";
   const deleteUnavailableReason = "Select a module, port, or interface first.";
-  const directInterfaceUnavailableReason = !document
-    ? "Open or create a design first."
-    : directInterfaceExpansion?.available
-      ? "Select one or more modules first."
-      : directInterfaceExpansion?.reason === "no-direct-interfaces"
-        ? "The selected modules have no direct interfaces."
-        : directInterfaceExpansion?.reason === "all-direct-interfaces-selected"
-          ? "All direct interfaces are already selected."
-          : "Select one or more modules first.";
-  const directNeighborhoodUnavailableReason = !document
-    ? "Open or create a design first."
-    : directNeighborhoodExpansion?.available
-      ? "Select one or more modules first."
-      : directNeighborhoodExpansion?.reason === "no-direct-interfaces"
-        ? "The selected modules have no direct interfaces."
-        : directNeighborhoodExpansion?.reason === "all-direct-neighborhood-selected"
-          ? "The complete direct neighborhood is already selected."
-          : "Select one or more modules first.";
+  const directInterfaceUnavailableReason = directSelectionUnavailableReason(
+    Boolean(document), directInterfaceExpansion?.available ? undefined : directInterfaceExpansion?.reason,
+    "both",
+  );
+  const incomingInterfaceUnavailableReason = directSelectionUnavailableReason(
+    Boolean(document), incomingInterfaceExpansion?.available ? undefined : incomingInterfaceExpansion?.reason,
+    "incoming",
+  );
+  const outgoingInterfaceUnavailableReason = directSelectionUnavailableReason(
+    Boolean(document), outgoingInterfaceExpansion?.available ? undefined : outgoingInterfaceExpansion?.reason,
+    "outgoing",
+  );
+  const directNeighborhoodUnavailableReason = directSelectionUnavailableReason(
+    Boolean(document), directNeighborhoodExpansion?.available ? undefined : directNeighborhoodExpansion?.reason,
+    "both",
+  );
+  const incomingNeighborhoodUnavailableReason = directSelectionUnavailableReason(
+    Boolean(document), incomingNeighborhoodExpansion?.available ? undefined : incomingNeighborhoodExpansion?.reason,
+    "incoming",
+  );
+  const outgoingNeighborhoodUnavailableReason = directSelectionUnavailableReason(
+    Boolean(document), outgoingNeighborhoodExpansion?.available ? undefined : outgoingNeighborhoodExpansion?.reason,
+    "outgoing",
+  );
   const canAddChildDesign = Boolean(selectedNode && !selectedNode.node.hierarchy);
   const canAddConnection = Boolean(activeLevel && firstConnectablePair(activeLevel));
   const canAlignSelection = arrangementSelection.available && !inspectorDraftDirty;
@@ -1183,6 +1227,22 @@ export function BlockDesignStudio({
       ),
       execute: selectDirectInterfaces,
     },
+    selectIncomingInterfaces: {
+      id: "selectIncomingInterfaces", label: "Select Incoming Interfaces", icon: Cable,
+      ...commandAvailability(
+        Boolean(incomingInterfaceExpansion?.available),
+        incomingInterfaceUnavailableReason,
+      ),
+      execute: () => selectDirectInterfaces("incoming"),
+    },
+    selectOutgoingInterfaces: {
+      id: "selectOutgoingInterfaces", label: "Select Outgoing Interfaces", icon: Cable,
+      ...commandAvailability(
+        Boolean(outgoingInterfaceExpansion?.available),
+        outgoingInterfaceUnavailableReason,
+      ),
+      execute: () => selectDirectInterfaces("outgoing"),
+    },
     selectDirectNeighborhood: {
       id: "selectDirectNeighborhood", label: "Select Direct Neighborhood", icon: Share2,
       ...commandAvailability(
@@ -1190,6 +1250,22 @@ export function BlockDesignStudio({
         directNeighborhoodUnavailableReason,
       ),
       execute: selectDirectNeighborhood,
+    },
+    selectIncomingNeighborhood: {
+      id: "selectIncomingNeighborhood", label: "Select Incoming Neighborhood", icon: Share2,
+      ...commandAvailability(
+        Boolean(incomingNeighborhoodExpansion?.available),
+        incomingNeighborhoodUnavailableReason,
+      ),
+      execute: () => selectDirectNeighborhood("incoming"),
+    },
+    selectOutgoingNeighborhood: {
+      id: "selectOutgoingNeighborhood", label: "Select Outgoing Neighborhood", icon: Share2,
+      ...commandAvailability(
+        Boolean(outgoingNeighborhoodExpansion?.available),
+        outgoingNeighborhoodUnavailableReason,
+      ),
+      execute: () => selectDirectNeighborhood("outgoing"),
     },
     clearSelection: {
       id: "clearSelection", label: "Clear Selection", shortcut: "Ctrl/⌘ ⇧ A", icon: CircleOff,
@@ -1381,6 +1457,10 @@ export function BlockDesignStudio({
     directInterfaceUnavailableReason,
     directNeighborhoodExpansion,
     directNeighborhoodUnavailableReason,
+    incomingInterfaceExpansion,
+    incomingInterfaceUnavailableReason,
+    incomingNeighborhoodExpansion,
+    incomingNeighborhoodUnavailableReason,
     document,
     distributeUnavailableReason,
     duplicateSelectedModules,
@@ -1396,6 +1476,10 @@ export function BlockDesignStudio({
     openAddPort,
     openReconnectConnection,
     openSaveAs,
+    outgoingInterfaceExpansion,
+    outgoingInterfaceUnavailableReason,
+    outgoingNeighborhoodExpansion,
+    outgoingNeighborhoodUnavailableReason,
     pasteDesignFragment,
     pasteUnavailableReason,
     redoDesign,

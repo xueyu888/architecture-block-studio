@@ -9,6 +9,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { flushSync } from "react-dom";
 import { Box, Hand, Map as MapIcon, Minus, Plus, Scan } from "lucide-react";
 import {
   Background,
@@ -1947,14 +1948,20 @@ const CanvasInner = memo(function CanvasInner({
     };
   }, [beginAlignmentGesture]);
   const replayNodeDragPointer = useCallback((pointer: { clientX: number; clientY: number }) => {
-    window.dispatchEvent(new MouseEvent("mousemove", {
-      bubbles: true,
-      buttons: 1,
-      clientX: pointer.clientX,
-      clientY: pointer.clientY,
-      ...nodeDragModifiersRef.current,
-      view: window,
-    }));
+    // React Flow owns live drag geometry. Replaying the held pointer after a
+    // viewport step must commit before the browser paints that transform;
+    // otherwise the canvas can move ahead of the module under main-thread
+    // pressure and visibly detach it from the pointer.
+    flushSync(() => {
+      window.dispatchEvent(new MouseEvent("mousemove", {
+        bubbles: true,
+        buttons: 1,
+        clientX: pointer.clientX,
+        clientY: pointer.clientY,
+        ...nodeDragModifiersRef.current,
+        view: window,
+      }));
+    });
   }, []);
   const onNodeDragStart = useCallback<OnNodeDrag<CanvasFlowNode>>((event, node, draggedNodes) => {
     beginAlignmentGesture(node.id, new Set([node.id, ...draggedNodes.map((candidate) => candidate.id)]));

@@ -359,6 +359,78 @@ describe("workspace selection protocol", () => {
     ]);
   });
 
+  it("expands directional interfaces and neighborhoods from source and target facts", () => {
+    const document = connectedDesign();
+    const source = { kind: "node", levelId: "system", nodeId: "source" } as const;
+    const target = { kind: "node", levelId: "system", nodeId: "target" } as const;
+    const connection = {
+      kind: "connection",
+      levelId: "system",
+      connectionId: "source-to-target",
+    } as const;
+
+    expect(directInterfaceSelectionExpansion(document, source, "incoming"))
+      .toMatchObject({ available: false, reason: "no-direct-interfaces" });
+    expect(directInterfaceSelectionExpansion(document, source, "outgoing")).toEqual({
+      available: true,
+      selection: { kind: "multiple", items: [connection, source] },
+      selectedNodeCount: 1,
+      directInterfaceCount: 1,
+      addedInterfaceCount: 1,
+    });
+    expect(directInterfaceSelectionExpansion(document, target, "incoming")).toEqual({
+      available: true,
+      selection: { kind: "multiple", items: [connection, target] },
+      selectedNodeCount: 1,
+      directInterfaceCount: 1,
+      addedInterfaceCount: 1,
+    });
+    expect(directInterfaceSelectionExpansion(document, target, "outgoing"))
+      .toMatchObject({ available: false, reason: "no-direct-interfaces" });
+    expect(directNeighborhoodSelectionExpansion(document, source, "outgoing")).toEqual({
+      available: true,
+      selection: { kind: "multiple", items: [connection, source, target] },
+      selectedNodeCount: 1,
+      neighborhoodNodeCount: 2,
+      directInterfaceCount: 1,
+      addedNodeCount: 1,
+      addedInterfaceCount: 1,
+    });
+    expect(directNeighborhoodSelectionExpansion(document, target, "incoming")).toEqual({
+      available: true,
+      selection: { kind: "multiple", items: [connection, source, target] },
+      selectedNodeCount: 1,
+      neighborhoodNodeCount: 2,
+      directInterfaceCount: 1,
+      addedNodeCount: 1,
+      addedInterfaceCount: 1,
+    });
+
+    document.levels[0].nodes.find((node) => node.id === "source")!.ports.push({
+      id: "loop-in",
+      label: "Loop Input",
+      side: "left",
+      direction: "input",
+      required: false,
+    });
+    document.levels[0].connections.push({
+      id: "source-loop",
+      interfaceId: "source.output",
+      source: { nodeId: "source", portId: "out" },
+      target: { nodeId: "source", portId: "loop-in" },
+    });
+    expect(directInterfaceSelectionExpansion(document, source, "incoming")).toMatchObject({
+      available: true,
+      directInterfaceCount: 1,
+      addedInterfaceCount: 1,
+    });
+    expect(directInterfaceSelectionExpansion(document, source, "outgoing")).toMatchObject({
+      available: true,
+      directInterfaceCount: 2,
+      addedInterfaceCount: 2,
+    });
+  });
+
   it("validates every member of a multi-selection without persisting it in the document", () => {
     const document = connectedDesign();
     const valid: SelectionRef = {
