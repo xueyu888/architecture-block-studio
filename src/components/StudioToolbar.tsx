@@ -57,8 +57,7 @@ export function StudioToolbar({
       <CommandGroup label="File" commands={commands} ids={["newDesign", "openDesign", "save"]} />
       <CommandGroup label="History and selection" commands={commands} ids={["undo", "redo", "deleteSelection"]} />
       <CommandGroup label="Create" commands={commands} ids={["addBlock", "addPort", "addConnection", "addChildDesign"]} />
-      <CommandGroup label="Layout and validation" commands={commands} ids={["regenerateLayout", "optimizeRouting", "fitDesign", "validateDesign"]} />
-      <CommandGroup label="Workspace panels" commands={commands} ids={["toggleSources", "toggleMessages", "toggleProperties", "maximizeDiagram"]} />
+      <CommandGroup label="Canvas and review" commands={commands} ids={["fitDesign", "validateDesign"]} />
       <nav className="bd-breadcrumbs" aria-label="Expanded hierarchy">
         <strong>{activeLevelTitle}</strong>
         {expandedTitles.map((title) => <span key={title}><b>/</b>{title}</span>)}

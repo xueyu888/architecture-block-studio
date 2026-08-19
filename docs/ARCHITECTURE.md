@@ -50,7 +50,7 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 
 工作台采用稳定的专业画布骨架：文档标题和校验摘要位于顶层，菜单负责完整命令发现，分组工具栏承载高频动作；Sources、Canvas、Inspector 构成主要横向工作区，Messages / DRC 与状态栏提供按需反馈。Canvas 始终是视觉主面，左右面板是上下文，只有选择、错误、dirty 和主操作使用强调色。改变面板显隐、Dock 布局或视觉样式不会改变设计事实。
 
-`src/styles.css` 的 `:root` 是颜色、边界、控件高度、圆角、阴影、层级和动效时长的唯一视觉常量 Owner。组件只通过自身语义 class 表达“这是菜单、节点、属性面板或状态”，不得复制同一 surface、border、selection、z-index 或 control 尺寸；React Flow 的网格与 MiniMap 遮罩同样消费该 token 层。`StudioToolbar` 只依据 `StudioCommands` 投影命令，并用具名 `role="group"` 表达视觉分组，不拥有命令状态。视觉 token 只被组件消费，不依赖组件，也不进入 JSON、历史、selection 或布局结果。
+`src/styles.css` 的 `:root` 是颜色、边界、控件高度、圆角、阴影、层级和动效时长的唯一视觉常量 Owner。组件只通过自身语义 class 表达“这是菜单、节点、属性面板或状态”，不得复制同一 surface、border、selection、z-index 或 control 尺寸；React Flow 的网格与 MiniMap 遮罩同样消费该 token 层。`StudioToolbar` 只依据 `StudioCommands` 投影命令，并用具名 `role="group"` 表达视觉分组，不拥有命令状态。它拥有常驻展示集合：File、History、Create 以及 Fit / Validate 表达启动、连续编辑、建模和审查直接工作流；低频全图布局与已有 Dock 上下文入口的面板动作仍由完整 Menu / Command Palette 投影。展示集合不进入命令合同，不能反向改变 execute 或 eligibility。视觉 token 只被组件消费，不依赖组件，也不进入 JSON、历史、selection 或布局结果。
 
 `Tooltip` 只拥有 pointer 延迟、focus 即时打开、Esc / pointer down 关闭和 reduced-motion 展示，是命令提示的瞬时 UI Owner。它的公开输入只有 `label`、可选 `shortcut` / `detail` 与 placement；Toolbar 直接传入 `StudioCommands` 已拥有的名称、快捷键和 `unavailableReason`，Canvas viewport controls 传入自身公开动作名。Tooltip 不计算 eligibility、不执行命令、不让禁用按钮获得新的激活路径，也不持久化打开状态。Toolbar 与 Canvas controls 不再保留并行的原生 `title`，Menu 已有可见禁用原因也不再重复 title；事件取消或组件卸载时，待显示计时器被清理，原操作保持不变。
 
@@ -58,7 +58,8 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 
 ```text
 BlockDesignDocument ─► model / editor / layout / routing ─► Studio ─► UI components
-StudioCommands ───────────────────────────► Menu / Toolbar / Keyboard / Command Palette
+StudioCommands ───────────────────────────► Menu / Keyboard / Command Palette（完整）
+              └───────────────────────────► Toolbar（12 个直接工作流投影）
 Canvas viewport actions ──────────────────────────────────► Canvas controls
 Menu / Toolbar / Canvas controls ── label / detail ───────► Tooltip
 :root visual tokens ──────────────────────────────────────► all UI components

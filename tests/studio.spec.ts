@@ -187,6 +187,17 @@ function toolbarButton(page: Page, name: string): Locator {
     .getByRole("button", { name, exact: true });
 }
 
+async function runMenuCommand(
+  page: Page,
+  menuName: "Design" | "View",
+  commandName: string | RegExp,
+): Promise<void> {
+  await page.getByRole("button", { name: menuName, exact: true }).click();
+  await page.getByRole("menu", { name: menuName })
+    .getByRole("menuitem", { name: commandName, exact: typeof commandName === "string" })
+    .click();
+}
+
 async function clickWithPointer(page: Page, locator: Locator): Promise<void> {
   const box = await locator.boundingBox();
   expect(box).not.toBeNull();
@@ -755,7 +766,7 @@ test("keeps the compact desktop workbench operable without panel or route obstru
   await waitForEditorIdle(page);
   await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
 
-  await toolbarButton(page, "Messages").click({ force: true });
+  await runMenuCommand(page, "View", "Toggle Messages");
   await expect(page.locator(".bd-messages")).toBeVisible();
   const geometry = await page.evaluate(() => {
     const box = (selector: string) => {
@@ -890,6 +901,76 @@ test("reveals one unobtrusive tooltip path for toolbar and canvas controls", asy
     reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
     animationSeconds: Number.parseFloat(getComputedStyle(element).animationDuration),
   }))).toEqual({ reduced: true, animationSeconds: 0.00001 });
+});
+
+test("keeps only direct-workflow commands in the persistent toolbar", async ({ page }) => {
+  const toolbar = page.getByRole("toolbar", { name: "Architecture design tools" });
+  await expect(toolbar.getByRole("button")).toHaveCount(12);
+  await expect(toolbar.getByRole("group", { name: "File" }).getByRole("button")).toHaveCount(3);
+  await expect(toolbar.getByRole("group", { name: "History and selection" }).getByRole("button")).toHaveCount(3);
+  await expect(toolbar.getByRole("group", { name: "Create" }).getByRole("button")).toHaveCount(4);
+  await expect(toolbar.getByRole("group", { name: "Canvas and review" }).getByRole("button")).toHaveCount(2);
+
+  for (const title of ["重新生成布局", "仅优化布线", "Sources", "Messages", "Properties", "最大化或还原画布"]) {
+    await expect(toolbar.getByRole("button", { name: title, exact: true })).toHaveCount(0);
+  }
+
+  await page.getByRole("button", { name: "Design", exact: true }).click();
+  const designMenu = page.getByRole("menu", { name: "Design" });
+  await expect(designMenu.getByRole("menuitem", { name: "Regenerate Layout", exact: true })).toBeVisible();
+  await expect(designMenu.getByRole("menuitem", { name: "Optimize Routing", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("button", { name: "View", exact: true }).click();
+  const viewMenu = page.getByRole("menu", { name: "View" });
+  for (const label of ["Toggle Sources", "Toggle Messages", "Toggle Properties", "Maximize Diagram"]) {
+    await expect(viewMenu.getByRole("menuitem", { name: label, exact: true })).toBeVisible();
+  }
+  await page.keyboard.press("Escape");
+
+  await page.keyboard.press("ControlOrMeta+K");
+  const palette = page.getByRole("dialog", { name: "Command Palette" });
+  for (const label of [
+    /^Regenerate Layout/,
+    /^Optimize Routing/,
+    /^Toggle Sources/,
+    /^Toggle Messages/,
+    /^Toggle Properties/,
+    /^Maximize Diagram/,
+  ]) {
+    await expect(palette.getByRole("option", { name: label })).toBeVisible();
+  }
+  await page.keyboard.press("Escape");
+
+  const wide = await page.evaluate(() => {
+    const buttons = [...document.querySelectorAll<HTMLElement>(".bd-toolbar button")];
+    const breadcrumb = document.querySelector<HTMLElement>(".bd-breadcrumbs");
+    if (!buttons.length || !breadcrumb) throw new Error("Toolbar geometry is unavailable.");
+    const first = buttons[0].getBoundingClientRect();
+    const last = buttons.at(-1)!.getBoundingClientRect();
+    const trail = breadcrumb.getBoundingClientRect();
+    return {
+      commandWidth: last.right - first.left,
+      breadcrumbWidth: trail.width,
+      overflow: [
+        document.documentElement.scrollWidth - window.innerWidth,
+        document.documentElement.scrollHeight - window.innerHeight,
+      ],
+    };
+  });
+  expect(wide.commandWidth).toBeLessThan(430);
+  expect(wide.breadcrumbWidth).toBeGreaterThan(1100);
+  expect(wide.overflow).toEqual([0, 0]);
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(toolbar).toBeVisible();
+  expect(await page.locator(".bd-breadcrumbs").evaluate((element) => element.getBoundingClientRect().width))
+    .toBeGreaterThan(730);
+  await expect(page.locator(".react-flow__edge-text")).toHaveCount(0);
+  if (process.env.CAPTURE_FOCUSED_TOOLBAR === "1") {
+    await page.locator(".bd-react-flow").click({ position: { x: 40, y: 40 } });
+    await captureStudioScreenshot(page, "docs/screenshots/focused-toolbar.png");
+  }
 });
 
 test("searches and runs the unified command palette without losing workflow focus", async ({ page }) => {
@@ -1113,7 +1194,7 @@ test("meets automated WCAG rules in the default workbench and open dialog", asyn
     expect(workbench.violations, selector).toEqual([]);
   }
   expect(await textContrastIssues(page, ".bd-studio")).toEqual([]);
-  await toolbarButton(page, "Messages").click({ force: true });
+  await runMenuCommand(page, "View", "Toggle Messages");
   await expect(page.locator(".bd-messages")).toBeVisible();
   const messages = await accessibilityResults(page, ".bd-messages");
   expect(messages.violations, ".bd-messages").toEqual([]);
@@ -1926,16 +2007,16 @@ test("resizes, collapses, maximizes, floats and resets dock panels", async ({ pa
   await page.mouse.up();
   expect((await sources.boundingBox())!.width).toBeGreaterThan(initialSources!.width + 50);
 
-  await toolbarButton(page, "Sources").click({ force: true });
+  await runMenuCommand(page, "View", "Toggle Sources");
   expect((await sources.boundingBox())!.width).toBeLessThan(60);
-  await toolbarButton(page, "Sources").click({ force: true });
+  await runMenuCommand(page, "View", "Toggle Sources");
   expect((await sources.boundingBox())!.width).toBeGreaterThan(250);
 
   const diagramBefore = await page.getByRole("region", { name: "Diagram" }).boundingBox();
-  await toolbarButton(page, "最大化或还原画布").click({ force: true });
+  await runMenuCommand(page, "View", "Maximize Diagram");
   const diagramMaximized = await page.getByRole("region", { name: "Diagram" }).boundingBox();
   expect(diagramMaximized!.width).toBeGreaterThan(diagramBefore!.width + 300);
-  await toolbarButton(page, "最大化或还原画布").click({ force: true });
+  await runMenuCommand(page, "View", "Restore Diagram");
 
   await page.getByRole("button", { name: "Float Properties" }).click({ force: true });
   await expect(
@@ -1957,10 +2038,10 @@ test("optimizes routes without moving blocks and regenerates placement separatel
   const project = flowNode(page, "system::project");
   const before = await transformOf(project);
 
-  await toolbarButton(page, "仅优化布线").evaluate((button: HTMLButtonElement) => button.click());
+  await runMenuCommand(page, "Design", "Optimize Routing");
   expect(await transformOf(project)).toBe(before);
 
-  await toolbarButton(page, "重新生成布局").evaluate((button: HTMLButtonElement) => button.click());
+  await runMenuCommand(page, "Design", "Regenerate Layout");
   await expect.poll(() => transformOf(project), { timeout: 30_000 }).not.toBe(before);
   await waitForLayout(page);
 });
@@ -2532,14 +2613,14 @@ test("authors, connects, nests, undoes, saves, and reloads a local module design
   });
   await expect(page.locator(".bd-interface-underlay")).toHaveCount(2);
   if (process.env.CAPTURE_EDITOR_PROOF === "1") {
-    await toolbarButton(page, "Sources").click({ force: true });
-    await toolbarButton(page, "Properties").click({ force: true });
+    await runMenuCommand(page, "View", "Toggle Sources");
+    await runMenuCommand(page, "View", "Toggle Properties");
     await page.waitForTimeout(400);
     await toolbarButton(page, "适应窗口").click({ force: true });
     await page.waitForTimeout(400);
     await captureStudioScreenshot(page, "docs/screenshots/editor-routing-validation.png");
-    await toolbarButton(page, "Sources").click({ force: true });
-    await toolbarButton(page, "Properties").click({ force: true });
+    await runMenuCommand(page, "View", "Toggle Sources");
+    await runMenuCommand(page, "View", "Toggle Properties");
     await page.waitForTimeout(400);
   }
 
