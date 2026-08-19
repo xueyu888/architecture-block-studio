@@ -76,31 +76,66 @@ function TextField({
   );
 }
 
+function useLinkedIdentifier({
+  open,
+  initialName,
+  initialId,
+  idFromName,
+}: {
+  open: boolean;
+  initialName: string;
+  initialId: string;
+  idFromName: (name: string) => string;
+}) {
+  const [name, setName] = useState(initialName);
+  const [id, setId] = useState(initialId);
+  const [idCustomized, setIdCustomized] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setName(initialName);
+    setId(initialId);
+    setIdCustomized(false);
+  }, [initialId, initialName, open]);
+  return {
+    name,
+    id,
+    changeName: (nextName: string) => {
+      setName(nextName);
+      if (!idCustomized) setId(idFromName(nextName));
+    },
+    changeId: (nextId: string) => {
+      setId(nextId);
+      setIdCustomized(true);
+    },
+  };
+}
+
 export function NewDesignDialog({
   open,
   error,
+  idFromTitle,
   onClose,
   onCreate,
 }: {
   open: boolean;
   error?: string;
+  idFromTitle: (title: string) => string;
   onClose: () => void;
   onCreate: (values: { id: string; title: string }) => void;
 }) {
-  const [title, setTitle] = useState("Untitled Architecture");
-  const [id, setId] = useState("untitled-architecture");
-  useEffect(() => {
-    if (!open) return;
-    setTitle("Untitled Architecture");
-    setId("untitled-architecture");
-  }, [open]);
+  const draft = useLinkedIdentifier({
+    open,
+    initialName: "Untitled Architecture",
+    initialId: "untitled-architecture",
+    idFromName: idFromTitle,
+  });
   return (
     <DialogShell open={open} title="New Design" submitLabel="Create" error={error} onClose={onClose} onSubmit={(event) => {
       event.preventDefault();
-      onCreate({ id: id.trim(), title: title.trim() });
+      onCreate({ id: draft.id.trim(), title: draft.name.trim() });
     }}>
-      <TextField label="Design title" value={title} onChange={setTitle} required autoFocus />
-      <TextField label="Design id" value={id} onChange={setId} required />
+      <TextField label="Design title" value={draft.name} onChange={draft.changeName} required autoFocus />
+      <TextField label="Design id" value={draft.id} onChange={draft.changeId} required />
     </DialogShell>
   );
 }
@@ -110,6 +145,7 @@ export function AddBlockDialog({
   levelTitle,
   defaultId,
   error,
+  idFromTitle,
   onClose,
   onCreate,
 }: {
@@ -117,25 +153,28 @@ export function AddBlockDialog({
   levelTitle: string;
   defaultId: string;
   error?: string;
+  idFromTitle: (title: string) => string;
   onClose: () => void;
   onCreate: (values: { id: string; title: string; owner: string }) => void;
 }) {
-  const [title, setTitle] = useState("New Module");
-  const [id, setId] = useState(defaultId);
+  const draft = useLinkedIdentifier({
+    open,
+    initialName: "New Module",
+    initialId: defaultId,
+    idFromName: idFromTitle,
+  });
   const [owner, setOwner] = useState("");
   useEffect(() => {
     if (!open) return;
-    setTitle("New Module");
-    setId(defaultId);
     setOwner("");
-  }, [defaultId, open]);
+  }, [open]);
   return (
     <DialogShell open={open} title={`Add Module to ${levelTitle}`} submitLabel="Add Module" error={error} onClose={onClose} onSubmit={(event) => {
       event.preventDefault();
-      onCreate({ id: id.trim(), title: title.trim(), owner: owner.trim() });
+      onCreate({ id: draft.id.trim(), title: draft.name.trim(), owner: owner.trim() });
     }}>
-      <TextField label="Module title" value={title} onChange={setTitle} required autoFocus />
-      <TextField label="Module id" value={id} onChange={setId} required />
+      <TextField label="Module title" value={draft.name} onChange={draft.changeName} required autoFocus />
+      <TextField label="Module id" value={draft.id} onChange={draft.changeId} required />
       <TextField label="Owner" value={owner} onChange={setOwner} placeholder="Optional" />
     </DialogShell>
   );
@@ -146,6 +185,7 @@ export function AddPortDialog({
   blockTitle,
   defaultId,
   error,
+  idFromLabel,
   onClose,
   onCreate,
 }: {
@@ -153,6 +193,7 @@ export function AddPortDialog({
   blockTitle: string;
   defaultId: string;
   error?: string;
+  idFromLabel: (label: string) => string;
   onClose: () => void;
   onCreate: (values: {
     id: string;
@@ -163,28 +204,30 @@ export function AddPortDialog({
     required: boolean;
   }) => void;
 }) {
-  const [label, setLabel] = useState("port");
-  const [id, setId] = useState(defaultId);
+  const draft = useLinkedIdentifier({
+    open,
+    initialName: "port",
+    initialId: defaultId,
+    idFromName: idFromLabel,
+  });
   const [direction, setDirection] = useState<PortDirection>("input");
   const [side, setSide] = useState<PortSide>("left");
   const [dataType, setDataType] = useState("");
   const [required, setRequired] = useState(true);
   useEffect(() => {
     if (!open) return;
-    setLabel("port");
-    setId(defaultId);
     setDirection("input");
     setSide("left");
     setDataType("");
     setRequired(true);
-  }, [defaultId, open]);
+  }, [open]);
   return (
     <DialogShell open={open} title={`Add Port to ${blockTitle}`} submitLabel="Add Port" error={error} onClose={onClose} onSubmit={(event) => {
       event.preventDefault();
-      onCreate({ id: id.trim(), label: label.trim(), direction, side, dataType: dataType.trim(), required });
+      onCreate({ id: draft.id.trim(), label: draft.name.trim(), direction, side, dataType: dataType.trim(), required });
     }}>
-      <TextField label="Port label" value={label} onChange={setLabel} required autoFocus />
-      <TextField label="Port id" value={id} onChange={setId} required />
+      <TextField label="Port label" value={draft.name} onChange={draft.changeName} required autoFocus />
+      <TextField label="Port id" value={draft.id} onChange={draft.changeId} required />
       <div className="bd-form-row">
         <label className="bd-form-field"><span>Direction</span><select value={direction} onChange={(event) => setDirection(event.target.value as PortDirection)}>
           <option value="input">Input</option><option value="output">Output</option><option value="bidirectional">Bidirectional</option>
@@ -204,6 +247,7 @@ export function AddChildDesignDialog({
   blockTitle,
   defaultId,
   error,
+  idFromTitle,
   onClose,
   onCreate,
 }: {
@@ -211,23 +255,23 @@ export function AddChildDesignDialog({
   blockTitle: string;
   defaultId: string;
   error?: string;
+  idFromTitle: (title: string) => string;
   onClose: () => void;
   onCreate: (values: { id: string; title: string }) => void;
 }) {
-  const [title, setTitle] = useState(`${blockTitle} Internals`);
-  const [id, setId] = useState(defaultId);
-  useEffect(() => {
-    if (!open) return;
-    setTitle(`${blockTitle} Internals`);
-    setId(defaultId);
-  }, [blockTitle, defaultId, open]);
+  const draft = useLinkedIdentifier({
+    open,
+    initialName: `${blockTitle} Internals`,
+    initialId: defaultId,
+    idFromName: idFromTitle,
+  });
   return (
     <DialogShell open={open} title={`Create Child Design for ${blockTitle}`} submitLabel="Create Child Design" error={error} onClose={onClose} onSubmit={(event) => {
       event.preventDefault();
-      onCreate({ id: id.trim(), title: title.trim() });
+      onCreate({ id: draft.id.trim(), title: draft.name.trim() });
     }}>
-      <TextField label="Child design title" value={title} onChange={setTitle} required autoFocus />
-      <TextField label="Child level id" value={id} onChange={setId} required />
+      <TextField label="Child design title" value={draft.name} onChange={draft.changeName} required autoFocus />
+      <TextField label="Child level id" value={draft.id} onChange={draft.changeId} required />
     </DialogShell>
   );
 }

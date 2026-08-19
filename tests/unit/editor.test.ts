@@ -7,9 +7,25 @@ import {
   createInterfaceDefinition,
   createPort,
   DesignEditError,
+  suggestId,
+  uniqueId,
 } from "../../src/editor/designEditor";
 import { serializeDesign } from "../../src/io/saveDesign";
 import { connectedDesign, hierarchicalDesign } from "./designFixture";
+
+describe("author identifier suggestions", () => {
+  test("normalizes an authored name without inventing unsupported characters", () => {
+    expect(suggestId("  Payment Worker / API  ", "module")).toBe("payment-worker-api");
+    expect(suggestId("Review.Session_Command", "module")).toBe("review.session_command");
+    expect(suggestId("架构模块", "module")).toBe("module");
+  });
+
+  test("chooses the first available deterministic suffix", () => {
+    expect(uniqueId("payment-worker", ["payment-worker", "payment-worker-2", "other"]))
+      .toBe("payment-worker-3");
+    expect(uniqueId("payment-worker", ["other"])).toBe("payment-worker");
+  });
+});
 
 describe("public design operations", () => {
   test("updates document and level facts without mutating the source", () => {

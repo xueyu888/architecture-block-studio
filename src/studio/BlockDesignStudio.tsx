@@ -725,7 +725,7 @@ export function BlockDesignStudio({
           <button type="button" className="bd-command-button" onClick={() => setLoadDialogOpen(true)}><FolderOpen size={15} /> Open another design</button>
         </div>}
         <LoadDesignDialog open={loadDialogOpen} busy={busy} error={loadError} onClose={() => { setLoadDialogOpen(false); setLoadError(undefined); }} onLoadFile={(file) => void openFile(file)} onLoadUrl={(url) => void openUrl(url)} />
-        <NewDesignDialog open={newDialogOpen} error={commandError} onClose={() => { setNewDialogOpen(false); setCommandError(undefined); }} onCreate={({ id, title }) => {
+        <NewDesignDialog open={newDialogOpen} error={commandError} idFromTitle={(title) => suggestId(title, "design")} onClose={() => { setNewDialogOpen(false); setCommandError(undefined); }} onCreate={({ id, title }) => {
           try {
             installDocument(createBlankDesign(id, title), "New unsaved design", false);
             setNewDialogOpen(false);
@@ -817,7 +817,7 @@ export function BlockDesignStudio({
       {commandError && <div className="bd-command-error" role="alert"><TriangleAlert size={15} /><span>{commandError}</span><button type="button" onClick={() => setCommandError(undefined)}>Dismiss</button></div>}
       {dragActive && <div className="bd-drop-overlay"><FileJsonDrop /></div>}
       <LoadDesignDialog open={loadDialogOpen} busy={busy} error={loadError} onClose={() => { setLoadDialogOpen(false); setLoadError(undefined); }} onLoadFile={(file) => void openFile(file)} onLoadUrl={(url) => void openUrl(url)} />
-      <NewDesignDialog open={newDialogOpen} error={commandError} onClose={() => { setNewDialogOpen(false); setCommandError(undefined); }} onCreate={({ id, title }) => {
+      <NewDesignDialog open={newDialogOpen} error={commandError} idFromTitle={(title) => suggestId(title, "design")} onClose={() => { setNewDialogOpen(false); setCommandError(undefined); }} onCreate={({ id, title }) => {
         try {
           installDocument(createBlankDesign(id, title), "New unsaved design", false);
           setNewDialogOpen(false);
@@ -837,6 +837,9 @@ export function BlockDesignStudio({
         open={Boolean(addBlockLevel)}
         levelTitle={addBlockLevel?.title ?? "design"}
         defaultId={addBlockLevel ? uniqueId("module", addBlockLevel.nodes.map((node) => node.id)) : "module"}
+        idFromTitle={(title) => addBlockLevel
+          ? uniqueId(suggestId(title, "module"), addBlockLevel.nodes.map((node) => node.id))
+          : suggestId(title, "module")}
         error={commandError}
         onClose={() => { setAddBlockLevelId(undefined); setCommandError(undefined); }}
         onCreate={(values) => {
@@ -853,6 +856,9 @@ export function BlockDesignStudio({
         open={Boolean(addPortTarget && addPortNode)}
         blockTitle={addPortNode?.title ?? "module"}
         defaultId={addPortNode ? uniqueId("port", addPortNode.ports.map((port) => port.id)) : "port"}
+        idFromLabel={(label) => addPortNode
+          ? uniqueId(suggestId(label, "port"), addPortNode.ports.map((port) => port.id))
+          : suggestId(label, "port")}
         error={commandError}
         onClose={() => { setAddPortTarget(undefined); setCommandError(undefined); }}
         onCreate={(values) => {
@@ -878,6 +884,10 @@ export function BlockDesignStudio({
         open={Boolean(childDesignTarget && childDesignNode)}
         blockTitle={childDesignNode?.title ?? "module"}
         defaultId={childDesignNode ? uniqueId(`${childDesignNode.id}-internals`, document.levels.map((level) => level.id)) : "module-internals"}
+        idFromTitle={(title) => uniqueId(
+          suggestId(title, childDesignNode ? `${childDesignNode.id}-internals` : "module-internals"),
+          document.levels.map((level) => level.id),
+        )}
         error={commandError}
         onClose={() => { setChildDesignTarget(undefined); setCommandError(undefined); }}
         onCreate={({ id, title }) => {

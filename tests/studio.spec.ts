@@ -992,6 +992,78 @@ test("guides a new user from an empty design to the first module", async ({ page
   await expect(emptyState).toHaveCount(0);
 });
 
+test("keeps suggested identifiers linked until the user customizes them", async ({ page }) => {
+  await page.locator('.bd-toolbar button[title="新建设计"]').click({ force: true });
+  const newDesign = page.getByRole("dialog", { name: "New Design" });
+  await newDesign.getByLabel("Design title").fill("Checkout Platform");
+  await expect(newDesign.getByLabel("Design id")).toHaveValue("checkout-platform");
+  await newDesign.getByLabel("Design id").fill("checkout-system");
+  await newDesign.getByLabel("Design title").fill("Checkout Platform v2");
+  await expect(newDesign.getByLabel("Design id")).toHaveValue("checkout-system");
+  await newDesign.getByRole("button", { name: "Create", exact: true }).click({ force: true });
+  await waitForEditorIdle(page);
+
+  await page.locator('.bd-toolbar button[title="添加模块"]').click({ force: true });
+  const firstModule = page.getByRole("dialog", { name: /Add Module/ });
+  await firstModule.getByLabel("Module title").fill("Payment Worker");
+  await expect(firstModule.getByLabel("Module id")).toHaveValue("payment-worker");
+  await firstModule.getByRole("button", { name: "Add Module", exact: true }).click({ force: true });
+  await waitForEditorIdle(page);
+
+  await page.locator('.bd-toolbar button[title="添加模块"]').click({ force: true });
+  const secondModule = page.getByRole("dialog", { name: /Add Module/ });
+  await secondModule.getByLabel("Module title").fill("Payment Worker");
+  await expect(secondModule.getByLabel("Module id")).toHaveValue("payment-worker-2");
+  if (process.env.CAPTURE_LINKED_IDS === "1") {
+    await captureStudioScreenshot(page, "docs/screenshots/linked-id-suggestion.png");
+  }
+  await secondModule.getByRole("button", { name: "Add Module", exact: true }).click({ force: true });
+  await waitForEditorIdle(page);
+
+  await page.locator('.bd-toolbar button[title="添加端口"]').click({ force: true });
+  const firstPort = page.getByRole("dialog", { name: /Add Port/ });
+  await firstPort.getByLabel("Port label").fill("Session Events");
+  await expect(firstPort.getByLabel("Port id")).toHaveValue("session-events");
+  await firstPort.getByLabel("Required connection").uncheck({ force: true });
+  await firstPort.getByRole("button", { name: "Add Port", exact: true }).click({ force: true });
+  await waitForEditorIdle(page);
+
+  await page.locator('.bd-toolbar button[title="添加端口"]').click({ force: true });
+  const secondPort = page.getByRole("dialog", { name: /Add Port/ });
+  await secondPort.getByLabel("Port label").fill("Session Events");
+  await expect(secondPort.getByLabel("Port id")).toHaveValue("session-events-2");
+  await secondPort.getByLabel("Required connection").uncheck({ force: true });
+  await secondPort.getByRole("button", { name: "Add Port", exact: true }).click({ force: true });
+  await waitForEditorIdle(page);
+
+  await flowNode(page, "system::payment-worker").click({ force: true });
+  await page.locator('.bd-toolbar button[title="创建子设计"]').click({ force: true });
+  const childDesign = page.getByRole("dialog", { name: /Create Child Design/ });
+  await childDesign.getByLabel("Child design title").fill("Payment Worker Runtime");
+  await expect(childDesign.getByLabel("Child level id")).toHaveValue("payment-worker-runtime");
+  await childDesign.getByRole("button", { name: "Create Child Design", exact: true }).click({ force: true });
+  await waitForEditorIdle(page);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await downloadPromise).path();
+  expect(savedPath).not.toBeNull();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  const systemLevel = saved.levels.find((level: { id: string }) => level.id === "system");
+  const secondWorker = systemLevel.nodes.find((node: { id: string }) => node.id === "payment-worker-2");
+  expect(saved.id).toBe("checkout-system");
+  expect(systemLevel.nodes.map((node: { id: string }) => node.id)).toEqual([
+    "payment-worker",
+    "payment-worker-2",
+  ]);
+  expect(secondWorker.ports.map((port: { id: string }) => port.id)).toEqual([
+    "session-events",
+    "session-events-2",
+  ]);
+  expect(saved.levels.some((level: { id: string }) => level.id === "payment-worker-runtime")).toBe(true);
+  await expect(page.locator(".bd-command-error")).toHaveCount(0);
+});
+
 test("protects unapplied Inspector changes across review navigation and save", async ({ page }) => {
   const inspector = page.getByRole("region", { name: "Properties" });
   const agentUi = page.locator(".bd-tree-select").filter({ hasText: "Agent UI" });
