@@ -61,6 +61,10 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 
 ![键盘接口端点选择](docs/screenshots/keyboard-interface-dialog.png)
 
+菜单获得焦点后，可以直接输入 **F / E / D / V** 定位 File、Edit、Design 或 View；菜单展开后，输入命令首字母会跳到下一个可用项，重复输入可在同首字母命令间循环。例如在 Design 中用 **A** 依次访问 Add Module、Add Port、Add Interface，用 **C** 直达 Create Child Design。禁用命令会被跳过，不会形成无效操作。
+
+![键入定位高频创建命令](docs/screenshots/menu-typeahead.png)
+
 ## 5 分钟开始使用
 
 需要 Node.js 22+ 与 pnpm 10.7+。

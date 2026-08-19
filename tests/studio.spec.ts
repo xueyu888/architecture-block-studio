@@ -968,6 +968,63 @@ test("navigates application menus with a desktop keyboard model", async ({ page 
   await expect(newDesignDialog.getByLabel("Design title")).toBeFocused();
 });
 
+test("reaches high-frequency design commands by typing menu initials", async ({ page }) => {
+  const fileTrigger = page.getByRole("button", { name: "File", exact: true });
+  const designTrigger = page.getByRole("button", { name: "Design", exact: true });
+
+  await fileTrigger.focus();
+  await page.keyboard.press("d");
+  await expect(designTrigger).toBeFocused();
+  await page.keyboard.press("Enter");
+
+  const designMenu = page.getByRole("menu", { name: "Design" });
+  const addModule = designMenu.getByRole("menuitem", { name: /^Add Module/ });
+  const addPort = designMenu.getByRole("menuitem", { name: /^Add Port/ });
+  const addInterface = designMenu.getByRole("menuitem", { name: /^Add Interface/ });
+  const addChild = designMenu.getByRole("menuitem", { name: /^Create Child Design/ });
+  await expect(addModule).toBeFocused();
+
+  await page.keyboard.press("a");
+  await expect(addInterface).toBeFocused();
+  await page.keyboard.press("a");
+  await expect(addModule).toBeFocused();
+  await page.keyboard.press("c");
+  await expect(addModule).toBeFocused();
+  await page.keyboard.press("Enter");
+
+  const moduleDialog = page.getByRole("dialog", { name: /Add Module/ });
+  await expect(moduleDialog.getByLabel("Module title")).toBeFocused();
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.type("Keyboard Module");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("Architecture Team");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+  await waitForEditorIdle(page);
+  await expect(designTrigger).toBeFocused();
+
+  await page.keyboard.press("Enter");
+  await expect(addModule).toBeFocused();
+  await page.keyboard.press("a");
+  await expect(addPort).toBeFocused();
+  await page.keyboard.press("a");
+  await expect(addInterface).toBeFocused();
+  await page.keyboard.press("a");
+  await expect(addModule).toBeFocused();
+  await page.keyboard.press("c");
+  await expect(addChild).toBeFocused();
+  if (process.env.CAPTURE_MENU_TYPEAHEAD === "1") {
+    await captureStudioScreenshot(page, "docs/screenshots/menu-typeahead.png");
+  }
+  await page.keyboard.press("Enter");
+
+  const childDialog = page.getByRole("dialog", { name: /Create Child Design/ });
+  await expect(childDialog).toBeVisible();
+  await expect(childDialog.getByLabel("Child design title")).toBeFocused();
+});
+
 test("guides a new user from an empty design to the first module", async ({ page }) => {
   await page.locator('.bd-toolbar button[title="新建设计"]').click({ force: true });
   const newDialog = page.getByRole("dialog", { name: "New Design" });

@@ -178,6 +178,8 @@ React Flow 的库内键盘位移被阻止后，其内建 aria-live 不再拥有�
 
 面板焦点同样是可丢弃工作区意图：Studio 在用户显式打开 Messages 或运行 Validate 时递增一次 `messageFocusRequest`，Messages 只负责把该请求落实到自己的筛选输入。菜单、工具栏和校验命令不直接查询面板 DOM，焦点请求不改变 `SelectionRef`、诊断结果或设计文档。
 
+`MenuBar` 只拥有桌面菜单的导航语义，不拥有命令行为。顶层按钮和已展开菜单都支持无修饰 printable character 定位；搜索从当前焦点之后开始、环绕一次，只匹配可用命令的可见名称。重复字符循环同首字母项，无匹配或只有禁用匹配时保持原焦点。最终执行仍调用 `StudioCommands` 的 `execute`，因此菜单键入定位不会复制 enabled 规则、创建流程或文档写入。
+
 默认 Hierarchy 先由 `projectHierarchyRows` 按文档顺序和当前展开集合生成完整的 document / level / node 行投影；搜索和接口浏览器同样始终从完整文档派生有序结果与总数。三类列表只按 40 行批次把结果渐进挂入 DOM，接近滚动底部时继续加载。批次窗口是可丢弃展示状态，不截断结果、不改变排序、不重置选择，也不生成第二份模块或接口事实；展开只改变完整行投影，不能把已经滚动加载的窗口弹回顶部。
 
 模块关联摘要由 `listModuleInterfaces(document, levelId, nodeId)` 按 Level 中的声明连接顺序派生，只表达直接入站、出站或自环连接。它不计算传递依赖、不复制接口合同，也不写回文档；语义引用暂缺时用稳定 id 降级显示，让 DRC 与审查界面仍可共同定位问题。

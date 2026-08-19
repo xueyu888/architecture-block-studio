@@ -6,6 +6,18 @@ import type { StudioCommand, StudioCommandId, StudioCommands } from "../studio/c
 type MenuId = "file" | "edit" | "design" | "view";
 type MenuFocusTarget = "first" | "last";
 
+function printableCharacter(event: {
+  key: string;
+  altKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+}): string | undefined {
+  if (event.altKey || event.ctrlKey || event.metaKey || event.key.length !== 1 || event.key.trim() === "") {
+    return undefined;
+  }
+  return event.key.toLocaleLowerCase();
+}
+
 const MENU_DEFINITIONS: Array<{
   id: MenuId;
   label: string;
@@ -28,6 +40,7 @@ function Menu({
   onClose,
   onNavigateMenu,
   onNavigateTrigger,
+  onNavigateTriggerByCharacter,
 }: {
   id: MenuId;
   label: string;
@@ -39,6 +52,7 @@ function Menu({
   onClose: (id: MenuId, restoreFocus: boolean) => void;
   onNavigateMenu: (id: MenuId, direction: -1 | 1) => void;
   onNavigateTrigger: (id: MenuId, direction: -1 | 1) => void;
+  onNavigateTriggerByCharacter: (id: MenuId, character: string) => void;
 }) {
   const open = activeMenu === id;
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -60,6 +74,18 @@ function Menu({
     const currentIndex = items.indexOf(current);
     if (currentIndex < 0 || items.length === 0) return;
     items[(currentIndex + direction + items.length) % items.length].focus();
+  };
+
+  const moveItemFocusByCharacter = (current: HTMLButtonElement, character: string) => {
+    const items = enabledItems();
+    const currentIndex = items.indexOf(current);
+    for (let distance = 1; distance <= items.length; distance += 1) {
+      const item = items[(currentIndex + distance + items.length) % items.length];
+      if (item.textContent?.trim().toLocaleLowerCase().startsWith(character)) {
+        item.focus();
+        return;
+      }
+    }
   };
 
   return (
@@ -86,6 +112,12 @@ function Menu({
           } else if (event.key === "Escape" && open) {
             event.preventDefault();
             onClose(id, true);
+          } else {
+            const character = printableCharacter(event);
+            if (character) {
+              event.preventDefault();
+              onNavigateTriggerByCharacter(id, character);
+            }
           }
         }}
       >
@@ -125,6 +157,12 @@ function Menu({
                   onClose(id, true);
                 } else if (event.key === "Tab") {
                   onClose(id, false);
+                } else {
+                  const character = printableCharacter(event);
+                  if (character) {
+                    event.preventDefault();
+                    moveItemFocusByCharacter(event.currentTarget, character);
+                  }
                 }
               }}
             >
@@ -200,6 +238,18 @@ export function MenuBar({
       setActiveMenu(undefined);
       setFocusRequest(undefined);
       triggerRefs.current.get(next)?.focus();
+    },
+    onNavigateTriggerByCharacter: (id: MenuId, character: string) => {
+      const start = menuIndex(id);
+      for (let distance = 1; distance <= MENU_DEFINITIONS.length; distance += 1) {
+        const candidate = MENU_DEFINITIONS[(start + distance) % MENU_DEFINITIONS.length];
+        if (candidate.label.toLocaleLowerCase().startsWith(character)) {
+          setActiveMenu(undefined);
+          setFocusRequest(undefined);
+          triggerRefs.current.get(candidate.id)?.focus();
+          return;
+        }
+      }
     },
   };
 
