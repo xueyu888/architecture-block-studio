@@ -1,2 +1,2 @@
 export * from "./BlockDesignStudio";
-export * from "./types";
+export * from "./selection";

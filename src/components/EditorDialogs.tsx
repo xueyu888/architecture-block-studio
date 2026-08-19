@@ -1,5 +1,14 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import type { InterfaceKind, PortDirection, PortSide } from "../model";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { firstConnectablePair, listLevelPortEndpoints, normalizeConnectionEndpoints } from "../model";
+import type {
+  ConnectablePortEndpoint,
+  DesignLevel,
+  InterfaceKind,
+  NormalizedConnectionEndpoints,
+  PortDirection,
+  PortSide,
+} from "../model";
+import { useDialogFocus } from "./useDialogFocus";
 
 function DialogShell({
   open,
@@ -18,12 +27,14 @@ function DialogShell({
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const dialogRef = useRef<HTMLFormElement>(null);
+  useDialogFocus({ open, dialogRef, onClose });
   if (!open) return null;
   return (
     <div className="bd-modal-backdrop" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
-      <form className="bd-modal bd-editor-dialog" role="dialog" aria-modal="true" aria-label={title} onSubmit={onSubmit}>
+      <form ref={dialogRef} tabIndex={-1} className="bd-modal bd-editor-dialog" role="dialog" aria-modal="true" aria-label={title} onSubmit={onSubmit}>
         <header><h2>{title}</h2></header>
         <div className="bd-editor-dialog-fields">{children}</div>
         {error && <p className="bd-editor-error" role="alert">{error}</p>}
@@ -58,7 +69,7 @@ function TextField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         required={required}
-        autoFocus={autoFocus}
+        data-autofocus={autoFocus || undefined}
         placeholder={placeholder}
       />
     </label>
@@ -227,6 +238,86 @@ export interface PendingConnection {
   target: { nodeId: string; portId: string; label: string };
   defaultConnectionId: string;
   defaultInterfaceId: string;
+}
+
+function endpointKey(endpoint: ConnectablePortEndpoint): string {
+  return JSON.stringify([endpoint.nodeId, endpoint.portId]);
+}
+
+function endpointLabel(endpoint: ConnectablePortEndpoint): string {
+  return `${endpoint.nodeTitle}.${endpoint.label} · ${endpoint.direction}`;
+}
+
+export function SelectConnectionEndpointsDialog({
+  level,
+  error,
+  onClose,
+  onContinue,
+}: {
+  level?: DesignLevel;
+  error?: string;
+  onClose: () => void;
+  onContinue: (connection: NormalizedConnectionEndpoints) => void;
+}) {
+  const endpoints = useMemo(() => level ? listLevelPortEndpoints(level) : [], [level]);
+  const sourceOptions = useMemo(
+    () => endpoints.filter((endpoint) => endpoint.direction !== "input"),
+    [endpoints],
+  );
+  const targetOptions = useMemo(
+    () => endpoints.filter((endpoint) => endpoint.direction !== "output"),
+    [endpoints],
+  );
+  const [sourceKey, setSourceKey] = useState("");
+  const [targetKey, setTargetKey] = useState("");
+
+  useEffect(() => {
+    if (!level) return;
+    const initial = firstConnectablePair(level);
+    setSourceKey(initial ? endpointKey(initial.source) : "");
+    setTargetKey(initial ? endpointKey(initial.target) : "");
+  }, [level]);
+
+  const source = sourceOptions.find((endpoint) => endpointKey(endpoint) === sourceKey);
+  const availableTargets = targetOptions.filter((endpoint) => (
+    endpoint.nodeId !== source?.nodeId || endpoint.portId !== source?.portId
+  ));
+  const target = availableTargets.find((endpoint) => endpointKey(endpoint) === targetKey);
+
+  useEffect(() => {
+    if (!level || !source || target || availableTargets.length === 0) return;
+    const preferred = availableTargets.find((endpoint) => endpoint.nodeId !== source?.nodeId) ?? availableTargets[0];
+    setTargetKey(endpointKey(preferred));
+  }, [availableTargets, level, source, target]);
+
+  return (
+    <DialogShell
+      open={Boolean(level)}
+      title="Connect Ports"
+      submitLabel="Continue"
+      error={error}
+      onClose={onClose}
+      onSubmit={(event) => {
+        event.preventDefault();
+        const normalized = normalizeConnectionEndpoints(source, target);
+        if (normalized) onContinue(normalized);
+      }}
+    >
+      <p className="bd-dialog-hint">Choose two ports in {level?.title}. The next step defines their shared interface contract.</p>
+      <label className="bd-form-field">
+        <span>Source port</span>
+        <select value={sourceKey} data-autofocus="true" onChange={(event) => setSourceKey(event.target.value)} required>
+          {sourceOptions.map((endpoint) => <option key={endpointKey(endpoint)} value={endpointKey(endpoint)}>{endpointLabel(endpoint)}</option>)}
+        </select>
+      </label>
+      <label className="bd-form-field">
+        <span>Target port</span>
+        <select value={target ? targetKey : ""} onChange={(event) => setTargetKey(event.target.value)} required>
+          {availableTargets.map((endpoint) => <option key={endpointKey(endpoint)} value={endpointKey(endpoint)}>{endpointLabel(endpoint)}</option>)}
+        </select>
+      </label>
+    </DialogShell>
+  );
 }
 
 export function CreateConnectionDialog({

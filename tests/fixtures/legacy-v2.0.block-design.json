@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "2.0",
+  "id": "legacy-v2",
+  "title": "Legacy v2 Design",
+  "summary": "Golden fixture for the explicit 2.0 to 2.1 migration.",
+  "entryLevelId": "system",
+  "interfaceDefinitions": {
+    "legacy.output": {
+      "kind": "dto",
+      "title": "Legacy Output",
+      "owner": "Legacy Source"
+    }
+  },
+  "levels": [
+    {
+      "id": "system",
+      "title": "System",
+      "description": "",
+      "nodes": [
+        {
+          "id": "legacy-source",
+          "title": "Legacy Source",
+          "ports": [
+            {
+              "id": "out",
+              "label": "Output",
+              "side": "right",
+              "direction": "output"
+            }
+          ],
+          "inspector": {}
+        },
+        {
+          "id": "legacy-target",
+          "title": "Legacy Target",
+          "ports": [
+            {
+              "id": "in",
+              "label": "Input",
+              "side": "left",
+              "direction": "input"
+            }
+          ],
+          "inspector": {}
+        }
+      ],
+      "connections": [
+        {
+          "id": "legacy-source-target",
+          "interfaceId": "legacy.output",
+          "source": { "nodeId": "legacy-source", "portId": "out" },
+          "target": { "nodeId": "legacy-target", "portId": "in" }
+        }
+      ],
+      "layout": {
+        "direction": "RIGHT",
+        "spacing": 64,
+        "layerSpacing": 110
+      }
+    }
+  ]
+}

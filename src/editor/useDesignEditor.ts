@@ -1,26 +1,16 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { BlockDesignDocument } from "../model";
-import { applyDesignOperation, type DesignOperation } from "./designEditor";
-
-interface DesignHistoryState {
-  document: BlockDesignDocument;
-  past: BlockDesignDocument[];
-  future: BlockDesignDocument[];
-  savedSnapshot?: string;
-}
-
-function snapshot(document: BlockDesignDocument): string {
-  return JSON.stringify(document);
-}
-
-function createState(document: BlockDesignDocument, saved: boolean): DesignHistoryState {
-  return {
-    document,
-    past: [],
-    future: [],
-    savedSnapshot: saved ? snapshot(document) : undefined,
-  };
-}
+import type { DesignOperation } from "./designEditor";
+import {
+  applyHistoryOperation,
+  createDesignHistory,
+  isDesignHistoryDirty,
+  markDesignHistorySaved,
+  redoDesignHistory,
+  replaceDesignHistory,
+  undoDesignHistory,
+  type DesignHistoryState,
+} from "./designHistory";
 
 export interface DesignEditor {
   document: BlockDesignDocument;
@@ -35,7 +25,7 @@ export interface DesignEditor {
 }
 
 export function useDesignEditor(initialDocument: BlockDesignDocument): DesignEditor {
-  const [state, setState] = useState(() => createState(initialDocument, true));
+  const [state, setState] = useState(() => createDesignHistory(initialDocument, true));
   const stateRef = useRef(state);
 
   const commit = useCallback((next: DesignHistoryState) => {
@@ -45,54 +35,41 @@ export function useDesignEditor(initialDocument: BlockDesignDocument): DesignEdi
 
   const apply = useCallback((operation: DesignOperation) => {
     const current = stateRef.current;
-    const document = applyDesignOperation(current.document, operation);
-    commit({
-      ...current,
-      document,
-      past: [...current.past, current.document],
-      future: [],
-    });
-    return document;
+    const next = applyHistoryOperation(current, operation);
+    commit(next);
+    return next.document;
   }, [commit]);
 
   const replace = useCallback((document: BlockDesignDocument, saved: boolean) => {
-    commit(createState(document, saved));
+    commit(replaceDesignHistory(document, saved));
   }, [commit]);
 
   const undo = useCallback(() => {
-    const current = stateRef.current;
-    const document = current.past.at(-1);
-    if (!document) return undefined;
-    commit({
-      ...current,
-      document,
-      past: current.past.slice(0, -1),
-      future: [current.document, ...current.future],
-    });
-    return document;
+    const next = undoDesignHistory(stateRef.current);
+    if (!next) return undefined;
+    commit(next);
+    return next.document;
   }, [commit]);
 
   const redo = useCallback(() => {
-    const current = stateRef.current;
-    const document = current.future[0];
-    if (!document) return undefined;
-    commit({
-      ...current,
-      document,
-      past: [...current.past, current.document],
-      future: current.future.slice(1),
-    });
-    return document;
+    const next = redoDesignHistory(stateRef.current);
+    if (!next) return undefined;
+    commit(next);
+    return next.document;
   }, [commit]);
 
   const markSaved = useCallback(() => {
-    const current = stateRef.current;
-    commit({ ...current, savedSnapshot: snapshot(current.document) });
+    commit(markDesignHistorySaved(stateRef.current));
   }, [commit]);
+
+  const dirty = useMemo(
+    () => isDesignHistoryDirty(state),
+    [state.document, state.savedSnapshot],
+  );
 
   return {
     document: state.document,
-    dirty: state.savedSnapshot !== snapshot(state.document),
+    dirty,
     canUndo: state.past.length > 0,
     canRedo: state.future.length > 0,
     apply,

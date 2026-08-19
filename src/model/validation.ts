@@ -13,6 +13,7 @@ export interface DesignIssue {
   severity: DesignIssueSeverity;
   code: string;
   message: string;
+  remediation: string;
   levelId?: string;
   nodeId?: string;
   portId?: string;
@@ -30,13 +31,30 @@ function issue(
   severity: DesignIssueSeverity,
   code: string,
   message: string,
-  target: Omit<DesignIssue, "id" | "severity" | "code" | "message"> = {},
+  remediation: string,
+  target: Omit<DesignIssue, "id" | "severity" | "code" | "message" | "remediation"> = {},
+  discriminator?: string,
 ): void {
+  const location = [
+    target.levelId && `level=${target.levelId}`,
+    target.nodeId && `node=${target.nodeId}`,
+    target.portId && `port=${target.portId}`,
+    target.connectionId && `connection=${target.connectionId}`,
+    discriminator && `case=${discriminator}`,
+  ].filter(Boolean).join("|") || "document";
+  const baseId = `${code}:${location}`;
+  let id = baseId;
+  let occurrence = 2;
+  while (issues.some((existing) => existing.id === id)) {
+    id = `${baseId}|occurrence=${occurrence}`;
+    occurrence += 1;
+  }
   issues.push({
-    id: `${code}:${issues.length + 1}`,
+    id,
     severity,
     code,
     message,
+    remediation,
     ...target,
   });
 }
@@ -56,7 +74,7 @@ function buildLevelIndex(level: DesignLevel, issues: DesignIssue[]): LevelIndex 
   const ports = new Map<string, Map<string, BlockPort>>();
 
   duplicates(level.nodes.map((node) => node.id)).forEach((nodeId) => {
-    issue(issues, "error", "BD-NODE-DUPLICATE", `Level ${level.id} contains duplicate block id ${nodeId}.`, {
+    issue(issues, "error", "BD-NODE-DUPLICATE", `Level ${level.id} contains duplicate block id ${nodeId}.`, "Rename or remove duplicate blocks so every block ID is unique within the level.", {
       levelId: level.id,
       nodeId,
     });
@@ -66,7 +84,7 @@ function buildLevelIndex(level: DesignLevel, issues: DesignIssue[]): LevelIndex 
     if (!nodes.has(node.id)) nodes.set(node.id, node);
     const nodePorts = new Map<string, BlockPort>();
     duplicates(node.ports.map((port) => port.id)).forEach((portId) => {
-      issue(issues, "error", "BD-PORT-DUPLICATE", `Block ${node.id} contains duplicate port id ${portId}.`, {
+      issue(issues, "error", "BD-PORT-DUPLICATE", `Block ${node.id} contains duplicate port id ${portId}.`, "Rename or remove duplicate ports so every port ID is unique within the block.", {
         levelId: level.id,
         nodeId: node.id,
         portId,
@@ -95,7 +113,9 @@ function resolveEndpoint(
       "error",
       "BD-CONNECTION-NODE-MISSING",
       `Connection ${connection.id} references missing ${endpoint} block ${ref.nodeId}.`,
+      "Point this endpoint to an existing block in the same level, or remove the stale connection.",
       { levelId: index.level.id, nodeId: ref.nodeId, connectionId: connection.id },
+      endpoint,
     );
     return undefined;
   }
@@ -107,12 +127,14 @@ function resolveEndpoint(
       "error",
       "BD-CONNECTION-PORT-MISSING",
       `Connection ${connection.id} references missing ${endpoint} port ${ref.nodeId}.${ref.portId}.`,
+      "Point this endpoint to an existing port on the referenced block, or remove the stale connection.",
       {
         levelId: index.level.id,
         nodeId: ref.nodeId,
         portId: ref.portId,
         connectionId: connection.id,
       },
+      endpoint,
     );
   }
   return port;
@@ -130,6 +152,7 @@ function validateConnection(
       "error",
       "BD-INTERFACE-MISSING",
       `Connection ${connection.id} references missing interface definition ${connection.interfaceId}.`,
+      "Create the referenced interface definition, or update the connection to an existing interface ID.",
       { levelId: index.level.id, connectionId: connection.id },
     );
   }
@@ -143,6 +166,7 @@ function validateConnection(
       "error",
       "BD-SOURCE-DIRECTION",
       `Input-only port ${connection.source.nodeId}.${sourcePort.id} cannot be a connection source.`,
+      "Use an output or bidirectional source port, or reverse the connection endpoints.",
       {
         levelId: index.level.id,
         nodeId: connection.source.nodeId,
@@ -158,6 +182,7 @@ function validateConnection(
       "error",
       "BD-TARGET-DIRECTION",
       `Output-only port ${connection.target.nodeId}.${targetPort.id} cannot be a connection target.`,
+      "Use an input or bidirectional target port, or reverse the connection endpoints.",
       {
         levelId: index.level.id,
         nodeId: connection.target.nodeId,
@@ -198,6 +223,7 @@ function validateHierarchy(
       "error",
       "BD-CHILD-LEVEL-MISSING",
       `Block ${node.id} references missing child level ${hierarchy.childLevelId}.`,
+      "Create the referenced child level, or update or remove the stale hierarchy reference.",
       { levelId: parentIndex.level.id, nodeId: node.id },
     );
     return;
@@ -209,6 +235,7 @@ function validateHierarchy(
       "error",
       "BD-PARENT-LEVEL-MISMATCH",
       `Child level ${childIndex.level.id} must declare parent ${parentIndex.level.id}.`,
+      `Set the child level parentLevelId to ${parentIndex.level.id}, or attach it to the declared parent.`,
       { levelId: childIndex.level.id, nodeId: node.id },
     );
   }
@@ -219,6 +246,7 @@ function validateHierarchy(
       "error",
       "BD-HIERARCHY-BINDING-DUPLICATE",
       `Hierarchy block ${node.id} binds parent port ${portId} more than once.`,
+      "Keep exactly one hierarchy binding for each parent port.",
       { levelId: parentIndex.level.id, nodeId: node.id, portId },
     );
   });
@@ -233,6 +261,7 @@ function validateHierarchy(
         "error",
         "BD-HIERARCHY-BINDING-MISSING",
         `Hierarchy block ${node.id} does not bind parent port ${parentPort.id}.`,
+        "Bind this parent port to one child endpoint, or remove the parent port if it is not part of the boundary.",
         { levelId: parentIndex.level.id, nodeId: node.id, portId: parentPort.id },
       );
     }
@@ -246,6 +275,7 @@ function validateHierarchy(
         "error",
         "BD-HIERARCHY-PARENT-PORT-MISSING",
         `Hierarchy block ${node.id} binds missing parent port ${binding.parentPortId}.`,
+        "Point the binding to an existing parent port, or remove the stale binding.",
         { levelId: parentIndex.level.id, nodeId: node.id, portId: binding.parentPortId },
       );
       return;
@@ -261,7 +291,9 @@ function validateHierarchy(
         "error",
         "BD-HIERARCHY-CHILD-ENDPOINT-MISSING",
         `Hierarchy block ${node.id} binds ${parentPort.id} to missing child endpoint ${binding.childEndpoint.nodeId}.${binding.childEndpoint.portId}.`,
+        "Point the binding to an existing child block port, or remove the stale binding.",
         { levelId: childIndex.level.id, nodeId: binding.childEndpoint.nodeId, portId: binding.childEndpoint.portId },
+        `${parentIndex.level.id}.${node.id}.${binding.parentPortId}`,
       );
       return;
     }
@@ -272,7 +304,8 @@ function validateHierarchy(
 function validateContractText(
   issues: DesignIssue[],
   contract: { principle?: string; purpose: string; boundary: string; failure: string },
-  target: Omit<DesignIssue, "id" | "severity" | "code" | "message">,
+  target: Omit<DesignIssue, "id" | "severity" | "code" | "message" | "remediation">,
+  identity: string,
   label: string,
 ): void {
   (["purpose", "boundary", "failure"] as const).forEach((field) => {
@@ -282,7 +315,9 @@ function validateContractText(
       "warning",
       `BD-CONTRACT-${field.toUpperCase()}-MISSING`,
       `${label} does not define its ${field}.`,
+      `Define the ${field} in the ${label.toLocaleLowerCase()} contract.`,
       target,
+      identity,
     );
   });
 }
@@ -293,7 +328,7 @@ export function validateBlockDesignDocument(document: BlockDesignDocument): Desi
   const duplicateLevelIds = duplicates(levelIds);
 
   duplicateLevelIds.forEach((levelId) => {
-    issue(issues, "error", "BD-LEVEL-DUPLICATE", `Document contains duplicate level id ${levelId}.`, {
+    issue(issues, "error", "BD-LEVEL-DUPLICATE", `Document contains duplicate level id ${levelId}.`, "Rename or remove duplicate levels so every level ID is unique within the document.", {
       levelId,
     });
   });
@@ -309,6 +344,7 @@ export function validateBlockDesignDocument(document: BlockDesignDocument): Desi
       "error",
       "BD-ENTRY-LEVEL-MISSING",
       `Entry level ${document.entryLevelId} does not exist.`,
+      "Set entryLevelId to an existing level, or create the referenced entry level.",
       { levelId: document.entryLevelId },
     );
   }
@@ -334,6 +370,7 @@ export function validateBlockDesignDocument(document: BlockDesignDocument): Desi
         "error",
         "BD-CONNECTION-DUPLICATE",
         `Level ${level.id} contains duplicate connection id ${connectionId}.`,
+        "Rename or remove duplicate connections so every connection ID is unique within the level.",
         { levelId: level.id, connectionId },
       );
     });
@@ -344,6 +381,7 @@ export function validateBlockDesignDocument(document: BlockDesignDocument): Desi
         issues,
         node.inspector,
         { levelId: level.id, nodeId: node.id },
+        `node:${node.id}`,
         `Block ${node.id}`,
       );
     });
@@ -356,6 +394,7 @@ export function validateBlockDesignDocument(document: BlockDesignDocument): Desi
           issues,
           definition,
           { levelId: level.id, connectionId: connection.id },
+          `interface:${connection.interfaceId}`,
           `Interface ${connection.interfaceId}`,
         );
       }
@@ -374,6 +413,7 @@ export function validateBlockDesignDocument(document: BlockDesignDocument): Desi
             "warning",
             "BD-PORT-UNCONNECTED",
             `Required port ${node.id}.${port.id} is not connected.`,
+            "Connect the required port, or mark it optional when an unconnected port is intentional.",
             { levelId: level.id, nodeId: node.id, portId: port.id },
           );
         }
@@ -384,14 +424,14 @@ export function validateBlockDesignDocument(document: BlockDesignDocument): Desi
   const reachable = reachableLevels(document, indexes);
   indexes.forEach((_, levelId) => {
     if (!reachable.has(levelId)) {
-      issue(issues, "warning", "BD-LEVEL-ORPHAN", `Level ${levelId} is not reachable from the entry level.`, {
+      issue(issues, "warning", "BD-LEVEL-ORPHAN", `Level ${levelId} is not reachable from the entry level.`, "Reference this level from a hierarchy rooted at the entry level, or remove the orphan level.", {
         levelId,
       });
     }
   });
 
   if (issues.length === 0) {
-    issue(issues, "info", "BD-VALID", "Design validation completed without errors or warnings.");
+    issue(issues, "info", "BD-VALID", "Design validation completed without errors or warnings.", "No action is required.");
   }
 
   return issues;

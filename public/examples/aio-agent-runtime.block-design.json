@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "2.0",
+  "schemaVersion": "2.1",
   "id": "aio.agent-runtime.v1",
   "title": "AIO Agent Runtime",
   "summary": "AIO Session 公开协议由 Rust Agent Core 提供；Tool System 拥有 Tool 定义、最小快照、统一执行和 Workflow Tool 实现。",

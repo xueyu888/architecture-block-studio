@@ -19,8 +19,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "playwright test",
-    "test:e2e": "playwright test",
+    "test": "pnpm test:unit && pnpm test:e2e",
+    "test:unit": "vitest run",
+    "test:performance": "vitest run --config vitest.performance.config.ts",
+    "performance:baseline": "node scripts/performance-baseline.mjs",
+    "test:e2e": "playwright test --project=chromium",
+    "test:e2e:firefox": "playwright test --project=firefox-core",
+    "test:e2e:all": "playwright test",
     "typecheck": "tsc -b --pretty false",
     "preview": "vite preview"
   },
@@ -35,11 +40,13 @@
     "zod": "3.22.3"
   },
   "devDependencies": {
-    "@playwright/test": "1.60.0",
+    "@playwright/test": "1.62.1",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "5.1.1",
+    "axe-core": "4.10.2",
     "typescript": "5.9.3",
-    "vite": "7.2.2"
+    "vite": "7.2.2",
+    "vitest": "3.2.4"
   }
 }

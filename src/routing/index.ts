@@ -1,6 +1,15 @@
 export {
   absoluteRoutingObstacles,
+  compactOrthogonalPoints,
+  drawOrthogonalRoute,
+  orthogonalRoutePoints,
+  orthogonalizeRoutePoints,
+  planRouteLaneOffsets,
+  restoreManualRoute,
+  routeFastOrthogonalInterface,
   routeLaneOffset,
   routeOrthogonalInterface,
   separateOrthogonalRoute,
+  type RouteLaneRequest,
+  type RoutePoint,
 } from "./routeInterface";

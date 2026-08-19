@@ -2,7 +2,7 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Box, Minus, Pin, Plus } from "lucide-react";
 import { bindingPortId, innerPortId } from "../layout";
 import type { BlockPort, PortSide } from "../model";
-import type { StudioFlowNode } from "../studio/types";
+import type { CanvasFlowNode } from "./canvasTypes";
 
 const positionBySide: Record<PortSide, Position> = {
   left: Position.Left,
@@ -91,7 +91,7 @@ function portsForSide(ports: BlockPort[], side: PortSide): BlockPort[] {
     .sort((left, right) => (left.order ?? 999) - (right.order ?? 999) || left.label.localeCompare(right.label));
 }
 
-export function BlockNodeComponent({ id, data, selected }: NodeProps<StudioFlowNode>) {
+export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowNode>) {
   const { block } = data;
   const hierarchy = block.hierarchy;
 

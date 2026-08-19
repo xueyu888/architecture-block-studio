@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Braces, Check, Copy, SlidersHorizontal, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { ArrowDownLeft, ArrowUpRight, Braces, Check, Copy, Repeat2, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { DesignOperation } from "../editor";
+import { listModuleInterfaces } from "../model";
 import type {
   BlockDesignDocument,
   BlockNode,
@@ -9,10 +10,11 @@ import type {
   InspectorDefinition,
   InterfaceDefinition,
   InterfaceKind,
+  ModuleInterfaceDirection,
   PortDirection,
   PortSide,
 } from "../model";
-import type { SelectionRef } from "../studio/types";
+import { selectionKey, type SelectionRef } from "../studio/selection";
 
 interface ResolvedInspection {
   kind: string;
@@ -122,6 +124,10 @@ function EditorForm({ children, onSubmit, onDelete }: { children: ReactNode; onS
   );
 }
 
+function useReportDraft(dirty: boolean, onDraftChange: (dirty: boolean) => void) {
+  useLayoutEffect(() => onDraftChange(dirty), [dirty, onDraftChange]);
+}
+
 function ContractFields({ value, onChange }: { value: InspectorDefinition; onChange: (value: InspectorDefinition) => void }) {
   const update = (values: Partial<InspectorDefinition>) => onChange({ ...value, ...values });
   return (
@@ -142,9 +148,10 @@ function ContractFields({ value, onChange }: { value: InspectorDefinition; onCha
   );
 }
 
-function DocumentEditor({ document, onOperation }: { document: BlockDesignDocument; onOperation: (operation: DesignOperation) => void }) {
+function DocumentEditor({ document, onOperation, onDraftChange }: { document: BlockDesignDocument; onOperation: (operation: DesignOperation) => void; onDraftChange: (dirty: boolean) => void }) {
   const [title, setTitle] = useState(document.title);
   const [summary, setSummary] = useState(document.summary);
+  useReportDraft(title !== document.title || summary !== document.summary, onDraftChange);
   return (
     <EditorForm onSubmit={() => onOperation({ type: "document/update", values: { title, summary } })}>
       <Field label="Design id"><input value={document.id} disabled /></Field>
@@ -158,12 +165,20 @@ function DocumentEditor({ document, onOperation }: { document: BlockDesignDocume
   );
 }
 
-function LevelEditor({ level, onOperation }: { level: DesignLevel; onOperation: (operation: DesignOperation) => void }) {
+function LevelEditor({ level, onOperation, onDraftChange }: { level: DesignLevel; onOperation: (operation: DesignOperation) => void; onDraftChange: (dirty: boolean) => void }) {
   const [title, setTitle] = useState(level.title);
   const [description, setDescription] = useState(level.description);
   const [direction, setDirection] = useState(level.layout.direction);
   const [spacing, setSpacing] = useState(String(level.layout.spacing));
   const [layerSpacing, setLayerSpacing] = useState(String(level.layout.layerSpacing));
+  useReportDraft(
+    title !== level.title ||
+      description !== level.description ||
+      direction !== level.layout.direction ||
+      Number(spacing) !== level.layout.spacing ||
+      Number(layerSpacing) !== level.layout.layerSpacing,
+    onDraftChange,
+  );
   return (
     <EditorForm onSubmit={() => onOperation({
       type: "level/update",
@@ -188,11 +203,12 @@ function LevelEditor({ level, onOperation }: { level: DesignLevel; onOperation: 
   );
 }
 
-function HierarchyBindings({ document, level, node, onOperation }: {
+function HierarchyBindings({ document, level, node, onOperation, disabled }: {
   document: BlockDesignDocument;
   level: DesignLevel;
   node: BlockNode;
   onOperation: (operation: DesignOperation) => void;
+  disabled?: boolean;
 }) {
   if (!node.hierarchy || node.ports.length === 0) return null;
   const childLevel = findLevel(document, node.hierarchy.childLevelId);
@@ -210,7 +226,7 @@ function HierarchyBindings({ document, level, node, onOperation }: {
         const value = binding ? `${binding.childEndpoint.nodeId}:${binding.childEndpoint.portId}` : "";
         return (
           <Field key={port.id} label={port.label}>
-            <select value={value} onChange={(event) => {
+            <select value={value} disabled={disabled} onChange={(event) => {
               if (!event.target.value) {
                 onOperation({ type: "hierarchy/unbind", levelId: level.id, nodeId: node.id, parentPortId: port.id });
                 return;
@@ -230,17 +246,70 @@ function HierarchyBindings({ document, level, node, onOperation }: {
           </Field>
         );
       })}
+      {disabled && <p className="bd-form-help">Apply or discard the current module changes before editing hierarchy bindings.</p>}
       {endpoints.length === 0 && <p className="bd-form-help">Add ports to modules inside the child design before binding this module boundary.</p>}
     </fieldset>
   );
 }
 
-function NodeEditor({ document, level, node, onOperation, onDelete }: {
+const interfaceDirectionMetadata: Record<ModuleInterfaceDirection, { label: string; icon: typeof ArrowDownLeft }> = {
+  incoming: { label: "Incoming", icon: ArrowDownLeft },
+  outgoing: { label: "Outgoing", icon: ArrowUpRight },
+  loopback: { label: "Loopback", icon: Repeat2 },
+};
+
+function ConnectedInterfaces({ document, level, node, onSelect }: {
+  document: BlockDesignDocument;
+  level: DesignLevel;
+  node: BlockNode;
+  onSelect: (selection: SelectionRef) => void;
+}) {
+  const summaries = listModuleInterfaces(document, level.id, node.id);
+  return (
+    <fieldset className="bd-related-interfaces">
+      <legend>Connected interfaces <span>{summaries.length}</span></legend>
+      {summaries.length === 0 ? (
+        <p>No direct interfaces in this level.</p>
+      ) : (["incoming", "outgoing", "loopback"] as const).map((direction) => {
+        const group = summaries.filter((summary) => summary.direction === direction);
+        if (group.length === 0) return null;
+        const metadata = interfaceDirectionMetadata[direction];
+        const Icon = metadata.icon;
+        return (
+          <section key={direction} aria-label={`${metadata.label} interfaces`}>
+            <h3><Icon size={12} aria-hidden="true" /> {metadata.label} <span>{group.length}</span></h3>
+            {group.map((summary) => (
+              <button
+                key={summary.connectionId}
+                type="button"
+                className="bd-related-interface-row"
+                aria-label={`Open ${summary.title} interface`}
+                onClick={() => onSelect({ kind: "connection", levelId: summary.levelId, connectionId: summary.connectionId })}
+              >
+                <span className={`bd-interface-kind bd-kind-${summary.kind ?? "connection"}`}>{summary.kind ?? "interface"}</span>
+                <strong>{summary.title}</strong>
+                <small>{direction === "incoming"
+                  ? `${summary.peerNodeTitle}.${summary.peerPortLabel} → ${summary.localPortLabel}`
+                  : direction === "outgoing"
+                    ? `${summary.localPortLabel} → ${summary.peerNodeTitle}.${summary.peerPortLabel}`
+                    : `${summary.localPortLabel} ↻ ${summary.peerPortLabel}`}</small>
+              </button>
+            ))}
+          </section>
+        );
+      })}
+    </fieldset>
+  );
+}
+
+function NodeEditor({ document, level, node, onOperation, onDelete, onDraftChange, onSelect }: {
   document: BlockDesignDocument;
   level: DesignLevel;
   node: BlockNode;
   onOperation: (operation: DesignOperation) => void;
   onDelete: () => void;
+  onDraftChange: (dirty: boolean) => void;
+  onSelect: (selection: SelectionRef) => void;
 }) {
   const [title, setTitle] = useState(node.title);
   const [kind, setKind] = useState(node.kind);
@@ -249,6 +318,14 @@ function NodeEditor({ document, level, node, onOperation, onDelete }: {
   const [summary, setSummary] = useState(node.summary ?? "");
   const [owner, setOwner] = useState(node.owner ?? "");
   const [inspector, setInspector] = useState(node.inspector);
+  const dirty = title !== node.title ||
+    kind !== node.kind ||
+    tone !== node.tone ||
+    (process.trim() || undefined) !== node.process ||
+    (summary.trim() || undefined) !== node.summary ||
+    (owner.trim() || undefined) !== node.owner ||
+    JSON.stringify(inspector) !== JSON.stringify(node.inspector);
+  useReportDraft(dirty, onDraftChange);
   return (
     <EditorForm onDelete={onDelete} onSubmit={() => onOperation({
       type: "node/update",
@@ -277,24 +354,34 @@ function NodeEditor({ document, level, node, onOperation, onDelete }: {
         <Field label="Process" value={process} onChange={setProcess} />
       </div>
       <Field label="Summary" value={summary} onChange={setSummary} multiline />
+      <ConnectedInterfaces document={document} level={level} node={node} onSelect={onSelect} />
       <ContractFields value={inspector} onChange={setInspector} />
-      <HierarchyBindings document={document} level={level} node={node} onOperation={onOperation} />
+      <HierarchyBindings document={document} level={level} node={node} onOperation={onOperation} disabled={dirty} />
     </EditorForm>
   );
 }
 
-function PortEditor({ level, node, port, onOperation, onDelete }: {
+function PortEditor({ level, node, port, onOperation, onDelete, onDraftChange }: {
   level: DesignLevel;
   node: BlockNode;
   port: BlockPort;
   onOperation: (operation: DesignOperation) => void;
   onDelete: () => void;
+  onDraftChange: (dirty: boolean) => void;
 }) {
   const [label, setLabel] = useState(port.label);
   const [direction, setDirection] = useState<PortDirection>(port.direction);
   const [side, setSide] = useState<PortSide>(port.side);
   const [dataType, setDataType] = useState(port.dataType ?? "");
   const [required, setRequired] = useState(port.required);
+  useReportDraft(
+    label !== port.label ||
+      direction !== port.direction ||
+      side !== port.side ||
+      (dataType.trim() || undefined) !== port.dataType ||
+      required !== port.required,
+    onDraftChange,
+  );
   return (
     <EditorForm onDelete={onDelete} onSubmit={() => onOperation({
       type: "port/update",
@@ -319,17 +406,22 @@ function PortEditor({ level, node, port, onOperation, onDelete }: {
   );
 }
 
-function ConnectionEditor({ document, level, connectionId, onOperation, onDelete }: {
+function ConnectionEditor({ document, level, connectionId, onOperation, onDelete, onDraftChange }: {
   document: BlockDesignDocument;
   level: DesignLevel;
   connectionId: string;
   onOperation: (operation: DesignOperation) => void;
   onDelete: () => void;
+  onDraftChange: (dirty: boolean) => void;
 }) {
   const connection = level.connections.find((candidate) => candidate.id === connectionId)!;
   const [label, setLabel] = useState(connection.label ?? "");
   const [definition, setDefinition] = useState<InterfaceDefinition>(document.interfaceDefinitions[connection.interfaceId]);
   const update = (values: Partial<InterfaceDefinition>) => setDefinition((current) => ({ ...current, ...values }));
+  const dirty =
+    (label.trim() || undefined) !== connection.label ||
+    JSON.stringify(definition) !== JSON.stringify(document.interfaceDefinitions[connection.interfaceId]);
+  useReportDraft(dirty, onDraftChange);
   return (
     <EditorForm onDelete={onDelete} onSubmit={() => onOperation({
       type: "connection/update",
@@ -340,6 +432,25 @@ function ConnectionEditor({ document, level, connectionId, onOperation, onDelete
     })}>
       <Field label="Connection id"><input value={connection.id} disabled /></Field>
       <Field label="Interface id"><input value={connection.interfaceId} disabled /></Field>
+      <section className="bd-route-editor" aria-label="Connection routing">
+        <div><span>Routing</span><strong>{connection.routing ? "Manual" : "Automatic"}</strong></div>
+        <p>Select the line, then drag a square segment handle or focus it and use the Arrow keys. The route is saved in this JSON connection.</p>
+        {connection.routing && (
+          <button
+            type="button"
+            className="bd-inline-action"
+            disabled={dirty}
+            onClick={() => onOperation({
+              type: "connection/route",
+              levelId: level.id,
+              connectionId: connection.id,
+              routing: undefined,
+            })}
+          >
+            Reset to automatic routing
+          </button>
+        )}
+      </section>
       <Field label="Connection label" value={label} onChange={setLabel} />
       <Field label="Interface title" value={definition.title} onChange={(title) => update({ title })} required />
       <div className="bd-inspector-form-row">
@@ -354,52 +465,79 @@ function ConnectionEditor({ document, level, connectionId, onOperation, onDelete
   );
 }
 
-function InspectionEditor({ document, selection, onOperation, onDelete }: {
+function InspectionEditor({ document, selection, onOperation, onDelete, onDraftChange, onSelect }: {
   document: BlockDesignDocument;
   selection: SelectionRef;
   onOperation: (operation: DesignOperation) => void;
   onDelete: () => void;
+  onDraftChange: (dirty: boolean) => void;
+  onSelect: (selection: SelectionRef) => void;
 }) {
-  if (selection.kind === "document") return <DocumentEditor document={document} onOperation={onOperation} />;
+  if (selection.kind === "document") return <DocumentEditor document={document} onOperation={onOperation} onDraftChange={onDraftChange} />;
   const level = findLevel(document, selection.levelId);
   if (!level) return <p className="bd-empty-state">The selected level no longer exists.</p>;
-  if (selection.kind === "level") return <LevelEditor level={level} onOperation={onOperation} />;
+  if (selection.kind === "level") return <LevelEditor level={level} onOperation={onOperation} onDraftChange={onDraftChange} />;
   const node = selection.kind === "node" || selection.kind === "port" ? findNode(level, selection.nodeId) : undefined;
-  if (selection.kind === "node" && node) return <NodeEditor document={document} level={level} node={node} onOperation={onOperation} onDelete={onDelete} />;
+  if (selection.kind === "node" && node) return <NodeEditor document={document} level={level} node={node} onOperation={onOperation} onDelete={onDelete} onDraftChange={onDraftChange} onSelect={onSelect} />;
   if (selection.kind === "port" && node) {
     const port = findPort(node, selection.portId);
-    if (port) return <PortEditor level={level} node={node} port={port} onOperation={onOperation} onDelete={onDelete} />;
+    if (port) return <PortEditor level={level} node={node} port={port} onOperation={onOperation} onDelete={onDelete} onDraftChange={onDraftChange} />;
   }
   if (selection.kind === "connection" && level.connections.some((connection) => connection.id === selection.connectionId)) {
-    return <ConnectionEditor document={document} level={level} connectionId={selection.connectionId} onOperation={onOperation} onDelete={onDelete} />;
+    return <ConnectionEditor document={document} level={level} connectionId={selection.connectionId} onOperation={onOperation} onDelete={onDelete} onDraftChange={onDraftChange} />;
   }
   return <p className="bd-empty-state">The selected design object no longer exists.</p>;
 }
 
-function selectionKey(selection: SelectionRef): string {
-  if (selection.kind === "document") return "document";
-  if (selection.kind === "level") return `level:${selection.levelId}`;
-  if (selection.kind === "node") return `node:${selection.levelId}:${selection.nodeId}`;
-  if (selection.kind === "port") return `port:${selection.levelId}:${selection.nodeId}:${selection.portId}`;
-  return `connection:${selection.levelId}:${selection.connectionId}`;
-}
-
-export function Inspector({ document, selection, onOperation, onDelete }: {
+export function Inspector({ document, selection, onOperation, onDelete, onDraftChange, onSelect }: {
   document: BlockDesignDocument;
   selection: SelectionRef;
   onOperation: (operation: DesignOperation) => void;
   onDelete: () => void;
+  onDraftChange: (dirty: boolean) => void;
+  onSelect: (selection: SelectionRef) => void;
 }) {
+  const inspectorRef = useRef<HTMLElement>(null);
+  const restoreApplyFocus = useRef(false);
   const [tab, setTab] = useState<"properties" | "json">("properties");
+  const [draftDirty, setDraftDirty] = useState(false);
   const inspected = useMemo(() => resolveInspection(document, selection), [document, selection]);
   const rawJson = useMemo(() => JSON.stringify(inspected.raw, null, 2), [inspected.raw]);
   const key = selectionKey(selection);
-  useEffect(() => setTab("properties"), [key]);
+  const reportDraft = useCallback((dirty: boolean) => {
+    setDraftDirty(dirty);
+    onDraftChange(dirty);
+  }, [onDraftChange]);
+  useEffect(() => {
+    setTab("properties");
+    reportDraft(false);
+  }, [key, reportDraft]);
+  useLayoutEffect(() => {
+    if (!restoreApplyFocus.current) return;
+    const apply = inspectorRef.current?.querySelector<HTMLButtonElement>(".bd-inspector-actions .is-primary");
+    if (!apply) return;
+    restoreApplyFocus.current = false;
+    apply.focus();
+  }, [rawJson]);
 
   return (
-    <section className="bd-pane bd-inspector-pane">
+    <section
+      ref={inspectorRef}
+      className="bd-pane bd-inspector-pane"
+      onSubmitCapture={(event) => {
+        if (!(event.target instanceof HTMLFormElement) || !event.target.classList.contains("bd-inspector-form")) return;
+        restoreApplyFocus.current = true;
+        window.requestAnimationFrame(() => {
+          if (!restoreApplyFocus.current) return;
+          if (window.document.activeElement?.isConnected && inspectorRef.current?.contains(window.document.activeElement)) {
+            restoreApplyFocus.current = false;
+          }
+        });
+      }}
+    >
       <div className="bd-inspector-title">
         <span className={`bd-kind-badge bd-kind-${inspected.kind.toLowerCase()}`}>{inspected.kind}</span>
+        {draftDirty && <span className="bd-inspector-draft-status" role="status">UNAPPLIED</span>}
         <h2>{inspected.title}</h2>
         {inspected.route && <code>{inspected.route}</code>}
         {inspected.owner && <small>{inspected.owner}</small>}
@@ -412,16 +550,13 @@ export function Inspector({ document, selection, onOperation, onDelete }: {
           <Braces size={13} aria-hidden="true" /> JSON
         </button>
       </div>
-      {tab === "properties" ? (
-        <div className="bd-inspector-scroll">
-          <InspectionEditor key={`${key}:${rawJson}`} document={document} selection={selection} onOperation={onOperation} onDelete={onDelete} />
-        </div>
-      ) : (
-        <div className="bd-code-section bd-raw-json">
+      <div className="bd-inspector-scroll" hidden={tab !== "properties"}>
+        <InspectionEditor key={`${key}:${rawJson}`} document={document} selection={selection} onOperation={onOperation} onDelete={onDelete} onDraftChange={reportDraft} onSelect={onSelect} />
+      </div>
+      <div className="bd-code-section bd-raw-json" hidden={tab !== "json"}>
           <header><h3>Selected source object</h3><CopyButton value={rawJson} /></header>
           <pre><code>{rawJson}</code></pre>
-        </div>
-      )}
+      </div>
     </section>
   );
 }

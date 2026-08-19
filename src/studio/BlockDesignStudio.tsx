@@ -7,6 +7,7 @@ import {
   Cable,
   CheckCircle2,
   CircuitBoard,
+  Download,
   FilePlus2,
   FolderOpen,
   GitBranchPlus,
@@ -17,9 +18,11 @@ import {
   PanelLeft,
   PanelRight,
   Redo2,
+  RotateCcw,
   Route,
   Save,
   Scan,
+  Share2,
   ShieldCheck,
   Trash2,
   TriangleAlert,
@@ -34,6 +37,7 @@ import {
   CreateConnectionDialog,
   NewDesignDialog,
   SaveDesignDialog,
+  SelectConnectionEndpointsDialog,
   type PendingConnection,
 } from "../components/EditorDialogs";
 import { HierarchyTree } from "../components/HierarchyTree";
@@ -41,6 +45,7 @@ import { Inspector } from "../components/Inspector";
 import { LoadDesignDialog } from "../components/LoadDesignDialog";
 import { MenuBar } from "../components/MenuBar";
 import { MessagesPanel } from "../components/MessagesPanel";
+import { StudioToolbar } from "../components/StudioToolbar";
 import {
   createBlankDesign,
   createBlock,
@@ -63,23 +68,30 @@ import {
   normalizeDesignFileName,
   suggestedDesignFileName,
 } from "../io/saveDesign";
-import { layoutBlockDesign, type PlacementMode } from "../layout";
 import {
+  layoutBlockDesign,
+  layoutGeometrySignature,
+  layoutProjectionSignature,
+  type LayoutResult,
+  type PlacementMode,
+} from "../layout";
+import {
+  firstConnectablePair,
   validateBlockDesignDocument,
   type BlockDesignDocument,
-  type BlockNode,
+  type ConnectionRouting,
   type DesignIssue,
-  type DesignLevel,
 } from "../model";
-import type { LayoutResult, SelectionRef } from "./types";
-
-function issueSelection(issue: DesignIssue): SelectionRef {
-  if (issue.levelId && issue.connectionId) return { kind: "connection", levelId: issue.levelId, connectionId: issue.connectionId };
-  if (issue.levelId && issue.nodeId && issue.portId) return { kind: "port", levelId: issue.levelId, nodeId: issue.nodeId, portId: issue.portId };
-  if (issue.levelId && issue.nodeId) return { kind: "node", levelId: issue.levelId, nodeId: issue.nodeId };
-  if (issue.levelId) return { kind: "level", levelId: issue.levelId };
-  return { kind: "document" };
-}
+import type { StudioCommands } from "./commands";
+import {
+  hierarchyLevelPath,
+  levelForSelection,
+  nodeForSelection,
+  sameSelection,
+  selectionExists,
+  selectionForIssue,
+  type SelectionRef,
+} from "./selection";
 
 function errorMessage(error: unknown): string {
   const loadError = error as DesignLoadError;
@@ -88,62 +100,9 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
-function hierarchyPath(document: BlockDesignDocument, levelId: string): string[] {
-  const path: string[] = [];
-  const seen = new Set<string>();
-  let current = document.levels.find((level) => level.id === levelId);
-  while (current && current.id !== document.entryLevelId && !seen.has(current.id)) {
-    seen.add(current.id);
-    path.unshift(current.id);
-    current = current.parentLevelId
-      ? document.levels.find((level) => level.id === current?.parentLevelId)
-      : undefined;
-  }
-  return path;
-}
-
-function selectionExists(document: BlockDesignDocument, selection: SelectionRef): boolean {
-  if (selection.kind === "document") return true;
-  const level = document.levels.find((candidate) => candidate.id === selection.levelId);
-  if (!level) return false;
-  if (selection.kind === "level") return true;
-  if (selection.kind === "connection") return level.connections.some((candidate) => candidate.id === selection.connectionId);
-  const node = level.nodes.find((candidate) => candidate.id === selection.nodeId);
-  if (!node) return false;
-  return selection.kind === "node" || node.ports.some((candidate) => candidate.id === selection.portId);
-}
-
 function fileNameFromSource(document: BlockDesignDocument, source: string): string {
   const tail = source.split(/[\\/]/).at(-1);
   return tail?.endsWith(".json") ? tail : suggestedDesignFileName(document);
-}
-
-function levelForSelection(document: BlockDesignDocument, selection: SelectionRef): DesignLevel {
-  if (selection.kind === "document") {
-    return document.levels.find((level) => level.id === document.entryLevelId)!;
-  }
-  return document.levels.find((level) => level.id === selection.levelId) ??
-    document.levels.find((level) => level.id === document.entryLevelId)!;
-}
-
-function nodeForSelection(document: BlockDesignDocument, selection: SelectionRef): { level: DesignLevel; node: BlockNode } | undefined {
-  if (selection.kind !== "node" && selection.kind !== "port") return undefined;
-  const level = document.levels.find((candidate) => candidate.id === selection.levelId);
-  const node = level?.nodes.find((candidate) => candidate.id === selection.nodeId);
-  return level && node ? { level, node } : undefined;
-}
-
-function canvasGeometrySignature(document: BlockDesignDocument): string {
-  return JSON.stringify(document.levels.map((level) => ({
-    id: level.id,
-    layout: level.layout,
-    nodes: level.nodes.map((node) => ({
-      id: node.id,
-      layout: node.layout,
-      hierarchy: node.hierarchy?.childLevelId,
-      ports: node.ports.map((port) => ({ id: port.id, side: port.side, order: port.order })),
-    })),
-  })));
 }
 
 export interface BlockDesignStudioProps {
@@ -163,12 +122,15 @@ export function BlockDesignStudio({
   const document = documentInstalled ? editor.document : undefined;
   const [expandedLevelIds, setExpandedLevelIds] = useState<Set<string>>(new Set());
   const [selection, setSelection] = useState<SelectionRef>({ kind: "document" });
+  const [inspectorDraftDirty, setInspectorDraftDirty] = useState(false);
   const [issues, setIssues] = useState<DesignIssue[]>([]);
   const [layout, setLayout] = useState<LayoutResult>({ nodes: [], edges: [] });
   const [placementMode, setPlacementMode] = useState<PlacementMode>("authored");
   const [layoutRevision, setLayoutRevision] = useState(0);
   const [routeRevision, setRouteRevision] = useState(0);
   const [fitRequest, setFitRequest] = useState(0);
+  const [revealSelectionRequest, setRevealSelectionRequest] = useState(0);
+  const [messageFocusRequest, setMessageFocusRequest] = useState(0);
   const [workspaceResetRequest, setWorkspaceResetRequest] = useState(0);
   const [dockApi, setDockApi] = useState<DockviewApi>();
   const [diagramMaximized, setDiagramMaximized] = useState(false);
@@ -179,6 +141,7 @@ export function BlockDesignStudio({
   const [saveAsDialogOpen, setSaveAsDialogOpen] = useState(false);
   const [addBlockLevelId, setAddBlockLevelId] = useState<string>();
   const [addPortTarget, setAddPortTarget] = useState<{ levelId: string; nodeId: string }>();
+  const [connectionEndpointLevelId, setConnectionEndpointLevelId] = useState<string>();
   const [childDesignTarget, setChildDesignTarget] = useState<{ levelId: string; nodeId: string }>();
   const [pendingConnection, setPendingConnection] = useState<PendingConnection>();
   const [loadError, setLoadError] = useState<string>();
@@ -189,6 +152,22 @@ export function BlockDesignStudio({
   const [sourceLabel, setSourceLabel] = useState(initialDesignUrl ?? initialSourceLabel);
   const [fileName, setFileName] = useState("design.block-design.json");
   const initialLoadStarted = useRef(false);
+  const documentRef = useRef<BlockDesignDocument | undefined>(document);
+  const editorDocumentRef = useRef(editor.document);
+  const editorDirtyRef = useRef(editor.dirty);
+  const selectionRef = useRef(selection);
+  const inspectorDraftDirtyRef = useRef(inspectorDraftDirty);
+  const dockApiRef = useRef(dockApi);
+  documentRef.current = document;
+  editorDocumentRef.current = editor.document;
+  editorDirtyRef.current = editor.dirty;
+  selectionRef.current = selection;
+  inspectorDraftDirtyRef.current = inspectorDraftDirty;
+  dockApiRef.current = dockApi;
+  const layoutProjection = useMemo(
+    () => document ? layoutProjectionSignature(document) : undefined,
+    [document],
+  );
 
   const installDocument = useCallback((next: BlockDesignDocument, source: string, saved = true) => {
     editor.replace(next, saved);
@@ -196,6 +175,7 @@ export function BlockDesignStudio({
     fitAfterLayout.current = true;
     setDocumentInstalled(true);
     setExpandedLevelIds(new Set());
+    setInspectorDraftDirty(false);
     setSelection({ kind: "level", levelId: next.entryLevelId });
     setIssues(validateBlockDesignDocument(next));
     setPlacementMode("authored");
@@ -209,9 +189,13 @@ export function BlockDesignStudio({
     setLayoutRevision((value) => value + 1);
   }, [editor.replace]);
 
-  const mayDiscardChanges = useCallback(() =>
-    !editor.dirty || window.confirm("Discard unsaved changes to the current design?"),
-  [editor.dirty]);
+  const mayDiscardChanges = useCallback(() => {
+    if (!editorDirtyRef.current && !inspectorDraftDirtyRef.current) return true;
+    const message = inspectorDraftDirtyRef.current
+      ? "Discard unapplied Inspector changes and unsaved changes to the current design?"
+      : "Discard unsaved changes to the current design?";
+    return window.confirm(message);
+  }, []);
 
   const openUrl = useCallback(async (url: string, initial = false) => {
     if (!initial && !mayDiscardChanges()) return;
@@ -280,6 +264,7 @@ export function BlockDesignStudio({
             severity: "error",
             code: "BD-LAYOUT-FAILED",
             message: errorMessage(error),
+            remediation: "Resolve the reported layout input or engine failure, then regenerate the layout.",
             levelId: document.entryLevelId,
           },
         ]);
@@ -288,64 +273,96 @@ export function BlockDesignStudio({
         if (active) setLayoutBusy(false);
       });
     return () => { active = false; };
-  }, [document, expandedLevelIds, layoutRevision, placementMode]);
+  }, [layoutProjection, expandedLevelIds, layoutRevision, placementMode]);
 
   useEffect(() => {
     if (document && !selectionExists(document, selection)) {
+      setInspectorDraftDirty(false);
       setSelection({ kind: "level", levelId: document.entryLevelId });
     }
   }, [document, selection]);
 
   useEffect(() => {
-    if (!editor.dirty) return;
+    if (!editor.dirty && !inspectorDraftDirty) return;
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warnBeforeUnload);
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
-  }, [editor.dirty]);
+  }, [editor.dirty, inspectorDraftDirty]);
+
+  const requestSelection = useCallback((next: SelectionRef): boolean => {
+    if (sameSelection(selectionRef.current, next)) return true;
+    if (inspectorDraftDirtyRef.current && !window.confirm("Discard unapplied Inspector changes and change selection?")) {
+      return false;
+    }
+    setInspectorDraftDirty(false);
+    setSelection(next);
+    return true;
+  }, []);
+
+  const requestSelectionFromNavigator = useCallback((next: SelectionRef): boolean => {
+    if (!requestSelection(next)) return false;
+    setRevealSelectionRequest((value) => value + 1);
+    return true;
+  }, [requestSelection]);
+
+  const requireAppliedInspectorDraft = useCallback((action: string): boolean => {
+    if (!inspectorDraftDirtyRef.current) return true;
+    setCommandError(`Apply or discard the current Inspector changes before ${action}.`);
+    const properties = dockApiRef.current?.getEdgeGroup("right");
+    if (properties?.isCollapsed()) properties.expand();
+    return false;
+  }, []);
+
+  const confirmDiscardInspectorDraft = useCallback((action: string): boolean => {
+    if (!inspectorDraftDirtyRef.current) return true;
+    return window.confirm(`Discard unapplied Inspector changes and ${action}?`);
+  }, []);
 
   const runOperation = useCallback((operation: DesignOperation): BlockDesignDocument | undefined => {
     try {
-      const previousGeometry = canvasGeometrySignature(editor.document);
+      const previousGeometry = layoutGeometrySignature(editorDocumentRef.current);
       const next = editor.apply(operation);
-      if (canvasGeometrySignature(next) !== previousGeometry) fitAfterLayout.current = true;
+      if (layoutGeometrySignature(next) !== previousGeometry) fitAfterLayout.current = true;
       setIssues(validateBlockDesignDocument(next));
       setCommandError(undefined);
       setPlacementMode("authored");
-      setLayoutBusy(true);
       return next;
     } catch (error) {
       setCommandError(errorMessage(error));
       return undefined;
     }
-  }, [editor.apply, editor.document]);
+  }, [editor.apply]);
 
   const undoDesign = useCallback(() => {
-    const previousGeometry = canvasGeometrySignature(editor.document);
+    if (!confirmDiscardInspectorDraft("undo the last document operation")) return;
+    const previousGeometry = layoutGeometrySignature(editorDocumentRef.current);
     const next = editor.undo();
     if (!next) return;
-    if (canvasGeometrySignature(next) !== previousGeometry) fitAfterLayout.current = true;
+    setInspectorDraftDirty(false);
+    if (layoutGeometrySignature(next) !== previousGeometry) fitAfterLayout.current = true;
     setIssues(validateBlockDesignDocument(next));
     setPlacementMode("authored");
-    setLayoutBusy(true);
     setCommandError(undefined);
-  }, [editor.document, editor.undo]);
+  }, [confirmDiscardInspectorDraft, editor.undo]);
 
   const redoDesign = useCallback(() => {
-    const previousGeometry = canvasGeometrySignature(editor.document);
+    if (!confirmDiscardInspectorDraft("redo the next document operation")) return;
+    const previousGeometry = layoutGeometrySignature(editorDocumentRef.current);
     const next = editor.redo();
     if (!next) return;
-    if (canvasGeometrySignature(next) !== previousGeometry) fitAfterLayout.current = true;
+    setInspectorDraftDirty(false);
+    if (layoutGeometrySignature(next) !== previousGeometry) fitAfterLayout.current = true;
     setIssues(validateBlockDesignDocument(next));
     setPlacementMode("authored");
-    setLayoutBusy(true);
     setCommandError(undefined);
-  }, [editor.document, editor.redo]);
+  }, [confirmDiscardInspectorDraft, editor.redo]);
 
   const saveCurrent = useCallback(() => {
     if (!document) return;
+    if (!requireAppliedInspectorDraft("saving")) return;
     try {
       const savedName = downloadDesign(document, fileName);
       setFileName(savedName);
@@ -355,17 +372,24 @@ export function BlockDesignStudio({
     } catch (error) {
       setCommandError(errorMessage(error));
     }
-  }, [document, editor.markSaved, fileName]);
+  }, [document, editor.markSaved, fileName, requireAppliedInspectorDraft]);
 
   const exportCurrent = useCallback(() => {
     if (!document) return;
+    if (!requireAppliedInspectorDraft("exporting")) return;
     try {
       downloadDesign(document, `${document.id}.export.block-design.json`);
       setCommandError(undefined);
     } catch (error) {
       setCommandError(errorMessage(error));
     }
-  }, [document]);
+  }, [document, requireAppliedInspectorDraft]);
+
+  const openSaveAs = useCallback(() => {
+    if (!requireAppliedInspectorDraft("opening Save As")) return;
+    setCommandError(undefined);
+    setSaveAsDialogOpen(true);
+  }, [requireAppliedInspectorDraft]);
 
   const deleteSelection = useCallback(() => {
     if (!document || selection.kind === "document" || selection.kind === "level") return;
@@ -374,51 +398,31 @@ export function BlockDesignStudio({
       : selection.kind === "port"
         ? "Delete this port and all attached connections?"
         : "Delete this connection and its unused interface definition?";
-    if (!window.confirm(description)) return;
+    const draftWarning = inspectorDraftDirty ? " Unapplied Inspector changes will also be discarded." : "";
+    if (!window.confirm(`${description}${draftWarning}`)) return;
     const operation: DesignOperation = selection.kind === "node"
       ? { type: "node/delete", levelId: selection.levelId, nodeId: selection.nodeId }
       : selection.kind === "port"
         ? { type: "port/delete", levelId: selection.levelId, nodeId: selection.nodeId, portId: selection.portId }
         : { type: "connection/delete", levelId: selection.levelId, connectionId: selection.connectionId };
-    if (runOperation(operation)) setSelection({ kind: "level", levelId: selection.levelId });
-  }, [document, runOperation, selection]);
-
-  useEffect(() => {
-    const handleKeyboard = (event: KeyboardEvent) => {
-      const modifier = event.ctrlKey || event.metaKey;
-      if (modifier && event.key.toLocaleLowerCase() === "s") {
-        event.preventDefault();
-        if (event.shiftKey) setSaveAsDialogOpen(true);
-        else saveCurrent();
-        return;
-      }
-      const target = event.target as HTMLElement | null;
-      const editingText = target?.matches("input, textarea, select, [contenteditable='true']");
-      if (editingText) return;
-      if (modifier && event.key.toLocaleLowerCase() === "z") {
-        event.preventDefault();
-        if (event.shiftKey) redoDesign();
-        else undoDesign();
-      } else if (modifier && event.key.toLocaleLowerCase() === "y") {
-        event.preventDefault();
-        redoDesign();
-      } else if (event.key === "Delete" || event.key === "Backspace") {
-        event.preventDefault();
-        deleteSelection();
-      }
-    };
-    window.addEventListener("keydown", handleKeyboard);
-    return () => window.removeEventListener("keydown", handleKeyboard);
-  }, [deleteSelection, redoDesign, saveCurrent, undoDesign]);
+    if (runOperation(operation)) {
+      setInspectorDraftDirty(false);
+      setSelection({ kind: "level", levelId: selection.levelId });
+    }
+  }, [document, inspectorDraftDirty, runOperation, selection]);
 
   const revealLevel = useCallback((levelId: string) => {
-    if (!document) return;
-    const path = hierarchyPath(document, levelId);
+    const currentDocument = documentRef.current;
+    if (!currentDocument) return;
+    const path = hierarchyLevelPath(currentDocument, levelId);
     if (path.length === 0) return;
-    fitAfterLayout.current = true;
-    setLayoutBusy(true);
-    setExpandedLevelIds((current) => new Set([...current, ...path]));
-  }, [document]);
+    setExpandedLevelIds((current) => {
+      if (path.every((id) => current.has(id))) return current;
+      fitAfterLayout.current = true;
+      setLayoutBusy(true);
+      return new Set([...current, ...path]);
+    });
+  }, []);
 
   const toggleHierarchy = useCallback((levelId: string) => {
     fitAfterLayout.current = true;
@@ -427,29 +431,35 @@ export function BlockDesignStudio({
       const next = new Set(current);
       if (next.has(levelId)) {
         next.delete(levelId);
-        if (document) {
-          document.levels.forEach((level) => {
-            if (hierarchyPath(document, level.id).includes(levelId)) next.delete(level.id);
+        const currentDocument = documentRef.current;
+        if (currentDocument) {
+          currentDocument.levels.forEach((level) => {
+            if (hierarchyLevelPath(currentDocument, level.id).includes(levelId)) next.delete(level.id);
           });
         }
       } else {
-        if (document) hierarchyPath(document, levelId).forEach((id) => next.add(id));
+        const currentDocument = documentRef.current;
+        if (currentDocument) hierarchyLevelPath(currentDocument, levelId).forEach((id) => next.add(id));
         else next.add(levelId);
       }
       return next;
     });
-  }, [document]);
+  }, []);
 
   const selectIssue = useCallback((issue: DesignIssue) => {
+    if (!requestSelectionFromNavigator(selectionForIssue(issue))) return;
     if (issue.levelId) revealLevel(issue.levelId);
-    setSelection(issueSelection(issue));
-  }, [revealLevel]);
+  }, [requestSelectionFromNavigator, revealLevel]);
 
   const toggleDock = useCallback((position: EdgeGroupPosition) => {
     const group = dockApi?.getEdgeGroup(position);
     if (!group) return;
-    if (group.isCollapsed()) group.expand();
-    else group.collapse();
+    if (group.isCollapsed()) {
+      group.expand();
+      if (position === "bottom") setMessageFocusRequest((value) => value + 1);
+    } else {
+      group.collapse();
+    }
     window.setTimeout(() => setFitRequest((value) => value + 1), 180);
   }, [dockApi]);
 
@@ -488,17 +498,220 @@ export function BlockDesignStudio({
     if (!document) return;
     setIssues(validateBlockDesignDocument(document));
     dockApi?.getEdgeGroup("bottom")?.expand();
+    setMessageFocusRequest((value) => value + 1);
   }, [dockApi, document]);
 
-  const openAddBlock = useCallback(() => {
-    if (!document) return;
-    setCommandError(undefined);
-    setAddBlockLevelId(levelForSelection(document, selection).id);
-  }, [document, selection]);
-
+  const activeLevel = document ? levelForSelection(document, selection) : undefined;
   const selectedNode = document ? nodeForSelection(document, selection) : undefined;
+
+  const openAddBlock = useCallback(() => {
+    const currentDocument = documentRef.current;
+    if (!currentDocument) return;
+    if (!requireAppliedInspectorDraft("adding a module")) return;
+    setCommandError(undefined);
+    setAddBlockLevelId(levelForSelection(currentDocument, selectionRef.current)?.id);
+  }, [requireAppliedInspectorDraft]);
+
+  const openAddPort = useCallback(() => {
+    if (!selectedNode || !requireAppliedInspectorDraft("adding a port")) return;
+    setCommandError(undefined);
+    setAddPortTarget({ levelId: selectedNode.level.id, nodeId: selectedNode.node.id });
+  }, [requireAppliedInspectorDraft, selectedNode]);
+
+  const openAddConnection = useCallback(() => {
+    if (!activeLevel || !requireAppliedInspectorDraft("creating an interface")) return;
+    setCommandError(undefined);
+    setConnectionEndpointLevelId(activeLevel.id);
+  }, [activeLevel, requireAppliedInspectorDraft]);
+
+  const openAddChildDesign = useCallback(() => {
+    if (!selectedNode || !requireAppliedInspectorDraft("creating a child design")) return;
+    setCommandError(undefined);
+    setChildDesignTarget({ levelId: selectedNode.level.id, nodeId: selectedNode.node.id });
+  }, [requireAppliedInspectorDraft, selectedNode]);
+
+  const moveNode = useCallback((levelId: string, nodeId: string, position: { x: number; y: number }) => {
+    if (!requireAppliedInspectorDraft("moving a module")) return false;
+    return Boolean(runOperation({ type: "node/move", levelId, nodeId, position }));
+  }, [requireAppliedInspectorDraft, runOperation]);
+
+  const createConnection = useCallback((connection: {
+    levelId: string;
+    source: { nodeId: string; portId: string; label: string };
+    target: { nodeId: string; portId: string; label: string };
+  }) => {
+    const currentDocument = documentRef.current;
+    if (!currentDocument || !requireAppliedInspectorDraft("creating an interface")) return;
+    const level = currentDocument.levels.find((candidate) => candidate.id === connection.levelId);
+    if (!level) return;
+    const connectionBase = suggestId(`${connection.source.nodeId}-to-${connection.target.nodeId}`, "connection");
+    const interfaceBase = suggestId(`${connection.source.nodeId}.${connection.source.portId}-to-${connection.target.nodeId}.${connection.target.portId}`, "interface");
+    setPendingConnection({
+      ...connection,
+      defaultConnectionId: uniqueId(connectionBase, level.connections.map((candidate) => candidate.id)),
+      defaultInterfaceId: uniqueId(interfaceBase, Object.keys(currentDocument.interfaceDefinitions)),
+    });
+    setCommandError(undefined);
+  }, [requireAppliedInspectorDraft]);
+
+  const routeConnection = useCallback((levelId: string, connectionId: string, routing: ConnectionRouting | undefined): boolean => {
+    if (!requireAppliedInspectorDraft("adjusting interface routing")) return false;
+    return Boolean(runOperation({ type: "connection/route", levelId, connectionId, routing }));
+  }, [requireAppliedInspectorDraft, runOperation]);
+
   const canDelete = selection.kind === "node" || selection.kind === "port" || selection.kind === "connection";
   const canAddChildDesign = Boolean(selectedNode && !selectedNode.node.hierarchy);
+  const canAddConnection = Boolean(activeLevel && firstConnectablePair(activeLevel));
+  const commands = useMemo<StudioCommands>(() => ({
+    newDesign: {
+      id: "newDesign", label: "New Design...", toolbarTitle: "新建设计", icon: FilePlus2, enabled: true,
+      execute: () => {
+        if (!mayDiscardChanges()) return;
+        setCommandError(undefined);
+        setNewDialogOpen(true);
+      },
+    },
+    openDesign: {
+      id: "openDesign", label: "Open Design...", toolbarTitle: "打开设计", icon: FolderOpen, enabled: true,
+      execute: () => setLoadDialogOpen(true),
+    },
+    save: {
+      id: "save", label: "Save", toolbarTitle: "保存设计", shortcut: "Ctrl/⌘ S", icon: Save,
+      enabled: Boolean(document), execute: saveCurrent,
+    },
+    saveAs: {
+      id: "saveAs", label: "Save As...", shortcut: "Ctrl/⌘ ⇧ S", icon: Save,
+      enabled: Boolean(document), execute: openSaveAs,
+    },
+    exportJson: {
+      id: "exportJson", label: "Export JSON", icon: Download,
+      enabled: Boolean(document), execute: exportCurrent,
+    },
+    undo: {
+      id: "undo", label: "Undo", toolbarTitle: "撤销", shortcut: "Ctrl/⌘ Z", icon: Undo2,
+      enabled: editor.canUndo, execute: undoDesign,
+    },
+    redo: {
+      id: "redo", label: "Redo", toolbarTitle: "重做", shortcut: "Ctrl/⌘ ⇧ Z", icon: Redo2,
+      enabled: editor.canRedo, execute: redoDesign,
+    },
+    deleteSelection: {
+      id: "deleteSelection", label: "Delete Selection", toolbarTitle: "删除所选内容", shortcut: "Del", icon: Trash2,
+      enabled: canDelete, execute: deleteSelection,
+    },
+    addBlock: {
+      id: "addBlock", label: "Add Module...", toolbarTitle: "添加模块", icon: Box,
+      enabled: Boolean(document), execute: openAddBlock,
+    },
+    addPort: {
+      id: "addPort", label: "Add Port...", toolbarTitle: "添加端口", icon: Cable,
+      enabled: Boolean(selectedNode), execute: openAddPort,
+    },
+    addConnection: {
+      id: "addConnection", label: "Add Interface...", toolbarTitle: "添加接口", icon: Share2,
+      enabled: canAddConnection, execute: openAddConnection,
+    },
+    addChildDesign: {
+      id: "addChildDesign", label: "Create Child Design...", toolbarTitle: "创建子设计", icon: GitBranchPlus,
+      enabled: canAddChildDesign, execute: openAddChildDesign,
+    },
+    regenerateLayout: {
+      id: "regenerateLayout", label: "Regenerate Layout", toolbarTitle: "重新生成布局", icon: LayoutDashboard,
+      enabled: Boolean(document), execute: () => {
+        fitAfterLayout.current = true;
+        setLayoutBusy(true);
+        setPlacementMode("automatic");
+        setLayoutRevision((value) => value + 1);
+      },
+    },
+    optimizeRouting: {
+      id: "optimizeRouting", label: "Optimize Routing", toolbarTitle: "仅优化布线", icon: Route,
+      enabled: Boolean(document), execute: () => setRouteRevision((value) => value + 1),
+    },
+    validateDesign: {
+      id: "validateDesign", label: "Validate Design", toolbarTitle: "验证设计", icon: ShieldCheck,
+      enabled: Boolean(document), execute: validateDesign,
+    },
+    fitDesign: {
+      id: "fitDesign", label: "Fit Design", toolbarTitle: "适应窗口", icon: Scan,
+      enabled: Boolean(document), execute: () => setFitRequest((value) => value + 1),
+    },
+    toggleSources: {
+      id: "toggleSources", label: "Toggle Sources", toolbarTitle: "Sources", icon: PanelLeft,
+      enabled: true, execute: () => toggleDock("left"),
+    },
+    toggleProperties: {
+      id: "toggleProperties", label: "Toggle Properties", toolbarTitle: "Properties", icon: PanelRight,
+      enabled: true, execute: () => toggleDock("right"),
+    },
+    toggleMessages: {
+      id: "toggleMessages", label: "Toggle Messages", toolbarTitle: "Messages", icon: PanelBottom,
+      enabled: true, execute: () => toggleDock("bottom"),
+    },
+    maximizeDiagram: {
+      id: "maximizeDiagram", label: diagramMaximized ? "Restore Diagram" : "Maximize Diagram", toolbarTitle: "最大化或还原画布",
+      icon: diagramMaximized ? Minimize2 : Maximize2, enabled: true, execute: maximizeDiagram,
+    },
+    resetWorkspace: {
+      id: "resetWorkspace", label: "Reset Workspace", icon: RotateCcw, enabled: true,
+      execute: () => {
+        if (requireAppliedInspectorDraft("resetting the workspace")) setWorkspaceResetRequest((value) => value + 1);
+      },
+    },
+  }), [
+    canAddChildDesign,
+    canAddConnection,
+    canDelete,
+    deleteSelection,
+    diagramMaximized,
+    document,
+    editor.canRedo,
+    editor.canUndo,
+    exportCurrent,
+    maximizeDiagram,
+    mayDiscardChanges,
+    openAddBlock,
+    openAddChildDesign,
+    openAddConnection,
+    openAddPort,
+    openSaveAs,
+    redoDesign,
+    requireAppliedInspectorDraft,
+    saveCurrent,
+    selectedNode,
+    toggleDock,
+    undoDesign,
+    validateDesign,
+  ]);
+
+  useEffect(() => {
+    const handleKeyboard = (event: KeyboardEvent) => {
+      const modifier = event.ctrlKey || event.metaKey;
+      const key = event.key.toLocaleLowerCase();
+      if (modifier && key === "s") {
+        event.preventDefault();
+        const command = event.shiftKey ? commands.saveAs : commands.save;
+        if (command.enabled) command.execute();
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      const editingText = target?.matches("input, textarea, select, [contenteditable='true']");
+      if (editingText) return;
+      if (modifier && key === "z") {
+        event.preventDefault();
+        const command = event.shiftKey ? commands.redo : commands.undo;
+        if (command.enabled) command.execute();
+      } else if (modifier && key === "y") {
+        event.preventDefault();
+        if (commands.redo.enabled) commands.redo.execute();
+      } else if (event.key === "Delete" || event.key === "Backspace") {
+        event.preventDefault();
+        if (commands.deleteSelection.enabled) commands.deleteSelection.execute();
+      }
+    };
+    window.addEventListener("keydown", handleKeyboard);
+    return () => window.removeEventListener("keydown", handleKeyboard);
+  }, [commands]);
 
   if (!document) {
     return (
@@ -522,7 +735,6 @@ export function BlockDesignStudio({
     );
   }
 
-  const activeLevel = levelForSelection(document, selection);
   const addBlockLevel = addBlockLevelId ? document.levels.find((level) => level.id === addBlockLevelId) : undefined;
   const addPortNode = addPortTarget
     ? document.levels.find((level) => level.id === addPortTarget.levelId)?.nodes.find((node) => node.id === addPortTarget.nodeId)
@@ -530,13 +742,16 @@ export function BlockDesignStudio({
   const childDesignNode = childDesignTarget
     ? document.levels.find((level) => level.id === childDesignTarget.levelId)?.nodes.find((node) => node.id === childDesignTarget.nodeId)
     : undefined;
+  const connectionEndpointLevel = connectionEndpointLevelId
+    ? document.levels.find((level) => level.id === connectionEndpointLevelId)
+    : undefined;
   const errorCount = issues.filter((issue) => issue.severity === "error").length;
   const warningCount = issues.filter((issue) => issue.severity === "warning").length;
   const expandedTitles = document.levels.filter((level) => expandedLevelIds.has(level.id)).map((level) => level.title);
   const visibleConnections = layout.edges.filter((edge) => !edge.data?.boundaryContinuation).length;
 
   const dockContent = {
-    sources: <HierarchyTree document={document} expandedLevelIds={expandedLevelIds} selection={selection} onToggleLevel={toggleHierarchy} onRevealLevel={revealLevel} onSelect={setSelection} />,
+    sources: <HierarchyTree document={document} expandedLevelIds={expandedLevelIds} selection={selection} onToggleLevel={toggleHierarchy} onRevealLevel={revealLevel} onSelect={requestSelectionFromNavigator} />,
     diagram: (
       <section className="bd-canvas-pane">
         <ReactFlowProvider>
@@ -545,31 +760,21 @@ export function BlockDesignStudio({
             layout={layout}
             selection={selection}
             fitRequest={fitRequest}
+            revealSelectionRequest={revealSelectionRequest}
             routeRevision={routeRevision}
-            onSelect={setSelection}
+            onSelect={requestSelection}
             onToggleHierarchy={toggleHierarchy}
-            onMoveNode={(levelId, nodeId, position) => {
-              runOperation({ type: "node/move", levelId, nodeId, position });
-            }}
-            onCreateConnection={(connection) => {
-              const level = document.levels.find((candidate) => candidate.id === connection.levelId);
-              if (!level) return;
-              const connectionBase = suggestId(`${connection.source.nodeId}-to-${connection.target.nodeId}`, "connection");
-              const interfaceBase = suggestId(`${connection.source.nodeId}.${connection.source.portId}-to-${connection.target.nodeId}.${connection.target.portId}`, "interface");
-              setPendingConnection({
-                ...connection,
-                defaultConnectionId: uniqueId(connectionBase, level.connections.map((candidate) => candidate.id)),
-                defaultInterfaceId: uniqueId(interfaceBase, Object.keys(document.interfaceDefinitions)),
-              });
-              setCommandError(undefined);
-            }}
+            onAddModule={openAddBlock}
+            onMoveNode={moveNode}
+            onCreateConnection={createConnection}
+            onRouteConnection={routeConnection}
           />
         </ReactFlowProvider>
         {(layoutBusy || busy) && <div className="bd-canvas-busy" role="status">Updating diagram...</div>}
       </section>
     ),
-    properties: <Inspector document={document} selection={selection} onOperation={runOperation} onDelete={deleteSelection} />,
-    messages: <MessagesPanel issues={issues} onSelect={selectIssue} />,
+    properties: <Inspector document={document} selection={selection} onOperation={runOperation} onDelete={deleteSelection} onDraftChange={setInspectorDraftDirty} onSelect={requestSelectionFromNavigator} />,
+    messages: <MessagesPanel issues={issues} focusRequest={messageFocusRequest} onSelect={selectIssue} />,
   };
 
   return (
@@ -585,74 +790,27 @@ export function BlockDesignStudio({
     }}>
       <header className="bd-app-header">
         <div className="bd-brand"><span className="bd-brand-mark"><CircuitBoard size={16} /></span><strong>Architecture Block Studio</strong></div>
-        <div className="bd-document-title"><span>{document.title}{editor.dirty ? " *" : ""}</span><small>{sourceLabel}{editor.dirty ? " · Unsaved" : ""}</small></div>
+        <div className="bd-document-title"><span>{document.title}{editor.dirty || inspectorDraftDirty ? " *" : ""}</span><small>{sourceLabel}{inspectorDraftDirty ? " · Unapplied Inspector changes" : editor.dirty ? " · Unsaved" : ""}</small></div>
         <div className="bd-validation-summary">
           {errorCount === 0 ? <CheckCircle2 size={14} /> : <TriangleAlert size={14} />}
           <span>{errorCount} errors</span><span>{warningCount} warnings</span>
         </div>
       </header>
 
-      <MenuBar
-        sourceRef={document.sourceRef}
-        onNew={() => { if (mayDiscardChanges()) { setCommandError(undefined); setNewDialogOpen(true); } }}
-        onOpen={() => setLoadDialogOpen(true)}
-        onSave={saveCurrent}
-        onSaveAs={() => { setCommandError(undefined); setSaveAsDialogOpen(true); }}
-        onExport={exportCurrent}
-        onUndo={undoDesign}
-        onRedo={redoDesign}
-        onDelete={deleteSelection}
-        canUndo={editor.canUndo}
-        canRedo={editor.canRedo}
-        canDelete={canDelete}
-        onAddBlock={openAddBlock}
-        onAddPort={() => selectedNode && setAddPortTarget({ levelId: selectedNode.level.id, nodeId: selectedNode.node.id })}
-        onAddChildDesign={() => selectedNode && setChildDesignTarget({ levelId: selectedNode.level.id, nodeId: selectedNode.node.id })}
-        canAddPort={Boolean(selectedNode)}
-        canAddChildDesign={canAddChildDesign}
-        onLayout={() => { fitAfterLayout.current = true; setLayoutBusy(true); setPlacementMode("automatic"); setLayoutRevision((value) => value + 1); }}
-        onOptimizeRouting={() => setRouteRevision((value) => value + 1)}
-        onFit={() => setFitRequest((value) => value + 1)}
-        onValidate={validateDesign}
-        onToggleSources={() => toggleDock("left")}
-        onToggleProperties={() => toggleDock("right")}
-        onToggleMessages={() => toggleDock("bottom")}
-        onMaximizeDiagram={maximizeDiagram}
-        onResetWorkspace={() => setWorkspaceResetRequest((value) => value + 1)}
-      />
+      <MenuBar sourceRef={document.sourceRef} commands={commands} />
 
-      <div className="bd-toolbar">
-        <button type="button" className="bd-tool-button" title="新建设计" onClick={() => { if (mayDiscardChanges()) setNewDialogOpen(true); }}><FilePlus2 size={15} /></button>
-        <button type="button" className="bd-tool-button" title="打开设计" onClick={() => setLoadDialogOpen(true)}><FolderOpen size={15} /></button>
-        <button type="button" className="bd-tool-button" title="保存设计" onClick={saveCurrent}><Save size={15} /></button>
-        <span className="bd-toolbar-separator" />
-        <button type="button" className="bd-tool-button" title="撤销" disabled={!editor.canUndo} onClick={undoDesign}><Undo2 size={15} /></button>
-        <button type="button" className="bd-tool-button" title="重做" disabled={!editor.canRedo} onClick={redoDesign}><Redo2 size={15} /></button>
-        <button type="button" className="bd-tool-button" title="删除所选内容" disabled={!canDelete} onClick={deleteSelection}><Trash2 size={15} /></button>
-        <span className="bd-toolbar-separator" />
-        <button type="button" className="bd-tool-button" title="添加模块" onClick={openAddBlock}><Box size={15} /></button>
-        <button type="button" className="bd-tool-button" title="添加端口" disabled={!selectedNode} onClick={() => selectedNode && setAddPortTarget({ levelId: selectedNode.level.id, nodeId: selectedNode.node.id })}><Cable size={15} /></button>
-        <button type="button" className="bd-tool-button" title="创建子设计" disabled={!canAddChildDesign} onClick={() => selectedNode && setChildDesignTarget({ levelId: selectedNode.level.id, nodeId: selectedNode.node.id })}><GitBranchPlus size={15} /></button>
-        <span className="bd-toolbar-separator" />
-        <button type="button" className="bd-tool-button" title="重新生成布局" onClick={() => { fitAfterLayout.current = true; setLayoutBusy(true); setPlacementMode("automatic"); setLayoutRevision((value) => value + 1); }}><LayoutDashboard size={15} /></button>
-        <button type="button" className="bd-tool-button" title="仅优化布线" onClick={() => setRouteRevision((value) => value + 1)}><Route size={15} /></button>
-        <button type="button" className="bd-tool-button" title="适应窗口" onClick={() => setFitRequest((value) => value + 1)}><Scan size={15} /></button>
-        <button type="button" className="bd-tool-button" title="验证设计" onClick={validateDesign}><ShieldCheck size={15} /></button>
-        <span className="bd-toolbar-separator" />
-        <button type="button" className="bd-tool-button" title="Sources" onClick={() => toggleDock("left")}><PanelLeft size={15} /></button>
-        <button type="button" className="bd-tool-button" title="Messages" onClick={() => toggleDock("bottom")}><PanelBottom size={15} /></button>
-        <button type="button" className="bd-tool-button" title="Properties" onClick={() => toggleDock("right")}><PanelRight size={15} /></button>
-        <button type="button" className="bd-tool-button" title="最大化或还原画布" onClick={maximizeDiagram}>{diagramMaximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
-        <span className="bd-toolbar-separator" />
-        <nav className="bd-breadcrumbs" aria-label="Expanded hierarchy"><strong>{activeLevel.title}</strong>{expandedTitles.map((title) => <span key={title}><b>/</b>{title}</span>)}</nav>
-        <span className="bd-level-chip">{expandedLevelIds.size} expanded</span>
-      </div>
+      <StudioToolbar
+        commands={commands}
+        activeLevelTitle={activeLevel!.title}
+        expandedTitles={expandedTitles}
+        expandedCount={expandedLevelIds.size}
+      />
 
       <section className="bd-workspace"><DockWorkspace content={dockContent} resetRequest={workspaceResetRequest} onReady={setDockApi} /></section>
       <footer className="bd-statusbar">
         <span><Braces size={12} /> BlockDesignDocument {document.schemaVersion}</span>
-        <span className={editor.dirty ? "is-dirty" : ""}>{editor.dirty ? "Unsaved changes" : "Saved"}</span>
-        <span>{layout.nodes.length} visible blocks</span><span>{visibleConnections} visible interfaces</span>
+        <span className={editor.dirty || inspectorDraftDirty ? "is-dirty" : ""}>{inspectorDraftDirty ? "Unapplied Inspector changes" : editor.dirty ? "Unsaved changes" : "Saved"}</span>
+        <span>{layout.nodes.length} diagram blocks</span><span>{visibleConnections} diagram interfaces</span>
         <span>ELK placement · obstacle-aware orthogonal routes</span>
       </footer>
 
@@ -705,6 +863,15 @@ export function BlockDesignStudio({
               setAddPortTarget(undefined);
             }
           } catch (error) { setCommandError(errorMessage(error)); }
+        }}
+      />
+      <SelectConnectionEndpointsDialog
+        level={connectionEndpointLevel}
+        error={commandError}
+        onClose={() => { setConnectionEndpointLevelId(undefined); setCommandError(undefined); }}
+        onContinue={(connection) => {
+          setConnectionEndpointLevelId(undefined);
+          createConnection(connection);
         }}
       />
       <AddChildDesignDialog

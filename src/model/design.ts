@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const BLOCK_DESIGN_SCHEMA_VERSION = "2.1" as const;
+
 export const portSideSchema = z.enum(["left", "right", "top", "bottom"]);
 export const portDirectionSchema = z.enum(["input", "output", "bidirectional"]);
 export const interfaceKindSchema = z.enum([
@@ -43,6 +45,25 @@ export const endpointSchema = z.object({
   portId: z.string().min(1),
 });
 
+export const routePointSchema = z.object({
+  x: z.number().finite(),
+  y: z.number().finite(),
+});
+
+export const connectionRoutingSchema = z.object({
+  waypoints: z.array(routePointSchema).min(2).max(64),
+}).superRefine((routing, context) => {
+  routing.waypoints.slice(1).forEach((point, index) => {
+    const previous = routing.waypoints[index];
+    if (previous.x === point.x || previous.y === point.y) return;
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["waypoints", index + 1],
+      message: "Consecutive route waypoints must share an x or y coordinate.",
+    });
+  });
+});
+
 export const hierarchyPortBindingSchema = z.object({
   parentPortId: z.string().min(1),
   childEndpoint: endpointSchema,
@@ -80,6 +101,7 @@ export const connectionSchema = z.object({
   label: z.string().min(1).optional(),
   source: endpointSchema,
   target: endpointSchema,
+  routing: connectionRoutingSchema.optional(),
 });
 
 export const levelSchema = z.object({
@@ -114,7 +136,7 @@ export const interfaceDefinitionSchema = z.object({
 });
 
 export const blockDesignDocumentSchema = z.object({
-  schemaVersion: z.literal("2.0"),
+  schemaVersion: z.literal(BLOCK_DESIGN_SCHEMA_VERSION),
   id: z.string().min(1),
   title: z.string().min(1),
   summary: z.string().default(""),
@@ -134,11 +156,9 @@ export type HierarchyPortBinding = z.infer<typeof hierarchyPortBindingSchema>;
 export type BlockHierarchy = z.infer<typeof hierarchySchema>;
 export type BlockNode = z.infer<typeof nodeSchema>;
 export type ConnectionEndpoint = z.infer<typeof endpointSchema>;
+export type RoutePoint = z.infer<typeof routePointSchema>;
+export type ConnectionRouting = z.infer<typeof connectionRoutingSchema>;
 export type BlockConnection = z.infer<typeof connectionSchema>;
 export type DesignLevel = z.infer<typeof levelSchema>;
 export type InterfaceDefinition = z.infer<typeof interfaceDefinitionSchema>;
 export type BlockDesignDocument = z.infer<typeof blockDesignDocumentSchema>;
-
-export function parseBlockDesignDocument(input: unknown): BlockDesignDocument {
-  return blockDesignDocumentSchema.parse(input);
-}

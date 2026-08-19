@@ -1,79 +1,136 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import {
-  Box,
-  Cable,
-  Download,
-  ExternalLink,
-  FilePlus2,
-  FolderOpen,
-  GitBranchPlus,
-  LayoutDashboard,
-  Maximize2,
-  PanelBottom,
-  PanelLeft,
-  PanelRight,
-  RotateCcw,
-  Route,
-  Save,
-  Scan,
-  ShieldCheck,
-  Trash2,
-  Undo2,
-  Redo2,
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ExternalLink } from "lucide-react";
 import type { SourceRef } from "../model";
+import type { StudioCommand, StudioCommandId, StudioCommands } from "../studio/commands";
 
 type MenuId = "file" | "edit" | "design" | "view";
+type MenuFocusTarget = "first" | "last";
 
-interface MenuCommand {
+const MENU_DEFINITIONS: Array<{
+  id: MenuId;
   label: string;
-  icon: ReactNode;
-  run: () => void;
-  disabled?: boolean;
-}
+  commandIds: StudioCommandId[];
+}> = [
+  { id: "file", label: "File", commandIds: ["newDesign", "openDesign", "save", "saveAs", "exportJson"] },
+  { id: "edit", label: "Edit", commandIds: ["undo", "redo", "deleteSelection"] },
+  { id: "design", label: "Design", commandIds: ["addBlock", "addPort", "addConnection", "addChildDesign", "regenerateLayout", "optimizeRouting", "validateDesign"] },
+  { id: "view", label: "View", commandIds: ["fitDesign", "toggleSources", "toggleProperties", "toggleMessages", "maximizeDiagram", "resetWorkspace"] },
+];
 
 function Menu({
   id,
   label,
   activeMenu,
   commands,
+  focusTarget,
+  triggerRef,
   onToggle,
   onClose,
+  onNavigateMenu,
+  onNavigateTrigger,
 }: {
   id: MenuId;
   label: string;
   activeMenu?: MenuId;
-  commands: MenuCommand[];
-  onToggle: (id: MenuId) => void;
-  onClose: () => void;
+  commands: StudioCommand[];
+  focusTarget?: MenuFocusTarget;
+  triggerRef: (element: HTMLButtonElement | null) => void;
+  onToggle: (id: MenuId, focusTarget?: MenuFocusTarget) => void;
+  onClose: (id: MenuId, restoreFocus: boolean) => void;
+  onNavigateMenu: (id: MenuId, direction: -1 | 1) => void;
+  onNavigateTrigger: (id: MenuId, direction: -1 | 1) => void;
 }) {
   const open = activeMenu === id;
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  const enabledItems = () => itemRefs.current.filter(
+    (item): item is HTMLButtonElement => Boolean(item && !item.disabled),
+  );
+  const focusItem = (target: MenuFocusTarget) => {
+    const items = enabledItems();
+    (target === "first" ? items[0] : items.at(-1))?.focus();
+  };
+
+  useEffect(() => {
+    if (open && focusTarget) focusItem(focusTarget);
+  }, [focusTarget, open]);
+
+  const moveItemFocus = (current: HTMLButtonElement, direction: -1 | 1) => {
+    const items = enabledItems();
+    const currentIndex = items.indexOf(current);
+    if (currentIndex < 0 || items.length === 0) return;
+    items[(currentIndex + direction + items.length) % items.length].focus();
+  };
+
   return (
     <div className="bd-menu-root">
       <button
+        ref={triggerRef}
+        id={`bd-menu-trigger-${id}`}
         type="button"
         className={`bd-menu-button${open ? " is-open" : ""}`}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={open ? `bd-menu-${id}` : undefined}
         onClick={() => onToggle(id)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onToggle(id, "first");
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            onToggle(id, "last");
+          } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+            event.preventDefault();
+            onNavigateTrigger(id, event.key === "ArrowLeft" ? -1 : 1);
+          } else if (event.key === "Escape" && open) {
+            event.preventDefault();
+            onClose(id, true);
+          }
+        }}
       >
         {label}
       </button>
       {open && (
-        <div className="bd-menu-popover" role="menu">
-          {commands.map((command) => (
+        <div
+          id={`bd-menu-${id}`}
+          className="bd-menu-popover"
+          role="menu"
+          aria-labelledby={`bd-menu-trigger-${id}`}
+        >
+          {commands.map((command, index) => (
             <button
-              key={command.label}
+              key={command.id}
+              ref={(element) => { itemRefs.current[index] = element; }}
               type="button"
               role="menuitem"
-              disabled={command.disabled}
+              disabled={!command.enabled}
               onClick={() => {
-                command.run();
-                onClose();
+                document.getElementById(`bd-menu-trigger-${id}`)?.focus();
+                onClose(id, false);
+                command.execute();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  moveItemFocus(event.currentTarget, event.key === "ArrowUp" ? -1 : 1);
+                } else if (event.key === "Home" || event.key === "End") {
+                  event.preventDefault();
+                  focusItem(event.key === "Home" ? "first" : "last");
+                } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                  event.preventDefault();
+                  onNavigateMenu(id, event.key === "ArrowLeft" ? -1 : 1);
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  onClose(id, true);
+                } else if (event.key === "Tab") {
+                  onClose(id, false);
+                }
               }}
             >
-              {command.icon}
+              <command.icon size={14} aria-hidden="true" />
               <span>{command.label}</span>
+              {command.shortcut && <kbd>{command.shortcut}</kbd>}
             </button>
           ))}
         </div>
@@ -84,133 +141,84 @@ function Menu({
 
 export function MenuBar({
   sourceRef,
-  onNew,
-  onOpen,
-  onSave,
-  onSaveAs,
-  onExport,
-  onUndo,
-  onRedo,
-  onDelete,
-  canUndo,
-  canRedo,
-  canDelete,
-  onAddBlock,
-  onAddPort,
-  onAddChildDesign,
-  canAddPort,
-  canAddChildDesign,
-  onLayout,
-  onOptimizeRouting,
-  onFit,
-  onValidate,
-  onToggleSources,
-  onToggleProperties,
-  onToggleMessages,
-  onMaximizeDiagram,
-  onResetWorkspace,
+  commands,
 }: {
   sourceRef?: SourceRef;
-  onNew: () => void;
-  onOpen: () => void;
-  onSave: () => void;
-  onSaveAs: () => void;
-  onExport: () => void;
-  onUndo: () => void;
-  onRedo: () => void;
-  onDelete: () => void;
-  canUndo: boolean;
-  canRedo: boolean;
-  canDelete: boolean;
-  onAddBlock: () => void;
-  onAddPort: () => void;
-  onAddChildDesign: () => void;
-  canAddPort: boolean;
-  canAddChildDesign: boolean;
-  onLayout: () => void;
-  onOptimizeRouting: () => void;
-  onFit: () => void;
-  onValidate: () => void;
-  onToggleSources: () => void;
-  onToggleProperties: () => void;
-  onToggleMessages: () => void;
-  onMaximizeDiagram: () => void;
-  onResetWorkspace: () => void;
+  commands: StudioCommands;
 }) {
   const [activeMenu, setActiveMenu] = useState<MenuId>();
+  const [focusRequest, setFocusRequest] = useState<{ id: MenuId; target: MenuFocusTarget }>();
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRefs = useRef(new Map<MenuId, HTMLButtonElement>());
 
   useEffect(() => {
     const closeOutside = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setActiveMenu(undefined);
     };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setActiveMenu(undefined);
-    };
     window.addEventListener("pointerdown", closeOutside);
-    window.addEventListener("keydown", closeOnEscape);
     return () => {
       window.removeEventListener("pointerdown", closeOutside);
-      window.removeEventListener("keydown", closeOnEscape);
     };
   }, []);
 
+  const menuIndex = (id: MenuId) => MENU_DEFINITIONS.findIndex((menu) => menu.id === id);
+  const adjacentMenu = (id: MenuId, direction: -1 | 1, requireEnabledCommand: boolean): MenuId => {
+    const start = menuIndex(id);
+    for (let distance = 1; distance <= MENU_DEFINITIONS.length; distance += 1) {
+      const candidate = MENU_DEFINITIONS[
+        (start + direction * distance + MENU_DEFINITIONS.length) % MENU_DEFINITIONS.length
+      ];
+      if (!requireEnabledCommand || candidate.commandIds.some((commandId) => commands[commandId].enabled)) {
+        return candidate.id;
+      }
+    }
+    return id;
+  };
+
   const menuProps = {
     activeMenu,
-    onToggle: (id: MenuId) => setActiveMenu((current) => (current === id ? undefined : id)),
-    onClose: () => setActiveMenu(undefined),
+    onToggle: (id: MenuId, target?: MenuFocusTarget) => {
+      setActiveMenu((current) => current === id && !target ? undefined : id);
+      setFocusRequest(target ? { id, target } : undefined);
+    },
+    onClose: (id: MenuId, restoreFocus: boolean) => {
+      setActiveMenu(undefined);
+      setFocusRequest(undefined);
+      if (restoreFocus) {
+        window.setTimeout(() => {
+          if (!document.querySelector('[role="dialog"]')) triggerRefs.current.get(id)?.focus();
+        }, 0);
+      }
+    },
+    onNavigateMenu: (id: MenuId, direction: -1 | 1) => {
+      const next = adjacentMenu(id, direction, true);
+      setActiveMenu(next);
+      setFocusRequest({ id: next, target: "first" });
+    },
+    onNavigateTrigger: (id: MenuId, direction: -1 | 1) => {
+      const next = adjacentMenu(id, direction, false);
+      setActiveMenu(undefined);
+      setFocusRequest(undefined);
+      triggerRefs.current.get(next)?.focus();
+    },
   };
 
   return (
     <div className="bd-menubar" ref={rootRef}>
-      <Menu
-        {...menuProps}
-        id="file"
-        label="File"
-        commands={[
-          { label: "New Design...", icon: <FilePlus2 size={14} />, run: onNew },
-          { label: "Open Design...", icon: <FolderOpen size={14} />, run: onOpen },
-          { label: "Save", icon: <Save size={14} />, run: onSave },
-          { label: "Save As...", icon: <Save size={14} />, run: onSaveAs },
-          { label: "Export JSON", icon: <Download size={14} />, run: onExport },
-        ]}
-      />
-      <Menu
-        {...menuProps}
-        id="edit"
-        label="Edit"
-        commands={[
-          { label: "Undo", icon: <Undo2 size={14} />, run: onUndo, disabled: !canUndo },
-          { label: "Redo", icon: <Redo2 size={14} />, run: onRedo, disabled: !canRedo },
-          { label: "Delete Selection", icon: <Trash2 size={14} />, run: onDelete, disabled: !canDelete },
-        ]}
-      />
-      <Menu
-        {...menuProps}
-        id="design"
-        label="Design"
-        commands={[
-          { label: "Add Module...", icon: <Box size={14} />, run: onAddBlock },
-          { label: "Add Port...", icon: <Cable size={14} />, run: onAddPort, disabled: !canAddPort },
-          { label: "Create Child Design...", icon: <GitBranchPlus size={14} />, run: onAddChildDesign, disabled: !canAddChildDesign },
-          { label: "Regenerate Layout", icon: <LayoutDashboard size={14} />, run: onLayout },
-          { label: "Optimize Routing", icon: <Route size={14} />, run: onOptimizeRouting },
-          { label: "Validate Design", icon: <ShieldCheck size={14} />, run: onValidate },
-        ]}
-      />
-      <Menu
-        {...menuProps}
-        id="view"
-        label="View"
-        commands={[
-          { label: "Fit Design", icon: <Scan size={14} />, run: onFit },
-          { label: "Toggle Sources", icon: <PanelLeft size={14} />, run: onToggleSources },
-          { label: "Toggle Properties", icon: <PanelRight size={14} />, run: onToggleProperties },
-          { label: "Toggle Messages", icon: <PanelBottom size={14} />, run: onToggleMessages },
-          { label: "Maximize Diagram", icon: <Maximize2 size={14} />, run: onMaximizeDiagram },
-          { label: "Reset Workspace", icon: <RotateCcw size={14} />, run: onResetWorkspace },
-        ]}
-      />
+      {MENU_DEFINITIONS.map((menu) => (
+        <Menu
+          {...menuProps}
+          key={menu.id}
+          id={menu.id}
+          label={menu.label}
+          commands={menu.commandIds.map((commandId) => commands[commandId])}
+          focusTarget={focusRequest?.id === menu.id ? focusRequest.target : undefined}
+          triggerRef={(element) => {
+            if (element) triggerRefs.current.set(menu.id, element);
+            else triggerRefs.current.delete(menu.id);
+          }}
+        />
+      ))}
       <span />
       {sourceRef && (
         <a href={sourceRef.href} target="_blank" rel="noreferrer">

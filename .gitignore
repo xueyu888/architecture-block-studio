@@ -3,4 +3,5 @@ dist/
 *.tsbuildinfo
 playwright-report/
 test-results/
+performance-results/
 *.log

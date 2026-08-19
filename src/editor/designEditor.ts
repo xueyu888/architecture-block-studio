@@ -1,4 +1,5 @@
 import {
+  BLOCK_DESIGN_SCHEMA_VERSION,
   parseBlockDesignDocument,
   type BlockConnection,
   type BlockDesignDocument,
@@ -92,6 +93,12 @@ export type DesignOperation =
       connectionId: string;
       values: Pick<BlockConnection, "label">;
       definition: InterfaceDefinition;
+    }
+  | {
+      type: "connection/route";
+      levelId: string;
+      connectionId: string;
+      routing: BlockConnection["routing"];
     }
   | { type: "connection/delete"; levelId: string; connectionId: string };
 
@@ -368,6 +375,20 @@ export function applyDesignOperation(
       next.interfaceDefinitions[connection.interfaceId] = operation.definition;
       break;
     }
+    case "connection/route": {
+      const level = requireLevel(next, operation.levelId);
+      const connection = level.connections.find((candidate) => candidate.id === operation.connectionId) ??
+        editError(`Connection ${operation.connectionId} does not exist in ${level.title}.`);
+      connection.routing = operation.routing
+        ? {
+            waypoints: operation.routing.waypoints.map((point) => ({
+              x: Math.round(point.x),
+              y: Math.round(point.y),
+            })),
+          }
+        : undefined;
+      break;
+    }
     case "connection/delete": {
       const level = requireLevel(next, operation.levelId);
       const connection = level.connections.find((candidate) => candidate.id === operation.connectionId) ??
@@ -387,7 +408,7 @@ export function createBlankDesign(id: string, title: string): BlockDesignDocumen
   const normalizedTitle = title.trim();
   if (!normalizedTitle) editError("Design title cannot be empty.");
   return parseBlockDesignDocument({
-    schemaVersion: "2.0",
+    schemaVersion: BLOCK_DESIGN_SCHEMA_VERSION,
     id,
     title: normalizedTitle,
     summary: "",

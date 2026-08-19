@@ -7,7 +7,7 @@ import type {
   DesignLevel,
   PortSide,
 } from "../model";
-import type { LayoutResult, StudioFlowEdge, StudioFlowNode } from "../studio/types";
+import type { LayoutFlowEdge, LayoutFlowNode, LayoutResult } from "./types";
 
 let elkPromise: Promise<ELK> | undefined;
 
@@ -43,8 +43,8 @@ interface PositionedNode extends Dimensions {
 }
 
 interface ComposedLevel {
-  nodes: StudioFlowNode[];
-  edges: StudioFlowEdge[];
+  nodes: LayoutFlowNode[];
+  edges: LayoutFlowEdge[];
   bounds: Bounds;
   directNodeIds: Map<string, string>;
 }
@@ -255,7 +255,7 @@ function actualEdge(
   instancePath: string,
   connection: BlockConnection,
   directNodeIds: Map<string, string>,
-): StudioFlowEdge | undefined {
+): LayoutFlowEdge | undefined {
   const definition = document.interfaceDefinitions[connection.interfaceId];
   const source = directNodeIds.get(connection.source.nodeId);
   const target = directNodeIds.get(connection.target.nodeId);
@@ -274,7 +274,6 @@ function actualEdge(
       definition,
       kind: definition.kind,
       boundaryContinuation: false,
-      inspect: () => undefined,
     },
     selectable: true,
   };
@@ -286,7 +285,7 @@ function bindingEdges(
   instancePath: string,
   positioned: PositionedNode,
   parentFlowId: string,
-): StudioFlowEdge[] {
+): LayoutFlowEdge[] {
   const hierarchy = positioned.node.hierarchy;
   const child = positioned.child;
   if (!hierarchy || !child) return [];
@@ -331,7 +330,6 @@ function bindingEdges(
           kind: definition.kind,
           boundaryContinuation: true,
           boundaryNodeId: parentFlowId,
-          inspect: () => undefined,
         },
         selectable: true,
       }];
@@ -407,8 +405,8 @@ async function composeLevel(
     positioned.map(({ node }) => [node.id, flowNodeId(instancePath, node.id)] as const),
   );
 
-  const nodes: StudioFlowNode[] = [];
-  const edges: StudioFlowEdge[] = [];
+  const nodes: LayoutFlowNode[] = [];
+  const edges: LayoutFlowEdge[] = [];
   positioned.forEach((item) => {
     const id = directNodeIds.get(item.node.id)!;
     nodes.push({

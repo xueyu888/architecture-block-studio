@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { FileJson, Link, X } from "lucide-react";
+import { useDialogFocus } from "./useDialogFocus";
 
 export function LoadDesignDialog({
   open,
@@ -18,11 +19,13 @@ export function LoadDesignDialog({
 }) {
   const [url, setUrl] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialogFocus({ open, dialogRef, onClose });
   if (!open) return null;
 
   return (
     <div className="bd-dialog-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="bd-dialog" role="dialog" aria-modal="true" aria-labelledby="load-design-title" onMouseDown={(event) => event.stopPropagation()}>
+      <section ref={dialogRef} tabIndex={-1} className="bd-dialog" role="dialog" aria-modal="true" aria-labelledby="load-design-title" onMouseDown={(event) => event.stopPropagation()}>
         <header>
           <div>
             <span>BLOCK DESIGN SOURCE</span>
@@ -45,7 +48,7 @@ export function LoadDesignDialog({
               if (file) onLoadFile(file);
             }}
           />
-          <button type="button" className="bd-command-button" disabled={busy} onClick={() => inputRef.current?.click()}>
+          <button type="button" className="bd-command-button" data-autofocus="true" disabled={busy} onClick={() => inputRef.current?.click()}>
             <FileJson size={15} /> Choose JSON file
           </button>
         </div>
