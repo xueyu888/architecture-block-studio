@@ -57,11 +57,11 @@ function Menu({
   const open = activeMenu === id;
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
-  const enabledItems = () => itemRefs.current.filter(
-    (item): item is HTMLButtonElement => Boolean(item && !item.disabled),
+  const focusableItems = () => itemRefs.current.filter(
+    (item): item is HTMLButtonElement => Boolean(item),
   );
   const focusItem = (target: MenuFocusTarget) => {
-    const items = enabledItems();
+    const items = focusableItems();
     (target === "first" ? items[0] : items.at(-1))?.focus();
   };
 
@@ -70,14 +70,14 @@ function Menu({
   }, [focusTarget, open]);
 
   const moveItemFocus = (current: HTMLButtonElement, direction: -1 | 1) => {
-    const items = enabledItems();
+    const items = focusableItems();
     const currentIndex = items.indexOf(current);
     if (currentIndex < 0 || items.length === 0) return;
     items[(currentIndex + direction + items.length) % items.length].focus();
   };
 
   const moveItemFocusByCharacter = (current: HTMLButtonElement, character: string) => {
-    const items = enabledItems();
+    const items = focusableItems();
     const currentIndex = items.indexOf(current);
     for (let distance = 1; distance <= items.length; distance += 1) {
       const item = items[(currentIndex + distance + items.length) % items.length];
@@ -136,15 +136,22 @@ function Menu({
               ref={(element) => { itemRefs.current[index] = element; }}
               type="button"
               role="menuitem"
-              disabled={!command.enabled}
+              tabIndex={-1}
+              aria-disabled={command.enabled ? undefined : true}
               title={command.enabled ? undefined : command.unavailableReason}
-              onClick={() => {
+              onClick={(event) => {
+                if (!command.enabled) {
+                  event.preventDefault();
+                  return;
+                }
                 document.getElementById(`bd-menu-trigger-${id}`)?.focus();
                 onClose(id, false);
                 command.execute();
               }}
               onKeyDown={(event) => {
-                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                if (!command.enabled && (event.key === "Enter" || event.key === " ")) {
+                  event.preventDefault();
+                } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                   event.preventDefault();
                   moveItemFocus(event.currentTarget, event.key === "ArrowUp" ? -1 : 1);
                 } else if (event.key === "Home" || event.key === "End") {
@@ -204,18 +211,9 @@ export function MenuBar({
   }, []);
 
   const menuIndex = (id: MenuId) => MENU_DEFINITIONS.findIndex((menu) => menu.id === id);
-  const adjacentMenu = (id: MenuId, direction: -1 | 1, requireEnabledCommand: boolean): MenuId => {
-    const start = menuIndex(id);
-    for (let distance = 1; distance <= MENU_DEFINITIONS.length; distance += 1) {
-      const candidate = MENU_DEFINITIONS[
-        (start + direction * distance + MENU_DEFINITIONS.length) % MENU_DEFINITIONS.length
-      ];
-      if (!requireEnabledCommand || candidate.commandIds.some((commandId) => commands[commandId].enabled)) {
-        return candidate.id;
-      }
-    }
-    return id;
-  };
+  const adjacentMenu = (id: MenuId, direction: -1 | 1): MenuId => MENU_DEFINITIONS[
+    (menuIndex(id) + direction + MENU_DEFINITIONS.length) % MENU_DEFINITIONS.length
+  ].id;
 
   const menuProps = {
     activeMenu,
@@ -233,12 +231,12 @@ export function MenuBar({
       }
     },
     onNavigateMenu: (id: MenuId, direction: -1 | 1) => {
-      const next = adjacentMenu(id, direction, true);
+      const next = adjacentMenu(id, direction);
       setActiveMenu(next);
       setFocusRequest({ id: next, target: "first" });
     },
     onNavigateTrigger: (id: MenuId, direction: -1 | 1) => {
-      const next = adjacentMenu(id, direction, false);
+      const next = adjacentMenu(id, direction);
       setActiveMenu(undefined);
       setFocusRequest(undefined);
       triggerRefs.current.get(next)?.focus();

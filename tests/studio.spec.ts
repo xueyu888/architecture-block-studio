@@ -942,12 +942,21 @@ test("navigates application menus with a desktop keyboard model", async ({ page 
   await expect(fileMenu.getByRole("menuitem", { name: /^Export JSON/ })).toBeFocused();
 
   await page.keyboard.press("ArrowRight");
+  const editMenu = page.getByRole("menu", { name: "Edit" });
+  await expect(editMenu).toBeVisible();
+  await expect(editMenu.getByRole("menuitem", { name: /^Undo/ })).toBeFocused();
+
+  await page.keyboard.press("ArrowRight");
   const designMenu = page.getByRole("menu", { name: "Design" });
   await expect(designMenu).toBeVisible();
   await expect(designMenu.getByRole("menuitem", { name: /^Add Module/ })).toBeFocused();
 
   await page.keyboard.press("ArrowDown");
+  await expect(designMenu.getByRole("menuitem", { name: /^Add Port/ })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
   await expect(designMenu.getByRole("menuitem", { name: /^Add Interface/ })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(designMenu.getByRole("menuitem", { name: /^Create Child Design/ })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(designMenu.getByRole("menuitem", { name: /^Regenerate Layout/ })).toBeFocused();
   await page.keyboard.press("Home");
@@ -968,7 +977,7 @@ test("navigates application menus with a desktop keyboard model", async ({ page 
   await expect(newDesignDialog.getByLabel("Design title")).toBeFocused();
 });
 
-test("reaches high-frequency design commands by typing menu initials", async ({ page }) => {
+test("reaches available and unavailable design commands by typing menu initials", async ({ page }) => {
   const fileTrigger = page.getByRole("button", { name: "File", exact: true });
   const designTrigger = page.getByRole("button", { name: "Design", exact: true });
 
@@ -985,10 +994,22 @@ test("reaches high-frequency design commands by typing menu initials", async ({ 
   await expect(addModule).toBeFocused();
 
   await page.keyboard.press("a");
+  await expect(addPort).toBeFocused();
+  await expect(addPort).toHaveAttribute("aria-disabled", "true");
+  await page.keyboard.press("Enter");
+  await expect(addPort).toBeFocused();
+  await expect(designMenu).toBeVisible();
+  await page.keyboard.press("a");
   await expect(addInterface).toBeFocused();
   await page.keyboard.press("a");
   await expect(addModule).toBeFocused();
   await page.keyboard.press("c");
+  await expect(addChild).toBeFocused();
+  await expect(addChild).toHaveAttribute("aria-disabled", "true");
+  await page.keyboard.press("Space");
+  await expect(addChild).toBeFocused();
+  await expect(designMenu).toBeVisible();
+  await page.keyboard.press("a");
   await expect(addModule).toBeFocused();
   await page.keyboard.press("Enter");
 
@@ -1039,15 +1060,32 @@ test("explains why context-dependent design commands are unavailable", async ({ 
   const addChild = designMenu.getByRole("menuitem", { name: /^Create Child Design/ });
 
   await designTrigger.click();
-  await expect(addModule).toBeEnabled();
-  await expect(addPort).toBeDisabled();
+  await expect(addModule).not.toHaveAttribute("aria-disabled", "true");
+  await expect(addPort).toHaveAttribute("aria-disabled", "true");
   await expect(addPort.locator("small")).toHaveText("Select a module first.");
-  await expect(addInterface).toBeDisabled();
+  await expect(addInterface).toHaveAttribute("aria-disabled", "true");
   await expect(addInterface.locator("small")).toHaveText("Add compatible output/input ports to this level first.");
-  await expect(addChild).toBeDisabled();
+  await expect(addChild).toHaveAttribute("aria-disabled", "true");
   await expect(addChild.locator("small")).toHaveText("Select a module first.");
+  await addModule.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(addPort).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(addPort).toBeFocused();
+  await expect(designMenu).toBeVisible();
+  await page.keyboard.press("Space");
+  await expect(addPort).toBeFocused();
+  await expect(designMenu).toBeVisible();
+  const addPortBox = await addPort.boundingBox();
+  expect(addPortBox).not.toBeNull();
+  await page.mouse.click(addPortBox!.x + addPortBox!.width / 2, addPortBox!.y + addPortBox!.height / 2);
+  await expect(addPort).toBeFocused();
+  await expect(designMenu).toBeVisible();
   expect((await accessibilityResults(page, '[role="menu"]')).violations).toEqual([]);
   expect(await textContrastIssues(page, '[role="menu"]')).toEqual([]);
+  if (process.env.CAPTURE_DISABLED_MENU_FOCUS === "1") {
+    await captureStudioScreenshot(page, "docs/screenshots/disabled-menu-focus.png");
+  }
   if (process.env.CAPTURE_COMMAND_GUIDANCE === "1") {
     await captureStudioScreenshot(page, "docs/screenshots/disabled-command-guidance.png");
   }
@@ -1063,11 +1101,11 @@ test("explains why context-dependent design commands are unavailable", async ({ 
   await page.getByRole("dialog", { name: /Add Module/ }).getByRole("button", { name: "Add Module", exact: true }).click();
   await waitForEditorIdle(page);
   await designTrigger.click();
-  await expect(addPort).toBeEnabled();
+  await expect(addPort).not.toHaveAttribute("aria-disabled", "true");
   await expect(addPort.locator("small")).toHaveCount(0);
-  await expect(addInterface).toBeDisabled();
+  await expect(addInterface).toHaveAttribute("aria-disabled", "true");
   await expect(addInterface.locator("small")).toHaveText("Add compatible output/input ports to this level first.");
-  await expect(addChild).toBeEnabled();
+  await expect(addChild).not.toHaveAttribute("aria-disabled", "true");
 
   await addChild.click();
   const childDialog = page.getByRole("dialog", { name: /Create Child Design/ });
@@ -1075,7 +1113,7 @@ test("explains why context-dependent design commands are unavailable", async ({ 
   await waitForEditorIdle(page);
   await page.getByRole("region", { name: "Sources" }).getByRole("button", { name: "New Module", exact: true }).click();
   await designTrigger.click();
-  await expect(addChild).toBeDisabled();
+  await expect(addChild).toHaveAttribute("aria-disabled", "true");
   await expect(addChild.locator("small")).toHaveText("Use this module's hierarchy control to open its child design.");
   await page.keyboard.press("Escape");
   await expect(addChildTool).toHaveAttribute(

@@ -150,7 +150,7 @@ button { color: inherit; }
   cursor: pointer;
 }
 
-.bd-menubar button:hover,
+.bd-menubar button:hover:not(:disabled):not([aria-disabled="true"]),
 .bd-menubar a:hover { background: #dce1dd; }
 .bd-menubar > span { flex: 1; }
 
@@ -190,9 +190,9 @@ button { color: inherit; }
   cursor: pointer;
 }
 
-.bd-menu-popover button:hover:not(:disabled) { background: #dce7e0; }
-.bd-menu-popover button:disabled { color: #59635d; cursor: default; }
-.bd-menu-popover button:disabled svg { opacity: 0.55; }
+.bd-menu-popover button:hover:not([aria-disabled="true"]) { background: #dce7e0; }
+.bd-menu-popover button[aria-disabled="true"] { color: #59635d; cursor: default; }
+.bd-menu-popover button[aria-disabled="true"] svg { opacity: 0.55; }
 
 .bd-menu-item-copy {
   min-width: 0;

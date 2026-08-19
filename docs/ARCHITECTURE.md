@@ -180,7 +180,7 @@ React Flow 的库内键盘位移被阻止后，其内建 aria-live 不再拥有�
 
 `StudioCommandAvailability` 是命令可用性的唯一公开合同：命令要么 `enabled: true`，要么 `enabled: false` 且必须携带 `unavailableReason`，类型层不允许产生“禁用但无解释”的状态。Studio 从当前 document、history、selection、hierarchy 和 connectable pair 一次派生该联合类型；Menu 与 Toolbar 只投影同一结果，不重新计算 eligibility。禁用命令保持不可执行，原因只用于可见菜单文案、toolbar title 与 accessible name，不进入 JSON、历史或工作区事实。
 
-`MenuBar` 只拥有桌面菜单的导航语义，不拥有命令行为。顶层按钮和已展开菜单都支持无修饰 printable character 定位；搜索从当前焦点之后开始、环绕一次，只匹配可用命令的可见名称。重复字符循环同首字母项，无匹配或只有禁用匹配时保持原焦点。最终执行仍调用 `StudioCommands` 的 `execute`，因此菜单键入定位不会复制 enabled 规则、创建流程或文档写入。
+`MenuBar` 只拥有桌面复合菜单的焦点、导航和激活门禁，不拥有命令 eligibility 或行为。顶层按钮和已展开菜单都支持无修饰 printable character 定位；搜索从当前焦点之后开始并环绕一次，方向键、Home / End 与字符导航都经过实际渲染的菜单项，包括 `aria-disabled` 项。禁用项因此可获得可见焦点并让辅助技术读取同一 `unavailableReason`，但 Enter、Space 与 pointer 激活都由 MenuBar 拒绝，菜单和焦点保持原位。可用项最终仍只调用 `StudioCommands.execute`；Toolbar 普通按钮继续使用原生 `disabled`，两种交互语义不互相套用。
 
 默认 Hierarchy 先由 `projectHierarchyRows` 按文档顺序和当前展开集合生成完整的 document / level / node 行投影；搜索和接口浏览器同样始终从完整文档派生有序结果与总数。三类列表只按 40 行批次把结果渐进挂入 DOM，接近滚动底部时继续加载。批次窗口是可丢弃展示状态，不截断结果、不改变排序、不重置选择，也不生成第二份模块或接口事实；展开只改变完整行投影，不能把已经滚动加载的窗口弹回顶部。
 
