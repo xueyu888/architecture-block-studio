@@ -1,8 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const port = 4317;
+const port = Number(process.env.PLAYWRIGHT_PORT ?? 4317);
+if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+  throw new Error("PLAYWRIGHT_PORT must be an integer between 1 and 65535.");
+}
 const desktopViewport = { width: 1680, height: 1050 };
 const chromiumPerformanceGrep = /loads and operates a deterministic large or stress design/;
+const reuseExistingServer = !process.env.CI && process.env.PLAYWRIGHT_REUSE_SERVER === "1";
 
 export default defineConfig({
   testDir: "./tests",
@@ -18,9 +22,9 @@ export default defineConfig({
     viewport: desktopViewport,
   },
   webServer: {
-    command: `pnpm dev --host 127.0.0.1 --port ${port}`,
+    command: `pnpm dev --host 127.0.0.1 --port ${port} --strictPort`,
     url: `http://127.0.0.1:${port}`,
-    reuseExistingServer: true,
+    reuseExistingServer,
     timeout: 30_000,
   },
   projects: [

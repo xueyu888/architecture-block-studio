@@ -10,12 +10,13 @@ Architecture Block Studio 处理的是可进入版本控制和 AI 工作流的�
 
 | 证据 | 当前结果 |
 | --- | --- |
-| TypeScript + Vite production build | 通过，1879 modules transformed，6.56 秒 |
-| Vitest 快速单元测试 | 73 / 73 通过，12 个 test files，0.429 秒 |
+| TypeScript + Vite production build | 通过，1879 modules transformed，7.08 秒 |
+| Vitest 快速单元测试 | 73 / 73 通过，12 个 test files，0.463 秒 |
+| 干净检出 | 从远端 `main` 全新克隆后，`pnpm install --frozen-lockfile`、production build、73 / 73 unit 与独立端口双浏览器完整回归通过；测试服务器默认由当前检出拥有，只有显式设置 `PLAYWRIGHT_REUSE_SERVER=1` 才允许复用 |
 | Vitest 历史压力通道 | 1000 / 2000、20 次操作：compact snapshot 1,639,002 bytes，21 份保留 34,419,093 bytes；单 fork 在 worker 内强制暴露 GC，三轮 heap / ArrayBuffer / 合计增量中位数为 3,646,384 / 32,780,088 / 36,426,472 bytes，三项离散度均为 0%；Apply / Undo 总耗时中位数 466 / 371 ms |
 | 可重复性能证据 | `pnpm performance:baseline -- --runs 3` 连续完成历史与 Chromium 压力档各 3 次，输出 6 份 `performance-sample v1` 和 1 份 observation-only 趋势报告；最新浏览器首次可交互中位数 2552 ms、十次编辑 2692 ms、最终测量内存 65,320,494 bytes；Sources 定位中位数 217 ms，MiniMap 往返定位中位数 63 / 60 ms，每次只发生 1 次 viewport 变换 |
-| Chromium Playwright | Playwright 1.62.1 / Chromium build 1234，27 / 27 通过；与 Firefox 并行完整回归共 1.6 分钟 |
-| Firefox 产品 Playwright | Playwright 1.62.1 / Firefox build 1538，25 / 25 通过；执行除 Chromium CDP heap 压力采样外的全部产品合同，覆盖文件、编辑、审查、可访问性、焦点、Dock、层级、路由与保存导出 |
+| Chromium Playwright | Playwright 1.62.1 / Chromium build 1234，27 / 27 通过；与 Firefox 在测试自有隔离端口并行完整回归共 3.9 分钟（本机空闲 IPv4 端口探测存在额外等待） |
+| Firefox 产品 Playwright | Playwright 1.62.1 / Firefox build 1538，26 / 26 通过；执行除 Chromium CDP heap 压力采样外的全部产品合同，覆盖文件、编辑、审查、可访问性、焦点、Dock、层级、路由与保存导出 |
 | 可访问性门禁 | 默认工作台与 Open Dialog 的 WCAG A / AA 结构规则、可交互责任区和文本对比度通过；本轮完整套件中的对应旅程 1.4 秒 |
 | 默认示例 | 3 levels、32 modules、40 declared connections；两层展开后 54 visual edges |
 | 大型设计 | 200 modules / 400 connections 保持全量 Canvas DOM 与 400 条路径逐线段几何检查，默认 Hierarchy 首批仅挂载 40 行；独立执行中首次可交互 950 ms、模块选择并完成 280 ms 平滑聚焦 410 ms、四类模块搜索、一次增量加载并键盘定位 966 ms、接口筛选 255 ms、接口端点聚焦 374 ms、保存并校验 77 ms；测得 JS + embedder + backing storage 总量 71,410,189 bytes |
@@ -49,6 +50,8 @@ Iteration 50 第五次按新用户、日常专业用户和 Reviewer 复评 Desig
 Iteration 51 在 1280 × 720 真实桌面视口验证全工作台：Canvas、Inspector、Messages、MiniMap、固定操作区与状态栏都在 viewport 内且无全局滚动，选中线仍提供至少 23 px 的把手，方向键写入手动路由，线中标签保持 0。当前实现已经满足该合同，因此没有为凑修改而增加 CSS；新增合同在 Chromium / Firefox 2 / 2 及完整 51 / 51 回归通过，`compact-workbench.png` 已人工复核。
 
 Iteration 52 在默认 AIO 复杂设计中真实新建 Review Gateway、左侧输入端口和类型化 RPC，首次捕获到智能路径从目标模块内部接近端口，以及分道末端微小对角段在点击把手后被持久化的问题。路由 Owner 现在仅在端口侧被违反时经外向 stub 重新寻路，并对自动分道、手动提交和端点恢复统一执行严格正交化；Canvas 对无坐标变化的点击不再提交路由。新增场景同时验证 8 modules / 11 interfaces、0 碰撞 / 穿块 / 共路 / 端口内侵 / 中部标签、Arrow 手动调整、保存、Undo / Redo 和 0 可见错误；Chromium / Firefox 2 / 2、完整 53 / 53、73 / 73 unit 与 headed 截图均通过。
+
+Iteration 53 从远端 `main` 建立全新临时检出，证明依赖安装、build、unit、Chromium / Firefox、默认示例、URL、本地 JSON 与 `2.0 -> 2.1` 迁移不依赖原工作区缓存。验收同时发现 Playwright 的固定 4317 端口会静默复用其他检出的 Vite；配置现在以 `PLAYWRIGHT_PORT` 提供显式隔离端口、用 `--strictPort` 禁止 Vite 自动漂移，并把服务器复用收敛为本地显式 opt-in，避免绿灯来自错误代码。
 
 ## 每次迭代的最小验证门槛
 
