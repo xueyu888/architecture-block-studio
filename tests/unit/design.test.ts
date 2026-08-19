@@ -155,3 +155,52 @@ describe("connection route operations", () => {
     );
   });
 });
+
+describe("connection reconnect operations", () => {
+  test("moves endpoints atomically and clears route geometry owned by the old endpoints", () => {
+    const document = applyDesignOperation(connectedDesign(), {
+      type: "connection/route",
+      levelId: "system",
+      connectionId: "source-to-target",
+      routing: { waypoints: [{ x: 20, y: 30 }, { x: 180, y: 30 }] },
+    });
+    const target = document.levels[0].nodes.find((node) => node.id === "target")!;
+    target.ports.push({
+      id: "feedback",
+      label: "feedback",
+      side: "left",
+      direction: "input",
+      required: false,
+    });
+
+    const reconnected = applyDesignOperation(document, {
+      type: "connection/reconnect",
+      levelId: "system",
+      connectionId: "source-to-target",
+      source: { nodeId: "source", portId: "out" },
+      target: { nodeId: "target", portId: "feedback" },
+    });
+
+    expect(reconnected.levels[0].connections[0]).toEqual({
+      id: "source-to-target",
+      interfaceId: "source.output",
+      source: { nodeId: "source", portId: "out" },
+      target: { nodeId: "target", portId: "feedback" },
+    });
+    expect(document.levels[0].connections[0].routing).toBeDefined();
+  });
+
+  test("rejects invalid endpoint direction without mutating the source document", () => {
+    const document = connectedDesign();
+    const before = serializeDesign(document);
+
+    expect(() => applyDesignOperation(document, {
+      type: "connection/reconnect",
+      levelId: "system",
+      connectionId: "source-to-target",
+      source: { nodeId: "target", portId: "in" },
+      target: { nodeId: "source", portId: "out" },
+    })).toThrow("input-only and cannot start");
+    expect(serializeDesign(document)).toBe(before);
+  });
+});

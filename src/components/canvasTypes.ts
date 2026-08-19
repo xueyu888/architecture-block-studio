@@ -14,8 +14,12 @@ export interface CanvasInterfaceEdgeData extends LayoutInterfaceEdgeData {
   separateSourceEndpoint?: boolean;
   separateTargetEndpoint?: boolean;
   updateRouting?: (routing: ConnectionRouting | undefined) => boolean;
-  requestRouteHandleFocus?: (axis: "h" | "v", coordinate: number, segmentIndex: number) => void;
+  requestRouteHandleFocus?: (handle: RouteHandleFocusTarget) => void;
 }
+
+export type RouteHandleFocusTarget =
+  | { kind: "segment"; axis: "h" | "v"; coordinate: number; index: number }
+  | { kind: "bend"; index: number };
 
 export type CanvasFlowNode = Node<CanvasBlockNodeData, "block">;
 export type CanvasFlowEdge = Edge<CanvasInterfaceEdgeData, "interface">;

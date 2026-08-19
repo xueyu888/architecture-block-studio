@@ -5,6 +5,7 @@ import {
   type BlockDesignDocument,
   type BlockNode,
   type BlockPort,
+  type ConnectionEndpoint,
   type DesignLevel,
   type HierarchyPortBinding,
   type InspectorDefinition,
@@ -99,6 +100,13 @@ export type DesignOperation =
       levelId: string;
       connectionId: string;
       routing: BlockConnection["routing"];
+    }
+  | {
+      type: "connection/reconnect";
+      levelId: string;
+      connectionId: string;
+      source: ConnectionEndpoint;
+      target: ConnectionEndpoint;
     }
   | { type: "connection/delete"; levelId: string; connectionId: string };
 
@@ -387,6 +395,23 @@ export function applyDesignOperation(
             })),
           }
         : undefined;
+      break;
+    }
+    case "connection/reconnect": {
+      const level = requireLevel(next, operation.levelId);
+      const connection = level.connections.find((candidate) => candidate.id === operation.connectionId) ??
+        editError(`Connection ${operation.connectionId} does not exist in ${level.title}.`);
+      const reconnected = {
+        ...connection,
+        source: { ...operation.source },
+        target: { ...operation.target },
+        // Authored waypoints describe the old endpoint geometry. Keeping them
+        // after an endpoint change would turn stale coordinates into design
+        // facts and commonly creates loops next to the new port.
+        routing: undefined,
+      };
+      validateConnectionEndpoints(level, reconnected);
+      Object.assign(connection, reconnected);
       break;
     }
     case "connection/delete": {

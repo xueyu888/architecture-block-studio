@@ -29,7 +29,7 @@ import type { SelectionRef } from "../studio/selection";
 import { BlockNodeComponent } from "./BlockNode";
 import { canvasDetailLevel, type CanvasDetailLevel } from "./canvasDetail";
 import { reconcileCanvasSelection } from "./canvasSelection";
-import type { CanvasFlowEdge, CanvasFlowNode } from "./canvasTypes";
+import type { CanvasFlowEdge, CanvasFlowNode, RouteHandleFocusTarget } from "./canvasTypes";
 import { InterfaceEdgeComponent } from "./InterfaceEdge";
 import { Tooltip } from "./Tooltip";
 
@@ -176,14 +176,17 @@ interface CanvasInnerProps {
     target: { nodeId: string; portId: string; label: string };
   }) => void;
   onRouteConnection: (levelId: string, connectionId: string, routing: ConnectionRouting | undefined) => boolean;
+  onReconnectConnection: (
+    levelId: string,
+    connectionId: string,
+    source: { nodeId: string; portId: string },
+    target: { nodeId: string; portId: string },
+  ) => boolean;
 }
 
-interface RouteHandleFocusRequest {
+type RouteHandleFocusRequest = RouteHandleFocusTarget & {
   edgeId: string;
-  axis: "h" | "v";
-  coordinate: number;
-  segmentIndex: number;
-}
+};
 
 interface NodeFocusRequest {
   flowNodeId: string;
@@ -207,6 +210,7 @@ const CanvasInner = memo(function CanvasInner({
   onMoveNode,
   onCreateConnection,
   onRouteConnection,
+  onReconnectConnection,
 }: CanvasInnerProps) {
   const { fitView, getViewport, setViewport, zoomIn, zoomOut } = useReactFlow();
   const store = useStoreApi();
@@ -300,6 +304,7 @@ const CanvasInner = memo(function CanvasInner({
         const separateTargetEndpoint = (endpointUse.get(targetKey)?.size ?? 0) > 1;
         return {
           ...edge,
+          reconnectable: !data.boundaryContinuation,
           markerEnd: data.boundaryContinuation ? undefined : CONNECTION_TARGET_MARKER,
           data: {
             ...data,
@@ -312,12 +317,7 @@ const CanvasInner = memo(function CanvasInner({
               : (routing) => onRouteConnection(data.levelId, data.connection.id, routing),
             requestRouteHandleFocus: data.boundaryContinuation
               ? undefined
-              : (axis, coordinate, segmentIndex) => setRouteHandleFocusRequest({
-                  edgeId: edge.id,
-                  axis,
-                  coordinate: Math.round(coordinate),
-                  segmentIndex,
-                }),
+              : (handle) => setRouteHandleFocusRequest({ edgeId: edge.id, ...handle }),
           },
         };
       });
@@ -470,13 +470,15 @@ const CanvasInner = memo(function CanvasInner({
       const root = store.getState().domNode;
       const edge = [...(root?.querySelectorAll<SVGGElement>(".react-flow__edge") ?? [])]
         .find((candidate) => candidate.dataset.id === routeHandleFocusRequest.edgeId);
-      const candidates = [...(edge?.querySelectorAll<HTMLButtonElement>(
-        `.bd-route-handle-${routeHandleFocusRequest.axis}`,
-      ) ?? [])].filter(
-        (candidate) => Number(candidate.getAttribute("aria-valuenow")) === routeHandleFocusRequest.coordinate,
-      );
-      const handle = candidates.find(
-        (candidate) => Number(candidate.dataset.routeSegmentIndex) === routeHandleFocusRequest.segmentIndex,
+      const candidates = routeHandleFocusRequest.kind === "segment"
+        ? [...(edge?.querySelectorAll<HTMLButtonElement>(
+            `.bd-route-segment-handle.bd-route-handle-${routeHandleFocusRequest.axis}`,
+          ) ?? [])].filter(
+            (candidate) => Number(candidate.getAttribute("aria-valuenow")) === routeHandleFocusRequest.coordinate,
+          )
+        : [...(edge?.querySelectorAll<HTMLButtonElement>(".bd-route-bend-handle") ?? [])];
+      const handle = candidates.find((candidate) =>
+        Number(candidate.dataset.routeHandleIndex) === routeHandleFocusRequest.index,
       ) ?? candidates[0];
       if (handle) {
         handle.focus();
@@ -634,6 +636,16 @@ const CanvasInner = memo(function CanvasInner({
     const normalized = normalizedConnection(connection);
     if (normalized) onCreateConnection(normalized);
   }, [normalizedConnection, onCreateConnection]);
+  const onReconnect = useCallback((edge: CanvasFlowEdge, connection: Connection) => {
+    const normalized = normalizedConnection(connection);
+    if (!normalized || !edge.data) return;
+    onReconnectConnection(
+      edge.data.levelId,
+      edge.data.connection.id,
+      { nodeId: normalized.source.nodeId, portId: normalized.source.portId },
+      { nodeId: normalized.target.nodeId, portId: normalized.target.portId },
+    );
+  }, [normalizedConnection, onReconnectConnection]);
   const isValidConnection = useCallback(
     (connection: Connection | CanvasFlowEdge) => Boolean(normalizedConnection(connection)),
     [normalizedConnection],
@@ -677,12 +689,13 @@ const CanvasInner = memo(function CanvasInner({
       onPointerMoveCapture={interruptViewportNavigation}
       onKeyDownCapture={onElementKeyDownCapture}
       onConnect={onConnect}
+      onReconnect={onReconnect}
       isValidConnection={isValidConnection}
       onError={warnReactFlowError}
       onPaneClick={onPaneClick}
       connectionMode={ConnectionMode.Loose}
       nodesConnectable
-      edgesReconnectable={false}
+      edgesReconnectable
       snapToGrid
       snapGrid={SNAP_GRID}
       minZoom={MIN_ZOOM}
@@ -737,6 +750,7 @@ export function BlockDesignCanvas(props: BlockDesignCanvasProps) {
         onMoveNode={props.onMoveNode}
         onCreateConnection={props.onCreateConnection}
         onRouteConnection={props.onRouteConnection}
+        onReconnectConnection={props.onReconnectConnection}
       />
       <div className="bd-canvas-caption bd-canvas-caption-overlay">
         <strong>{entryLevel.title}</strong>

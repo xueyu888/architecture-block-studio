@@ -10,23 +10,23 @@ Architecture Block Studio 处理的是可进入版本控制和 AI 工作流的�
 
 | 证据 | 当前结果 |
 | --- | --- |
-| TypeScript + Vite production build | 通过，1882 modules transformed，7.66 秒 |
-| Vitest 快速单元测试 | 79 / 79 通过，13 个 test files，0.400 秒 |
+| TypeScript + Vite production build | 通过，1883 modules transformed，7.17 秒 |
+| Vitest 快速单元测试 | 86 / 86 通过，14 个 test files，0.453 秒 |
 | 干净检出 | 从远端 `main` 全新克隆后，`pnpm install --frozen-lockfile`、production build、73 / 73 unit 与独立端口双浏览器完整回归通过；测试服务器默认由当前检出拥有，只有显式设置 `PLAYWRIGHT_REUSE_SERVER=1` 才允许复用 |
 | Vitest 历史压力通道 | 1000 / 2000、20 次操作：compact snapshot 1,639,002 bytes，21 份保留 34,419,093 bytes；单 fork 在 worker 内强制暴露 GC，三轮 heap / ArrayBuffer / 合计增量中位数为 3,646,384 / 32,780,088 / 36,426,472 bytes，三项离散度均为 0%；Apply / Undo 总耗时中位数 466 / 371 ms |
 | 可重复性能证据 | `pnpm performance:baseline -- --runs 3` 连续完成历史与 Chromium 压力档各 3 次，输出 6 份 `performance-sample v1` 和 1 份 observation-only 趋势报告；最新浏览器首次可交互中位数 2552 ms、十次编辑 2692 ms、最终测量内存 65,320,494 bytes；Sources 定位中位数 217 ms，MiniMap 往返定位中位数 63 / 60 ms，每次只发生 1 次 viewport 变换 |
-| Chromium Playwright | Playwright 1.62.1 / Chromium build 1234，35 / 35 通过；与 Firefox 在已核验为当前检出的开发服务器上并行完整回归 69 / 69，共 2.0 分钟 |
-| Firefox 产品 Playwright | Playwright 1.62.1 / Firefox build 1538，34 / 34 通过；执行除 Chromium CDP heap 压力采样外的全部产品合同，覆盖文件、编辑、审查、可访问性、焦点、Dock、层级、路由、方向 marker、四侧标签轨道、Tooltip、Command Palette 与保存导出 |
+| Chromium Playwright | Playwright 1.62.1 / Chromium build 1234，38 / 38 通过；与 Firefox 在已核验为当前检出的开发服务器上并行完整回归 75 / 75，共 2.2 分钟 |
+| Firefox 产品 Playwright | Playwright 1.62.1 / Firefox build 1538，37 / 37 通过；执行除 Chromium CDP heap 压力采样外的全部产品合同，覆盖文件、编辑、审查、可访问性、焦点、Dock、层级、路线线段 / 折点编辑、端点重连、方向 marker、四侧标签轨道、Tooltip、Command Palette 与保存导出 |
 | 可访问性门禁 | 默认工作台与 Open Dialog 的 WCAG A / AA 结构规则、可交互责任区和文本对比度通过；Toolbar / Canvas Tooltip、Command Palette 的 pointer、focus、Esc、禁用原因、视口几何与 reduced motion 在 Chromium / Firefox 通过 |
 | 默认示例 | 3 levels、32 modules、40 declared connections；两层展开后 54 visual edges |
 | 大型设计 | 200 modules / 400 connections 保持全量 Canvas DOM 与 400 条路径逐线段几何检查，默认 Hierarchy 首批仅挂载 40 行；独立执行中首次可交互 950 ms、模块选择并完成 280 ms 平滑聚焦 410 ms、四类模块搜索、一次增量加载并键盘定位 966 ms、接口筛选 255 ms、接口端点聚焦 374 ms、保存并校验 77 ms；测得 JS + embedder + backing storage 总量 71,410,189 bytes |
 | 压力设计 | 1000 modules / 2000 connections 的模型、布局、1000 个 MiniMap 节点与保存保持全量，初始 Canvas DOM 只挂载视口内 200 modules / 430 connections，默认 Hierarchy 为完整 1002 行投影但首批 DOM 仅 40 行；三轮中位数：首次可交互 2552 ms，十次 Level 编辑 2692 ms、Undo 199 ms、Redo 190 ms；Sources 选择屏外模块并定位到可读尺寸 217 ms，MiniMap 首尾节点跨图定位 63 / 60 ms，四次 Hierarchy 查询、一次增量加载与最终定位 758 ms，接口筛选 131 ms、接口端点与路径定位 182 ms，保存并校验 62 ms；历史交互测得增量 18,264,378 bytes，最终 JS + embedder + backing storage 总量 65,320,494 bytes |
 | 几何检查 | 已覆盖模块碰撞、端点内侵、边界逃逸、设计坐标中的独立线路共路、根级兄弟重叠、线中标签，以及大型设计 400 条路径逐线段穿块检查 |
-| 截图证据 | `professional-workbench.png` 复核 1680 × 1050 默认工作台的文档栏、菜单、聚焦工具栏、Sources、Canvas、Inspector、Messages 和状态层级；`connection-direction.png` 与 `connection-direction-compact.png` 复核 1680 × 1050 / 1280 × 720 下 Project → Core 向上 target 箭头、中性 source 连接点、selected integration 同色和无反向箭头；`focused-toolbar.png` 复核 1280 × 720 下 12 个直接工作流动作、扩展后的层级路径和 0 全局溢出；`command-palette.png` 复核统一搜索表面、禁用原因、快捷键、画布上下文和无遮挡；`command-tooltip.png` 复核禁用工具的名称、同源成立条件、清晰对比度及与 Canvas caption、节点和 Inspector 的边界；`compact-workbench.png` 复核 1280 × 720 下的手动线路、Inspector、Messages、MiniMap 与固定操作区；`aio-routing-validation.png` 复核默认 AIO 7 modules / 10 interfaces 的低缩放信息收敛、端口名与完整线路；`incremental-routing.png` 复核既有复杂设计中新建模块、端口和接口后的端口外向路径、手动把手、0 中部标签与连接 Inspector；`linked-id-suggestion.png` 复核同名第二模块的唯一 ID 建议、焦点、Dialog 与底层选中模块上下文；`menu-typeahead.png` 复核高频创建命令字符定位；`disabled-menu-focus.png` 复核禁用命令的可见焦点、原因层级、无误导 hover 和工作区无遮挡；`disabled-command-guidance.png` 复核空白设计中三条创建前提；`manual-routing.png` 复核恒定视觉方块、24 px 命中区、键盘焦点、手动路径与连接 Inspector；`keyboard-module-move.png` 复核模块键盘移动后的 selection、重新布线和 Inspector 上下文；`rejected-module-drag.png` 复核草稿阻止拖动后的原位投影、未应用表单和明确错误；`drc-remediation.png` 复核问题、修正方向、筛选、画布和 Inspector 的信息层级；`editor-routing-validation.png` 复核层级 continuation；`editor-polished-workbench.png` 与 `firefox-apply-focus.png` 复核选中路径、端口名与双浏览器焦点；`hierarchy-search.png` 复核大型图的列表密度、端口、线路、MiniMap 与 Inspector |
+| 截图证据 | `professional-workbench.png` 复核 1680 × 1050 默认工作台的文档栏、菜单、聚焦工具栏、Sources、Canvas、Inspector、Messages 和状态层级；`edge-editor.png`、`edge-editor-detail.png` 与 `edge-editor-manual-detail.png` 复核 Core ↔ Tool System 密集端口之间的平行线路、虚拟线段点、小型端点抓手、真实折点和手动调整后路线，且 0 线中标签 / 大双圆环；`connection-direction.png` 与 `connection-direction-compact.png` 复核 1680 × 1050 / 1280 × 720 下 Project → Core 向上 target 箭头、中性 source 连接点、selected integration 同色和无反向箭头；`focused-toolbar.png` 复核 1280 × 720 下 12 个直接工作流动作、扩展后的层级路径和 0 全局溢出；`command-palette.png` 复核统一搜索表面、禁用原因、快捷键、画布上下文和无遮挡；`command-tooltip.png` 复核禁用工具的名称、同源成立条件、清晰对比度及与 Canvas caption、节点和 Inspector 的边界；`compact-workbench.png` 复核 1280 × 720 下的手动线路、Inspector、Messages、MiniMap 与固定操作区；`aio-routing-validation.png` 复核默认 AIO 7 modules / 10 interfaces 的低缩放信息收敛、端口名与完整线路；`incremental-routing.png` 复核既有复杂设计中新建模块、端口和接口后的端口外向路径、手动把手、0 中部标签与连接 Inspector；`linked-id-suggestion.png` 复核同名第二模块的唯一 ID 建议、焦点、Dialog 与底层选中模块上下文；`menu-typeahead.png` 复核高频创建命令字符定位；`disabled-menu-focus.png` 复核禁用命令的可见焦点、原因层级、无误导 hover 和工作区无遮挡；`disabled-command-guidance.png` 复核空白设计中三条创建前提；`manual-routing.png` 复核恒定命中区、键盘焦点、手动路径与连接 Inspector；`keyboard-module-move.png` 复核模块键盘移动后的 selection、重新布线和 Inspector 上下文；`rejected-module-drag.png` 复核草稿阻止拖动后的原位投影、未应用表单和明确错误；`drc-remediation.png` 复核问题、修正方向、筛选、画布和 Inspector 的信息层级；`editor-routing-validation.png` 复核层级 continuation；`editor-polished-workbench.png` 与 `firefox-apply-focus.png` 复核选中路径、端口名与双浏览器焦点；`hierarchy-search.png` 复核大型图的列表密度、端口、线路、MiniMap 与 Inspector |
 | 端口轨道截图 | `port-label-rails.png`、`port-label-rails-detail.png` 与 `port-label-rails-compact.png` 分别复核 1680 总览、1680 Project / Core 局部放大和 1280 Fit：端口名与 Header / Owner 分层，dataType 常态收敛，连接点保持原几何，紧凑 MiniMap 默认收起且没有卡片遮挡 |
 | 文件路径 | URL、本地文件、不可变兼容矩阵、`2.0 -> 2.1` 输入/输出 golden migration、canonical record ordering、保存后重载、无效替换保护已覆盖；本轮 Chromium / Firefox 文件旅程及 Chromium 无效替换 3 / 3，Save As / 重开与 Save / Export 2 / 2 |
 | 编辑闭环 | 新建、模块、端口、鼠标拖线、键盘端点选择、手动路由、层级绑定、Undo / Redo、Save / Save As / Export 已覆盖 |
-| 浏览器范围 | Chromium 35 / 35 完整自动化；Firefox 34 / 34 产品合同，唯一排除项为 Chromium 专属 CDP heap 采样；WebKit 尚未验证 |
+| 浏览器范围 | Chromium 38 / 38 完整自动化；Firefox 37 / 37 产品合同，唯一排除项为 Chromium 专属 CDP heap 采样；WebKit 尚未验证 |
 
 Phase 0 真实 Dogfooding 发现的首屏 React 警告、空白设计引导、Inspector 草稿丢失和 Dialog 焦点问题，已在 Iteration 1–4 完成并纳入持续回归。Iteration 9–19 已建立快速单测、稳定 DRC、完整公开 `DesignOperation` 合同、纯历史状态机、自动可访问性门禁、可复现大型设计基线和层级搜索。Iteration 20 重走三角色旅程，Iteration 21 补齐模块直接依赖摘要，Iteration 22 补齐键盘接口创建，Iteration 23 完成连续无鼠标设计与保存，Iteration 24 建立 Firefox 核心自动化并修复跨浏览器焦点链，Iteration 25 收敛布局、Canvas 和选择协议的 Owner，并修复密集线路的确定性车道冲突，Iteration 26 建立 model-owned 逐步迁移注册表和完整支持矩阵，Iteration 27 统一 canonical 文件输出与 dirty baseline，Iteration 28 建立 1000 / 2000 历史与浏览器压力通道并隔离无关编辑触发的整图重排，Iteration 29 让 Sources 搜索结果和接口列表渐进挂载，Iteration 30 完成第三次产品与质量复盘，Iteration 31 让大图选择只更新受影响投影，Iteration 32 在不删减设计事实的前提下建立压力 Canvas 视口裁剪，Iteration 33 将外部交叉定位与画布内选择解耦并支持 MiniMap 节点直达，Iteration 34 将默认 Hierarchy 也收敛为完整投影加渐进 DOM 窗口，Iteration 35 建立带版本的原始样本、重复执行入口与只观察趋势报告，Iteration 36 修正视口证据边界、第三方 MiniMap 陈旧回调和压力跨图动画长尾，Iteration 37 校准历史压力 worker 的 GC 前提并拆清确定性字节与进程 heap 观测，Iteration 38 将 Firefox 扩展到除 Chromium CDP 性能采样外的全部 22 条产品合同；当前仍缺崩溃恢复、历史容量策略、固定 CI 硬件上的性能预算和 WebKit / 桌面系统矩阵，因此仍不标记为 production-ready。
 
@@ -74,6 +74,8 @@ Iteration 63 从 JSON、validation、layout、route 和 Canvas 完整追踪 Proj
 
 Iteration 64 将连接点几何与端口标签排版拆成两个投影：Handle 继续使用既有稳定位置，标签由 `layout/nodeGeometry` 的同一宽度估算与四侧 rail 独立排布，已有合法 authored size 不被展示层放大。端口名常驻，dataType 只在可读缩放的 hover / focus 与 Properties 渐进出现；紧凑桌面 MiniMap 默认收起并提供显式开关。首次完整回归如实暴露 authored 尺寸误钳制、层级路线共路和 Firefox 标签遮住 Handle，修正 Owner 后 79 / 79 unit、1882-module build、Chromium 35 / 35 + Firefox 34 / 34 = 69 / 69 全部通过；三张截图人工复核无标题、Owner、标签或 MiniMap 遮挡。
 
+Iteration 65 对照 draw.io 的 edge handler 边界，将“路径生成”和“线路直接编辑”拆开：`routing/routeEditing` 只负责可测试的正交线段、折点移动与折点删除几何，Edge 只拥有 gesture 预览。选中自动线显示空心菱形虚拟线段点，拖动后物化手动 route；手动线显示实心真实折点，支持拖动、Arrow、Delete / 双击删除；端点重连进入独立 `connection/reconnect`，合法端点写回 source / target 并清除旧 waypoint，非法目标保持原文档。重连仍保留透明大命中区，但只显示小实心抓手，避免 Port 外形成第二个大圆环。86 / 86 unit（0.453 秒）、1883-module build（7.17 秒）、完整 Chromium 38 / 38 + Firefox 37 / 37 = 75 / 75（2.2 分钟）通过；三张 1680 × 1050 / 放大截图人工复核密集四线平行、编辑点清楚、0 线中标签和 0 大双圈。
+
 ## 每次迭代的最小验证门槛
 
 每个完成的迭代必须留下与风险相称的证据：
@@ -117,6 +119,8 @@ Iteration 64 将连接点几何与端口标签排版拆成两个投影：Handle 
 - DRC 同时说明问题与简短修正方向；修正方向由规则 Owner 派生、可搜索、可读屏，不由 Messages 复制或自动改写设计。
 - 属性编辑、选择和面板调整不导致画布重挂、意外 Fit 或缩放跳变。
 - 紧凑桌面下 MiniMap 默认不覆盖模块或线路，并保留明确的显示 / 收起入口；开关只改变 viewport 辅助展示。
+- 选中线路必须直接暴露可区分的虚拟线段点、真实折点和端点抓手；视觉图形小于命中区，端点抓手不能与 Port 叠成大双圆环，线路仍不得出现中部标签。
+- 线段 / 折点拖动、键盘微调、折点删除、Reset Auto 和端点重连都必须经具名原子操作进入同一 Undo / Redo 与保存链；预览、焦点恢复和非法拖动不得成为第二份路线或端点事实。
 - 空白画布提供清晰的第一步，不迫使新用户猜工具栏图标。
 - 菜单、工具栏、快捷键和命令面板来自同一命令定义，名称、快捷键、禁用与反馈一致；命令面板只能维护查询和当前结果，不能保存动作副本或重新判断可用性。
 - 常驻工具栏只投影启动、连续编辑、建模和审查直接工作流；低频全图动作与已有上下文入口的面板动作必须继续在完整 Menu / Command Palette 可达，不能通过删除命令换取视觉简洁。
@@ -196,7 +200,7 @@ Iteration 64 将连接点几何与端口标签排版拆成两个投影：Handle 
 - 序列化与文件名规范化。
 - Schema migration golden tests。
 
-当前已覆盖 Schema 支持矩阵、2.0 输入 / 2.1 输出 golden migration、缺失 / 非字符串 / 未支持版本、旧版新字段拒绝，公开 `DesignOperation` 的创建 / 更新 / 移动 / 绑定 / 删除及失败原子性，connection route 写入 / Reset、Undo / Redo / canonical dirty 历史状态机、compact UTF-8 history snapshot、布局 / 几何签名边界、无序 record 稳定序列化与有序数组保留、文件名与加载错误、DRC 稳定定位及正交路由纯函数。`pnpm test:performance` 独立运行大历史测量，不拖慢日常快速单测；Playwright 只组合真实浏览器压力旅程，不重新实现纯历史规则。
+当前已覆盖 Schema 支持矩阵、2.0 输入 / 2.1 输出 golden migration、缺失 / 非字符串 / 未支持版本、旧版新字段拒绝，公开 `DesignOperation` 的创建 / 更新 / 移动 / 绑定 / 删除及失败原子性，connection route 写入 / Reset、endpoint reconnect / 旧 route 清理 / 非法方向原子拒绝，正交线段 / 折点移动与折点删除，Undo / Redo / canonical dirty 历史状态机、compact UTF-8 history snapshot、布局 / 几何签名边界、无序 record 稳定序列化与有序数组保留、文件名与加载错误、DRC 稳定定位及正交路由纯函数。`pnpm test:performance` 独立运行大历史测量，不拖慢日常快速单测；Playwright 只组合真实浏览器压力旅程，不重新实现纯历史规则。
 
 ### 布局与路由合同测试
 

@@ -1,115 +1,63 @@
 import { useMemo, useRef, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { BaseEdge, useStoreApi, type EdgeProps } from "@xyflow/react";
+import { BaseEdge, useReactFlow, useStoreApi, type EdgeProps } from "@xyflow/react";
 import {
   absoluteRoutingObstacles,
-  compactOrthogonalPoints,
   drawOrthogonalRoute,
+  editableOrthogonalRoute,
+  editableRouteBends,
+  moveRouteBend,
+  moveRouteSegment,
   orthogonalizeRoutePoints,
   orthogonalRoutePoints,
+  removeRouteBend,
   restoreManualRoute,
   routeFastOrthogonalInterface,
   routeOrthogonalInterface,
   separateOrthogonalRoute,
+  type EditableRouteBend,
+  type EditableRouteSegment,
   type RoutePoint,
 } from "../routing";
 import type { CanvasFlowEdge } from "./canvasTypes";
 
-interface EditableSegment {
-  index: number;
-  axis: "h" | "v";
-  midpoint: RoutePoint;
-}
-
-interface RouteDrag {
+type RouteDrag = {
+  kind: "segment";
   pointerId: number;
   segmentIndex: number;
   axis: "h" | "v";
   points: RoutePoint[];
-  screenToFlow: DOMMatrix;
   group: SVGGElement;
   preview: SVGPathElement;
   initialCoordinate: number;
-}
+} | {
+  kind: "bend";
+  pointerId: number;
+  bendIndex: number;
+  points: RoutePoint[];
+  group: SVGGElement;
+  preview: SVGPathElement;
+  initialPoint: RoutePoint;
+};
 
 const ROUTE_GRID = 8;
 const ROUTE_HANDLE_TARGET_SIZE = 24;
+const ROUTE_BEND_TARGET_SIZE = 20;
 
-function routeAxis(left: RoutePoint, right: RoutePoint): "h" | "v" {
-  return Math.abs(right.x - left.x) >= Math.abs(right.y - left.y) ? "h" : "v";
+function snapRouteCoordinate(value: number): number {
+  return Math.round(value / ROUTE_GRID) * ROUTE_GRID;
 }
 
-function scaffoldShortestRoute(points: RoutePoint[]): RoutePoint[] {
-  if (points.length < 2) return points;
-  let longestIndex = 0;
-  let longestLength = -1;
-  points.slice(0, -1).forEach((point, index) => {
-    const next = points[index + 1];
-    const length = Math.abs(next.x - point.x) + Math.abs(next.y - point.y);
-    if (length > longestLength) {
-      longestLength = length;
-      longestIndex = index;
-    }
-  });
-  const start = points[longestIndex];
-  const end = points[longestIndex + 1];
-  const first = { x: start.x + (end.x - start.x) / 3, y: start.y + (end.y - start.y) / 3 };
-  const second = { x: start.x + (end.x - start.x) * 2 / 3, y: start.y + (end.y - start.y) * 2 / 3 };
-  return [
-    ...points.slice(0, longestIndex + 1),
-    first,
-    { ...first },
-    { ...second },
-    second,
-    ...points.slice(longestIndex + 1),
-  ];
-}
-
-function editableRoute(points: RoutePoint[]): { points: RoutePoint[]; segments: EditableSegment[] } {
-  let editablePoints = compactOrthogonalPoints(points);
-  let segments = editablePoints.slice(0, -1).flatMap<EditableSegment>((point, index) => {
-    if (index === 0 || index === editablePoints.length - 2) return [];
-    const next = editablePoints[index + 1];
-    const length = Math.abs(next.x - point.x) + Math.abs(next.y - point.y);
-    return length < 20
-      ? []
-      : [{
-          index,
-          axis: routeAxis(point, next),
-          midpoint: { x: (point.x + next.x) / 2, y: (point.y + next.y) / 2 },
-        }];
-  });
-  if (segments.length > 0) return { points: editablePoints, segments };
-
-  editablePoints = scaffoldShortestRoute(editablePoints);
-  segments = editablePoints.slice(0, -1).flatMap<EditableSegment>((point, index) => {
-    if (index === 0 || index === editablePoints.length - 2) return [];
-    const next = editablePoints[index + 1];
-    const length = Math.abs(next.x - point.x) + Math.abs(next.y - point.y);
-    return length < 20
-      ? []
-      : [{
-          index,
-          axis: routeAxis(point, next),
-          midpoint: { x: (point.x + next.x) / 2, y: (point.y + next.y) / 2 },
-        }];
-  });
-  return { points: editablePoints, segments };
-}
-
-function moveSegment(points: RoutePoint[], segment: EditableSegment, coordinate: number): RoutePoint[] {
-  const next = points.map((point) => ({ ...point }));
-  if (segment.axis === "h") {
-    next[segment.index].y = coordinate;
-    next[segment.index + 1].y = coordinate;
-  } else {
-    next[segment.index].x = coordinate;
-    next[segment.index + 1].x = coordinate;
-  }
-  return next;
+function endpointGripPosition(point: RoutePoint, position: EdgeProps<CanvasFlowEdge>["sourcePosition"]): RoutePoint {
+  const distance = 10;
+  if (position === "left") return { x: point.x - distance, y: point.y };
+  if (position === "right") return { x: point.x + distance, y: point.y };
+  if (position === "top") return { x: point.x, y: point.y - distance };
+  return { x: point.x, y: point.y + distance };
 }
 
 export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
   const store = useStoreApi();
+  const { screenToFlowPosition } = useReactFlow();
   const data = props.data;
   const routingGeometry = useMemo(() => {
     const nodeLookup = store.getState().nodeLookup;
@@ -198,7 +146,12 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
   const routePath = persistedPoints
     ? drawOrthogonalRoute(persistedPoints)
     : automaticRoute.path;
-  const editing = editableRoute(routePoints);
+  const editing = editableOrthogonalRoute(routePoints);
+  const bends = persistedPoints ? editableRouteBends(routePoints) : [];
+  const endpointGrips = [
+    endpointGripPosition({ x: props.sourceX, y: props.sourceY }, props.sourcePosition),
+    endpointGripPosition({ x: props.targetX, y: props.targetY }, props.targetPosition),
+  ];
 
   const commitPoints = (points: RoutePoint[]): boolean => {
     const compact = orthogonalizeRoutePoints(
@@ -206,7 +159,8 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
       props.sourcePosition,
       props.targetPosition,
     );
-    if (compact.length < 4 || !data.updateRouting) return false;
+    if (!data.updateRouting) return false;
+    if (compact.length < 4) return data.updateRouting(undefined);
     return data.updateRouting({
       waypoints: compact.slice(1, -1).map((point) => ({
         x: Math.round(point.x - routingGeometry.origin.x),
@@ -215,43 +169,75 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
     });
   };
 
-  const beginDrag = (event: ReactPointerEvent<HTMLButtonElement>, segment: EditableSegment) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const matrix = event.currentTarget.closest<SVGForeignObjectElement>(".bd-route-handle-object")?.getScreenCTM();
+  const dragElements = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const group = event.currentTarget.closest<SVGGElement>("[data-connection-id]");
     const preview = group?.querySelector<SVGPathElement>(".bd-route-preview");
-    if (!matrix || !group || !preview) return;
+    return group && preview ? { group, preview } : undefined;
+  };
+
+  const listenForDrag = () => {
+    window.addEventListener("pointermove", continueDrag);
+    window.addEventListener("pointerup", finishDrag, { once: true });
+    window.addEventListener("pointercancel", finishDrag, { once: true });
+  };
+
+  const beginSegmentDrag = (event: ReactPointerEvent<HTMLButtonElement>, segment: EditableRouteSegment) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const elements = dragElements(event);
+    if (!elements) return;
+    const { group, preview } = elements;
     group.classList.add("is-routing");
     preview.setAttribute("d", routePath);
     drag.current = {
+      kind: "segment",
       pointerId: event.pointerId,
       segmentIndex: segment.index,
       axis: segment.axis,
       points: editing.points.map((point) => ({ ...point })),
-      screenToFlow: matrix.inverse(),
       group,
       preview,
       initialCoordinate: segment.axis === "h"
         ? editing.points[segment.index].y
         : editing.points[segment.index].x,
     };
-    window.addEventListener("pointermove", continueDrag);
-    window.addEventListener("pointerup", finishDrag, { once: true });
-    window.addEventListener("pointercancel", finishDrag, { once: true });
+    listenForDrag();
+  };
+
+  const beginBendDrag = (event: ReactPointerEvent<HTMLButtonElement>, bend: EditableRouteBend) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const elements = dragElements(event);
+    if (!elements) return;
+    const { group, preview } = elements;
+    group.classList.add("is-routing");
+    preview.setAttribute("d", routePath);
+    drag.current = {
+      kind: "bend",
+      pointerId: event.pointerId,
+      bendIndex: bend.index,
+      points: routePoints.map((point) => ({ ...point })),
+      group,
+      preview,
+      initialPoint: { ...bend.point },
+    };
+    listenForDrag();
   };
 
   const continueDrag = (event: globalThis.PointerEvent) => {
     const active = drag.current;
     if (!active || active.pointerId !== event.pointerId) return;
-    const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(active.screenToFlow);
-    const segment: EditableSegment = {
-      index: active.segmentIndex,
-      axis: active.axis,
-      midpoint: { x: 0, y: 0 },
-    };
-    const coordinate = Math.round((active.axis === "h" ? point.y : point.x) / ROUTE_GRID) * ROUTE_GRID;
-    const next = moveSegment(active.points, segment, coordinate);
+    const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    const next = active.kind === "segment"
+      ? moveRouteSegment(
+          active.points,
+          { index: active.segmentIndex, axis: active.axis },
+          snapRouteCoordinate(active.axis === "h" ? position.y : position.x),
+        )
+      : moveRouteBend(active.points, active.bendIndex, {
+          x: snapRouteCoordinate(position.x),
+          y: snapRouteCoordinate(position.y),
+        });
     drag.current = { ...active, points: next };
     active.preview.setAttribute("d", drawOrthogonalRoute(next));
   };
@@ -266,13 +252,14 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
     window.removeEventListener("pointercancel", finishDrag);
     active.group.classList.remove("is-routing");
     drag.current = undefined;
-    const finalCoordinate = active.axis === "h"
-      ? active.points[active.segmentIndex].y
-      : active.points[active.segmentIndex].x;
-    if (finalCoordinate !== active.initialCoordinate) commitPoints(active.points);
+    const changed = active.kind === "segment"
+      ? (active.axis === "h" ? active.points[active.segmentIndex].y : active.points[active.segmentIndex].x) !== active.initialCoordinate
+      : active.points[active.bendIndex].x !== active.initialPoint.x ||
+        active.points[active.bendIndex].y !== active.initialPoint.y;
+    if (changed) commitPoints(active.points);
   };
 
-  const moveWithKeyboard = (event: KeyboardEvent<HTMLButtonElement>, segment: EditableSegment) => {
+  const moveSegmentWithKeyboard = (event: KeyboardEvent<HTMLButtonElement>, segment: EditableRouteSegment) => {
     const direction = segment.axis === "h"
       ? event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0
       : event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
@@ -283,8 +270,48 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
       ? editing.points[segment.index].y
       : editing.points[segment.index].x;
     const coordinate = current + direction * ROUTE_GRID;
-    if (commitPoints(moveSegment(editing.points, segment, coordinate))) {
-      data.requestRouteHandleFocus?.(segment.axis, coordinate, segment.index);
+    if (commitPoints(moveRouteSegment(editing.points, segment, coordinate))) {
+      data.requestRouteHandleFocus?.({
+        kind: "segment",
+        axis: segment.axis,
+        coordinate,
+        index: segment.index,
+      });
+    }
+  };
+
+  const removeBend = (bend: EditableRouteBend): boolean => {
+    const reduced = removeRouteBend(
+      routePoints,
+      bend.index,
+      props.sourcePosition,
+      props.targetPosition,
+    );
+    return reduced ? commitPoints(reduced) : false;
+  };
+
+  const moveBendWithKeyboard = (event: KeyboardEvent<HTMLButtonElement>, bend: EditableRouteBend) => {
+    if (event.key === "Delete" || event.key === "Backspace") {
+      event.preventDefault();
+      event.stopPropagation();
+      removeBend(bend);
+      return;
+    }
+    const delta = event.key === "ArrowLeft" ? { x: -ROUTE_GRID, y: 0 }
+      : event.key === "ArrowRight" ? { x: ROUTE_GRID, y: 0 }
+        : event.key === "ArrowUp" ? { x: 0, y: -ROUTE_GRID }
+          : event.key === "ArrowDown" ? { x: 0, y: ROUTE_GRID }
+            : undefined;
+    if (!delta) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const next = moveRouteBend(routePoints, bend.index, {
+      x: bend.point.x + delta.x,
+      y: bend.point.y + delta.y,
+    });
+    if (next[bend.index].x === bend.point.x && next[bend.index].y === bend.point.y) return;
+    if (commitPoints(next)) {
+      data.requestRouteHandleFocus?.({ kind: "bend", index: bend.index });
     }
   };
 
@@ -311,10 +338,20 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
         className="bd-interface-route"
       />
       {props.selected && <path className="bd-route-preview" d={routePath} aria-hidden="true" />}
+      {props.selected && !data.boundaryContinuation && endpointGrips.map((point, index) => (
+        <circle
+          key={index === 0 ? "source-grip" : "target-grip"}
+          className="bd-route-endpoint-grip"
+          cx={point.x}
+          cy={point.y}
+          r={5}
+          aria-hidden="true"
+        />
+      ))}
       {props.selected && !data.boundaryContinuation && data.updateRouting && editing.segments.map((segment) => (
         <foreignObject
-          key={`${segment.index}:${segment.axis}`}
-          className="bd-route-handle-object nodrag nopan"
+          key={`segment:${segment.index}:${segment.axis}`}
+          className="bd-route-handle-object bd-route-segment-handle-object nodrag nopan"
           x={segment.midpoint.x - ROUTE_HANDLE_TARGET_SIZE / 2}
           y={segment.midpoint.y - ROUTE_HANDLE_TARGET_SIZE / 2}
           width={ROUTE_HANDLE_TARGET_SIZE}
@@ -322,20 +359,49 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
         >
           <button
             type="button"
-            className={`bd-route-handle bd-route-handle-${segment.axis} nodrag nopan`}
+            className={`bd-route-handle bd-route-segment-handle bd-route-handle-${segment.axis} nodrag nopan`}
             role="spinbutton"
-            data-route-segment-index={segment.index}
+            data-route-handle-index={segment.index}
             data-route-axis={segment.axis}
             aria-label={`Move ${segment.axis === "h" ? "horizontal route segment vertically" : "vertical route segment horizontally"}`}
             aria-valuenow={Math.round(segment.axis === "h" ? segment.midpoint.y : segment.midpoint.x)}
             aria-valuetext={`${Math.round(segment.axis === "h" ? segment.midpoint.y : segment.midpoint.x)} design pixels`}
-            onPointerDown={(event) => beginDrag(event, segment)}
+            onPointerDown={(event) => beginSegmentDrag(event, segment)}
             onMouseDown={(event) => {
               event.preventDefault();
               event.stopPropagation();
             }}
             onDragStart={(event) => event.preventDefault()}
-            onKeyDown={(event) => moveWithKeyboard(event, segment)}
+            onKeyDown={(event) => moveSegmentWithKeyboard(event, segment)}
+          />
+        </foreignObject>
+      ))}
+      {props.selected && !data.boundaryContinuation && data.updateRouting && bends.map((bend) => (
+        <foreignObject
+          key={`bend:${bend.index}`}
+          className="bd-route-handle-object bd-route-bend-handle-object nodrag nopan"
+          x={bend.point.x - ROUTE_BEND_TARGET_SIZE / 2}
+          y={bend.point.y - ROUTE_BEND_TARGET_SIZE / 2}
+          width={ROUTE_BEND_TARGET_SIZE}
+          height={ROUTE_BEND_TARGET_SIZE}
+        >
+          <button
+            type="button"
+            className="bd-route-handle bd-route-bend-handle nodrag nopan"
+            data-route-handle-index={bend.index}
+            aria-label={`Move route bend ${bend.index}. Use Arrow keys to move; Delete or double click to remove.`}
+            onPointerDown={(event) => beginBendDrag(event, bend)}
+            onDoubleClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              removeBend(bend);
+            }}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onDragStart={(event) => event.preventDefault()}
+            onKeyDown={(event) => moveBendWithKeyboard(event, bend)}
           />
         </foreignObject>
       ))}

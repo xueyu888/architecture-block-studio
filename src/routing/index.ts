@@ -13,3 +13,13 @@ export {
   type RouteLaneRequest,
   type RoutePoint,
 } from "./routeInterface";
+export {
+  editableOrthogonalRoute,
+  editableRouteBends,
+  moveRouteBend,
+  moveRouteSegment,
+  removeRouteBend,
+  routeAxis,
+  type EditableRouteBend,
+  type EditableRouteSegment,
+} from "./routeEditing";

@@ -434,7 +434,7 @@ function ConnectionEditor({ document, level, connectionId, onOperation, onDelete
       <Field label="Interface id"><input value={connection.interfaceId} disabled /></Field>
       <section className="bd-route-editor" aria-label="Connection routing">
         <div><span>Routing</span><strong>{connection.routing ? "Manual" : "Automatic"}</strong></div>
-        <p>Select the line, then drag a square segment handle or focus it and use the Arrow keys. The route is saved in this JSON connection.</p>
+        <p>Drag a diamond to move a segment. Manual routes also show solid bend points: drag or use Arrow keys to move; Delete or double click removes one. Drag either circular endpoint to reconnect. Confirmed geometry is saved in this JSON connection.</p>
         {connection.routing && (
           <button
             type="button"

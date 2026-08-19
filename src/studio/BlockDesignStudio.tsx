@@ -569,6 +569,22 @@ export function BlockDesignStudio({
     return Boolean(runOperation({ type: "connection/route", levelId, connectionId, routing }));
   }, [requireAppliedInspectorDraft, runOperation]);
 
+  const reconnectConnection = useCallback((
+    levelId: string,
+    connectionId: string,
+    source: { nodeId: string; portId: string },
+    target: { nodeId: string; portId: string },
+  ): boolean => {
+    if (!requireAppliedInspectorDraft("reconnecting an interface")) return false;
+    return Boolean(runOperation({
+      type: "connection/reconnect",
+      levelId,
+      connectionId,
+      source,
+      target,
+    }));
+  }, [requireAppliedInspectorDraft, runOperation]);
+
   const canDelete = selection.kind === "node" || selection.kind === "port" || selection.kind === "connection";
   const canAddChildDesign = Boolean(selectedNode && !selectedNode.node.hierarchy);
   const canAddConnection = Boolean(activeLevel && firstConnectablePair(activeLevel));
@@ -806,6 +822,7 @@ export function BlockDesignStudio({
             onMoveNode={moveNode}
             onCreateConnection={createConnection}
             onRouteConnection={routeConnection}
+            onReconnectConnection={reconnectConnection}
           />
         </ReactFlowProvider>
         {(layoutBusy || busy) && <div className="bd-canvas-busy" role="status">Updating diagram...</div>}

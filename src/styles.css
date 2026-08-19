@@ -1286,11 +1286,11 @@ button { color: inherit; }
   transform: translate(-50%, 50%);
 }
 
-.react-flow__edge-path { stroke-width: 1.8; stroke-linecap: square; stroke-linejoin: miter; }
+.react-flow__edge-path { stroke-width: 2; stroke-linecap: square; stroke-linejoin: miter; }
 .bd-interface-underlay {
   fill: none;
   stroke: rgba(248, 249, 246, 0.98);
-  stroke-width: 5.5;
+  stroke-width: 6.5;
   stroke-linecap: square;
   stroke-linejoin: miter;
   vector-effect: non-scaling-stroke;
@@ -1301,8 +1301,7 @@ button { color: inherit; }
 .bd-route-preview {
   fill: none;
   stroke: var(--selection);
-  stroke-width: 3;
-  stroke-dasharray: 6 4;
+  stroke-width: 2.5;
   opacity: 0;
   pointer-events: none;
   vector-effect: non-scaling-stroke;
@@ -1321,19 +1320,44 @@ button { color: inherit; }
   transform: scale(var(--canvas-inverse-zoom, 1));
   transform-origin: center;
 }
-.bd-route-handle::after {
+.bd-route-segment-handle::after,
+.bd-route-bend-handle::after {
   position: absolute;
-  inset: 5px;
   border: 2px solid var(--selection);
-  border-radius: 2px;
   background: #fffdf8;
   content: "";
   filter: drop-shadow(0 1px 1px rgba(60, 48, 26, 0.2));
   pointer-events: none;
 }
+.bd-route-segment-handle::after {
+  inset: 8px;
+  border-width: 1.5px;
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+.bd-route-bend-handle::after {
+  inset: 6px;
+  border-radius: 1px;
+  background: var(--selection);
+  box-shadow: inset 0 0 0 1px #fffdf8;
+}
 .bd-route-handle-h { cursor: row-resize; }
 .bd-route-handle-v { cursor: col-resize; }
+.bd-route-bend-handle { cursor: move; }
 .bd-route-handle:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.react-flow__edge.selected .react-flow__edgeupdater {
+  r: 10px;
+  fill: transparent;
+  stroke: transparent;
+}
+.bd-route-endpoint-grip {
+  fill: var(--selection);
+  stroke: #fffdf8;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 1px 1px rgba(37, 55, 85, 0.24));
+  pointer-events: none;
+}
 .bd-interface { --xy-edge-stroke-selected: var(--interface-color); }
 .bd-interface-rpc { --interface-color: var(--blue); }
 .bd-interface-dto { --interface-color: var(--teal); }
@@ -1347,7 +1371,7 @@ button { color: inherit; }
 .bd-interface-event .react-flow__edge-path { stroke-dasharray: 3 3; }
 .bd-interface-stream .react-flow__edge-path { stroke-dasharray: 10 4; }
 .bd-interface-continuation .react-flow__edge-path { stroke-width: 2.2; }
-.react-flow__edge.selected .react-flow__edge-path { stroke-width: 3.5; filter: drop-shadow(0 0 1px rgba(37, 99, 217, 0.62)); }
+.react-flow__edge.selected .react-flow__edge-path { stroke-width: 3; filter: drop-shadow(0 0 1px rgba(37, 99, 217, 0.42)); }
 .bd-sources-pane { width: 100%; height: 100%; display: grid; grid-template-rows: var(--panel-tab-height) minmax(0, 1fr); overflow: hidden; }
 .bd-dock-tabs { height: var(--panel-tab-height); display: flex; gap: 2px; border-bottom: 1px solid var(--divider-soft); padding: 0 6px; background: var(--panel-subtle); }
 .bd-dock-tabs button { display: flex; align-items: center; gap: 5px; border: 0; border-bottom: 2px solid transparent; padding: 0 8px; background: transparent; color: var(--text-muted); font-size: 10px; cursor: pointer; }

@@ -2611,6 +2611,205 @@ test("selects and edits an orthogonal route entirely from the keyboard", async (
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("System Overview");
 });
 
+test("exposes draggable real bends after a virtual segment becomes manual", async ({ page }) => {
+  const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
+  await clickReachableEdgePoint(page, edge);
+  const segment = edge.locator(".bd-route-segment-handle").first();
+  await segment.focus();
+  await page.keyboard.press(await segment.getAttribute("data-route-axis") === "h" ? "ArrowDown" : "ArrowRight");
+  await waitForEditorIdle(page);
+
+  const bends = edge.locator(".bd-route-bend-handle");
+  expect(await bends.count()).toBeGreaterThanOrEqual(2);
+  const bendIndex = Math.min(1, (await bends.count()) - 1);
+  const bend = bends.nth(bendIndex);
+  const routeBefore = await edge.locator(".bd-interface-route").getAttribute("d");
+  const box = await bend.boundingBox();
+  expect(box).not.toBeNull();
+  const pointerId = 52;
+  const start = { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
+  await bend.dispatchEvent("pointerdown", {
+    pointerId,
+    button: 0,
+    buttons: 1,
+    clientX: start.x,
+    clientY: start.y,
+  });
+  await page.evaluate(({ pointerId: id, x, y }) => {
+    window.dispatchEvent(new PointerEvent("pointermove", {
+      bubbles: true,
+      pointerId: id,
+      buttons: 1,
+      clientX: x + 48,
+      clientY: y + 32,
+    }));
+    window.dispatchEvent(new PointerEvent("pointerup", {
+      bubbles: true,
+      pointerId: id,
+      button: 0,
+      clientX: x + 48,
+      clientY: y + 32,
+    }));
+  }, { pointerId, ...start });
+  await waitForEditorIdle(page);
+
+  await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
+  expect(await edge.locator(".bd-interface-route").getAttribute("d")).not.toBe(routeBefore);
+  const movedBend = edge.locator(".bd-route-bend-handle").nth(bendIndex);
+  await movedBend.focus();
+  await page.keyboard.press("ArrowRight");
+  await waitForEditorIdle(page);
+  await expect(movedBend).toBeFocused();
+  expect((await accessibilityResults(page, ".bd-route-handle-object")).violations).toEqual([]);
+  const bendCountBeforeDelete = await edge.locator(".bd-route-bend-handle").count();
+  await page.keyboard.press("Delete");
+  await waitForEditorIdle(page);
+  expect(await edge.locator(".bd-route-bend-handle").count()).toBeLessThan(bendCountBeforeDelete);
+});
+
+test("reconnects a selected edge endpoint and discards stale manual geometry", async ({ page }) => {
+  const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
+  await clickReachableEdgePoint(page, edge);
+  const segment = edge.locator(".bd-route-segment-handle").first();
+  await segment.focus();
+  await page.keyboard.press(await segment.getAttribute("data-route-axis") === "h" ? "ArrowDown" : "ArrowRight");
+  await waitForEditorIdle(page);
+  await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
+
+  const updater = edge.locator(".react-flow__edgeupdater-target");
+  const destination = page.locator(
+    '.react-flow__node[data-id="system::rust-agent-core"] .bd-port-handle-outer.target[data-handleid="knowledge-lifecycle"]',
+  );
+  const updaterBox = await updater.boundingBox();
+  const destinationBox = await destination.boundingBox();
+  expect(updaterBox).not.toBeNull();
+  expect(destinationBox).not.toBeNull();
+  await page.mouse.move(updaterBox!.x + updaterBox!.width / 2, updaterBox!.y + updaterBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(destinationBox!.x + destinationBox!.width / 2, destinationBox!.y + destinationBox!.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await waitForEditorIdle(page);
+
+  await expect(edge.locator('[data-routing-mode="automatic"]')).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await toolbarButton(page, "保存设计").click({ force: true });
+  const savedPath = await (await downloadPromise).path();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  const connection = saved.levels[0].connections.find(
+    (candidate: { id: string }) => candidate.id === "ui-session-command",
+  );
+  expect(connection.source).toEqual({ nodeId: "agent-ui", portId: "session-command" });
+  expect(connection.target).toEqual({ nodeId: "rust-agent-core", portId: "knowledge-lifecycle" });
+  expect(connection.routing).toBeUndefined();
+});
+
+test("keeps the dense port edge editor visible, separated, and label free", async ({ page, browserName }) => {
+  await toolbarButton(page, "适应窗口").click({ force: true });
+  await page.waitForTimeout(350);
+  const edge = page.locator('.react-flow__edge[data-id="system::core-tool-invoke"]');
+  await clickReachableEdgePoint(page, edge);
+
+  await expect(edge.locator(".bd-route-segment-handle")).not.toHaveCount(0);
+  await expect(edge.locator(".react-flow__edgeupdater")).toHaveCount(2);
+  await expect(edge.locator(".bd-route-bend-handle")).toHaveCount(0);
+  await expect(page.locator(".react-flow__edge-text")).toHaveCount(0);
+  const endpointHitTargets = await edge.locator(".react-flow__edgeupdater").evaluateAll((updaters) =>
+    updaters.map((updater) => {
+      const bounds = updater.getBoundingClientRect();
+      return {
+        width: bounds.width,
+        height: bounds.height,
+      };
+    }),
+  );
+  expect(endpointHitTargets).toHaveLength(2);
+  expect(endpointHitTargets.every((endpoint) =>
+    endpoint.width >= 11 && endpoint.width <= 14 &&
+    endpoint.height >= 11 && endpoint.height <= 14
+  )).toBe(true);
+  const endpointPresentation = await edge.locator(".bd-route-endpoint-grip").evaluateAll((grips) =>
+    grips.map((grip) => {
+      const style = getComputedStyle(grip);
+      return { fill: style.fill, stroke: style.stroke };
+    }),
+  );
+  expect(endpointPresentation).toEqual([
+    { fill: "rgb(37, 99, 217)", stroke: "rgb(255, 253, 248)" },
+    { fill: "rgb(37, 99, 217)", stroke: "rgb(255, 253, 248)" },
+  ]);
+
+  if (process.env.CAPTURE_ROUTE_EDITOR === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/edge-editor.png");
+    const clip = await page.evaluate(() => {
+      const core = document.querySelector<HTMLElement>('.react-flow__node[data-id="system::rust-agent-core"]')
+        ?.getBoundingClientRect();
+      const tool = document.querySelector<HTMLElement>('.react-flow__node[data-id="system::tool-system"]')
+        ?.getBoundingClientRect();
+      if (!core || !tool) throw new Error("Dense edge editor nodes are missing.");
+      const padding = 44;
+      const x = Math.max(0, Math.min(core.left, tool.left) - padding);
+      const y = Math.max(0, Math.min(core.top, tool.top) - padding);
+      return {
+        x,
+        y,
+        width: Math.min(window.innerWidth - x, Math.max(core.right, tool.right) - x + padding),
+        height: Math.min(window.innerHeight - y, Math.max(core.bottom, tool.bottom) - y + padding),
+      };
+    });
+    await page.screenshot({
+      path: "docs/screenshots/edge-editor-detail.png",
+      animations: "disabled",
+      clip,
+      timeout: 30_000,
+    });
+    const manualEdge = page.locator('.react-flow__edge[data-id="system::core-tool-catalog"]');
+    await clickReachableEdgePoint(page, manualEdge);
+    const segment = manualEdge.locator(".bd-route-segment-handle").first();
+    const segmentBox = await segment.boundingBox();
+    if (!segmentBox) throw new Error("Selected route segment handle is missing.");
+    const pointerId = 63;
+    const start = {
+      x: segmentBox.x + segmentBox.width / 2,
+      y: segmentBox.y + segmentBox.height / 2,
+    };
+    const axis = await segment.getAttribute("data-route-axis");
+    const end = axis === "h"
+      ? { x: start.x, y: start.y - 24 }
+      : { x: start.x + 24, y: start.y };
+    await segment.dispatchEvent("pointerdown", {
+      pointerId,
+      button: 0,
+      buttons: 1,
+      clientX: start.x,
+      clientY: start.y,
+    });
+    await page.evaluate(({ pointerId: id, end: destination }) => {
+      window.dispatchEvent(new PointerEvent("pointermove", {
+        bubbles: true,
+        pointerId: id,
+        buttons: 1,
+        clientX: destination.x,
+        clientY: destination.y,
+      }));
+      window.dispatchEvent(new PointerEvent("pointerup", {
+        bubbles: true,
+        pointerId: id,
+        button: 0,
+        clientX: destination.x,
+        clientY: destination.y,
+      }));
+    }, { pointerId, end });
+    await waitForEditorIdle(page);
+    await expect(manualEdge.locator(".bd-route-bend-handle")).not.toHaveCount(0);
+    await page.screenshot({
+      path: "docs/screenshots/edge-editor-manual-detail.png",
+      animations: "disabled",
+      clip,
+      timeout: 30_000,
+    });
+  }
+});
+
 test("moves a selected module through the document with the keyboard", async ({ page }) => {
   const node = flowNode(page, "system::agent-ui");
   await tabTo(page, node);
