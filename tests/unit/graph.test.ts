@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 import {
+  connectionPortEndpoints,
   firstConnectablePair,
+  hasAlternativeConnectionEndpoints,
+  listConnectionSourceEndpoints,
+  listConnectionTargetEndpoints,
   listLevelPortEndpoints,
   listModuleInterfaces,
   normalizeConnectionEndpoints,
@@ -80,5 +84,35 @@ describe("connection endpoint normalization", () => {
       source: expect.objectContaining({ nodeId: "source", portId: "out" }),
       target: expect.objectContaining({ nodeId: "target", portId: "in" }),
     }));
+  });
+
+  test("owns endpoint roles and excludes only the selected source from target candidates", () => {
+    const level = connectedDesign().levels[0];
+    const [source] = listConnectionSourceEndpoints(level);
+
+    expect(source).toMatchObject({ nodeId: "source", portId: "out" });
+    expect(listConnectionTargetEndpoints(level, source)).toEqual([
+      expect.objectContaining({ nodeId: "target", portId: "in" }),
+    ]);
+  });
+
+  test("resolves stored endpoints and detects only genuinely different reconnect pairs", () => {
+    const level = connectedDesign().levels[0];
+    const connection = level.connections[0];
+
+    expect(connectionPortEndpoints(level, connection)).toEqual(expect.objectContaining({
+      source: expect.objectContaining({ nodeId: "source", portId: "out" }),
+      target: expect.objectContaining({ nodeId: "target", portId: "in" }),
+    }));
+    expect(hasAlternativeConnectionEndpoints(level, connection)).toBe(false);
+
+    level.nodes.find((node) => node.id === "target")!.ports.push({
+      id: "alternate",
+      label: "Alternate",
+      side: "left",
+      direction: "input",
+      required: false,
+    });
+    expect(hasAlternativeConnectionEndpoints(level, connection)).toBe(true);
   });
 });

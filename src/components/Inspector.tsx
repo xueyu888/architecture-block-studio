@@ -14,6 +14,7 @@ import type {
   PortDirection,
   PortSide,
 } from "../model";
+import type { StudioCommand } from "../studio/commands";
 import { selectionKey, type SelectionRef } from "../studio/selection";
 
 interface ResolvedInspection {
@@ -465,10 +466,19 @@ function PortEditor({ level, node, port, onOperation, onDelete, onDraftChange }:
   );
 }
 
-function ConnectionEditor({ document, level, connectionId, onOperation, onDelete, onDraftChange }: {
+function ConnectionEditor({
+  document,
+  level,
+  connectionId,
+  reconnectCommand,
+  onOperation,
+  onDelete,
+  onDraftChange,
+}: {
   document: BlockDesignDocument;
   level: DesignLevel;
   connectionId: string;
+  reconnectCommand: StudioCommand;
   onOperation: (operation: DesignOperation) => void;
   onDelete: () => void;
   onDraftChange: (dirty: boolean) => void;
@@ -493,7 +503,19 @@ function ConnectionEditor({ document, level, connectionId, onOperation, onDelete
       <Field label="Interface id"><input value={connection.interfaceId} disabled /></Field>
       <section className="bd-route-editor" aria-label="Connection routing">
         <div><span>Routing</span><strong>{connection.routing ? "Manual" : "Automatic"}</strong></div>
-        <p>Drag a diamond to move a segment. Manual routes also show solid bend points: drag or use Arrow keys to move; Delete or double click removes one. Drag either circular endpoint to reconnect. With the connection focused, Enter enters its route handles, Tab / Shift + Tab traverses them, and Escape returns to the connection; Tab after the last handle leaves the Canvas without changing the selected connection. Confirmed geometry is saved in this JSON connection.</p>
+        <p>Drag a diamond to move a segment. Manual routes also show solid bend points: drag or use Arrow keys to move; Delete or double click removes one. Drag either circular endpoint, or use Reconnect endpoints for the full keyboard path. With the connection focused, Enter enters its route handles, Tab / Shift + Tab traverses them, and Escape returns to the connection. Confirmed geometry is saved in this JSON connection.</p>
+        <button
+          type="button"
+          className="bd-inline-action"
+          data-inspector-action="reconnect"
+          disabled={dirty || !reconnectCommand.enabled}
+          title={dirty
+            ? "Apply or discard the current Inspector changes first."
+            : reconnectCommand.unavailableReason}
+          onClick={reconnectCommand.execute}
+        >
+          Reconnect endpoints...
+        </button>
         {connection.routing && (
           <button
             type="button"
@@ -524,9 +546,10 @@ function ConnectionEditor({ document, level, connectionId, onOperation, onDelete
   );
 }
 
-function InspectionEditor({ document, selection, onOperation, onDelete, onDraftChange, onSelect }: {
+function InspectionEditor({ document, selection, reconnectCommand, onOperation, onDelete, onDraftChange, onSelect }: {
   document: BlockDesignDocument;
   selection: SelectionRef;
+  reconnectCommand: StudioCommand;
   onOperation: (operation: DesignOperation) => void;
   onDelete: () => void;
   onDraftChange: (dirty: boolean) => void;
@@ -546,14 +569,25 @@ function InspectionEditor({ document, selection, onOperation, onDelete, onDraftC
     if (port) return <PortEditor level={level} node={node} port={port} onOperation={onOperation} onDelete={onDelete} onDraftChange={onDraftChange} />;
   }
   if (selection.kind === "connection" && level.connections.some((connection) => connection.id === selection.connectionId)) {
-    return <ConnectionEditor document={document} level={level} connectionId={selection.connectionId} onOperation={onOperation} onDelete={onDelete} onDraftChange={onDraftChange} />;
+    return <ConnectionEditor document={document} level={level} connectionId={selection.connectionId} reconnectCommand={reconnectCommand} onOperation={onOperation} onDelete={onDelete} onDraftChange={onDraftChange} />;
   }
   return <p className="bd-empty-state">The selected design object no longer exists.</p>;
 }
 
-export function Inspector({ document, selection, onOperation, onDelete, onDraftChange, onSelect }: {
+export function Inspector({
+  document,
+  selection,
+  reconnectCommand,
+  reconnectFocusRequest,
+  onOperation,
+  onDelete,
+  onDraftChange,
+  onSelect,
+}: {
   document: BlockDesignDocument;
   selection: SelectionRef;
+  reconnectCommand: StudioCommand;
+  reconnectFocusRequest: number;
   onOperation: (operation: DesignOperation) => void;
   onDelete: () => void;
   onDraftChange: (dirty: boolean) => void;
@@ -561,6 +595,7 @@ export function Inspector({ document, selection, onOperation, onDelete, onDraftC
 }) {
   const inspectorRef = useRef<HTMLElement>(null);
   const restoreApplyFocus = useRef(false);
+  const previousReconnectFocusRequest = useRef(reconnectFocusRequest);
   const [tab, setTab] = useState<"properties" | "json">("properties");
   const [draftDirty, setDraftDirty] = useState(false);
   const inspected = useMemo(() => resolveInspection(document, selection), [document, selection]);
@@ -581,6 +616,13 @@ export function Inspector({ document, selection, onOperation, onDelete, onDraftC
     restoreApplyFocus.current = false;
     apply.focus();
   }, [rawJson]);
+  useLayoutEffect(() => {
+    if (previousReconnectFocusRequest.current === reconnectFocusRequest) return;
+    previousReconnectFocusRequest.current = reconnectFocusRequest;
+    inspectorRef.current
+      ?.querySelector<HTMLButtonElement>('[data-inspector-action="reconnect"]')
+      ?.focus();
+  }, [rawJson, reconnectFocusRequest]);
 
   return (
     <section
@@ -613,7 +655,7 @@ export function Inspector({ document, selection, onOperation, onDelete, onDraftC
         </button>
       </div>
       <div className="bd-inspector-scroll" hidden={tab !== "properties"}>
-        <InspectionEditor key={`${key}:${rawJson}`} document={document} selection={selection} onOperation={onOperation} onDelete={onDelete} onDraftChange={reportDraft} onSelect={onSelect} />
+        <InspectionEditor key={`${key}:${rawJson}`} document={document} selection={selection} reconnectCommand={reconnectCommand} onOperation={onOperation} onDelete={onDelete} onDraftChange={reportDraft} onSelect={onSelect} />
       </div>
       <div className="bd-code-section bd-raw-json" hidden={tab !== "json"}>
           <header><h3>{selection.kind === "multiple" ? "Selected source objects" : "Selected source object"}</h3><CopyButton value={rawJson} /></header>

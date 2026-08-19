@@ -25,6 +25,7 @@ export type StudioCommandId =
   | "addBlock"
   | "addPort"
   | "addConnection"
+  | "reconnectConnection"
   | "addChildDesign"
   | "regenerateLayout"
   | "optimizeRouting"

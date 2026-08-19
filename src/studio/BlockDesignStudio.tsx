@@ -62,6 +62,7 @@ import {
   NewDesignDialog,
   SaveDesignDialog,
   SelectConnectionEndpointsDialog,
+  type ConnectionEndpointDialogMode,
   type PendingConnection,
 } from "../components/EditorDialogs";
 import { HierarchyTree } from "../components/HierarchyTree";
@@ -110,7 +111,9 @@ import {
   type SelectionDistribution,
 } from "../layout";
 import {
+  connectionPortEndpoints,
   firstConnectablePair,
+  hasAlternativeConnectionEndpoints,
   validateBlockDesignDocument,
   type BlockDesignDocument,
   type ConnectionRouting,
@@ -119,6 +122,7 @@ import {
 import type { StudioCommandAvailability, StudioCommands } from "./commands";
 import { findDesignFragmentPlacement } from "./fragmentPlacement";
 import {
+  connectionForSelection,
   hierarchyLevelPath,
   diagramSelectionItems,
   levelForSelection,
@@ -173,6 +177,10 @@ type ArrangementRequest =
   | { kind: "align"; alignment: SelectionAlignment }
   | { kind: "distribute"; direction: SelectionDistribution };
 
+type ConnectionEndpointDialogRequest =
+  | { kind: "create"; levelId: string }
+  | { kind: "reconnect"; levelId: string; connectionId: string };
+
 export interface BlockDesignStudioProps {
   initialDocument?: unknown;
   initialDesignUrl?: string;
@@ -215,7 +223,8 @@ export function BlockDesignStudio({
   const [saveAsDialogOpen, setSaveAsDialogOpen] = useState(false);
   const [addBlockLevelId, setAddBlockLevelId] = useState<string>();
   const [addPortTarget, setAddPortTarget] = useState<{ levelId: string; nodeId: string }>();
-  const [connectionEndpointLevelId, setConnectionEndpointLevelId] = useState<string>();
+  const [connectionEndpointRequest, setConnectionEndpointRequest] = useState<ConnectionEndpointDialogRequest>();
+  const [inspectorReconnectFocusRequest, setInspectorReconnectFocusRequest] = useState(0);
   const [childDesignTarget, setChildDesignTarget] = useState<{ levelId: string; nodeId: string }>();
   const [pendingConnection, setPendingConnection] = useState<PendingConnection>();
   const [loadError, setLoadError] = useState<string>();
@@ -360,6 +369,23 @@ export function BlockDesignStudio({
       setSelection({ kind: "level", levelId: document.entryLevelId });
     }
   }, [document, selection]);
+
+  useEffect(() => {
+    if (!document || !connectionEndpointRequest) return;
+    const level = document.levels.find(
+      (candidate) => candidate.id === connectionEndpointRequest.levelId,
+    );
+    let contextExists = Boolean(level);
+    if (level && connectionEndpointRequest.kind === "reconnect") {
+      const connection = level.connections.find(
+        (candidate) => candidate.id === connectionEndpointRequest.connectionId,
+      );
+      contextExists = Boolean(connection && connectionPortEndpoints(level, connection));
+    }
+    if (contextExists) return;
+    setConnectionEndpointRequest(undefined);
+    setCommandError("The interface endpoint context changed. Select the interface and reopen Reconnect Interface.");
+  }, [connectionEndpointRequest, document]);
 
   useEffect(() => {
     if (!editor.dirty && !inspectorDraftDirty) return;
@@ -587,6 +613,7 @@ export function BlockDesignStudio({
 
   const activeLevel = document ? levelForSelection(document, selection) : undefined;
   const selectedNode = document ? nodeForSelection(document, selection) : undefined;
+  const selectedConnection = document ? connectionForSelection(document, selection) : undefined;
   const selectedDiagramItemCount = diagramSelectionItems(selection).length;
   const activeLevelDiagramItemCount = activeLevel
     ? activeLevel.nodes.length + activeLevel.connections.length
@@ -695,8 +722,19 @@ export function BlockDesignStudio({
   const openAddConnection = useCallback(() => {
     if (!activeLevel || !requireAppliedInspectorDraft("creating an interface")) return;
     setCommandError(undefined);
-    setConnectionEndpointLevelId(activeLevel.id);
+    setConnectionEndpointRequest({ kind: "create", levelId: activeLevel.id });
   }, [activeLevel, requireAppliedInspectorDraft]);
+
+  const openReconnectConnection = useCallback(() => {
+    if (!selectedConnection || !requireAppliedInspectorDraft("reconnecting an interface")) return;
+    if (!hasAlternativeConnectionEndpoints(selectedConnection.level, selectedConnection.connection)) return;
+    setCommandError(undefined);
+    setConnectionEndpointRequest({
+      kind: "reconnect",
+      levelId: selectedConnection.level.id,
+      connectionId: selectedConnection.connection.id,
+    });
+  }, [requireAppliedInspectorDraft, selectedConnection]);
 
   const openAddChildDesign = useCallback(() => {
     if (!selectedNode || !requireAppliedInspectorDraft("creating a child design")) return;
@@ -922,7 +960,7 @@ export function BlockDesignStudio({
     return Boolean(runOperation({ type: "connection/route", levelId, connectionId, routing }));
   }, [requireAppliedInspectorDraft, runOperation]);
 
-  const reconnectConnection = useCallback((
+  const applyConnectionReconnect = useCallback((
     levelId: string,
     connectionId: string,
     source: { nodeId: string; portId: string },
@@ -958,10 +996,24 @@ export function BlockDesignStudio({
     saveAsDialogOpen ||
     addBlockLevelId ||
     addPortTarget ||
-    connectionEndpointLevelId ||
+    connectionEndpointRequest ||
     childDesignTarget ||
     pendingConnection
   );
+  const selectedConnectionHasAlternative = Boolean(
+    selectedConnection && hasAlternativeConnectionEndpoints(
+      selectedConnection.level,
+      selectedConnection.connection,
+    )
+  );
+  const reconnectUnavailableReason = editorDialogOpen
+    ? "Close the current dialog first."
+    : inspectorDraftDirty
+      ? "Apply or discard the current Inspector changes first."
+      : !selectedConnection
+        ? "Select one interface first."
+        : "Add another compatible output or input port to this level first.";
+  const canReconnectConnection = selectedConnectionHasAlternative && !editorDialogOpen && !inspectorDraftDirty;
   const fragmentCommandBlockReason = editorDialogOpen
     ? "Close the current dialog first."
     : inspectorDraftDirty
@@ -1104,6 +1156,11 @@ export function BlockDesignStudio({
       id: "addConnection", label: "Add Interface...", toolbarTitle: "添加接口", icon: Share2,
       ...commandAvailability(canAddConnection, "Add compatible output/input ports to this level first."), execute: openAddConnection,
     },
+    reconnectConnection: {
+      id: "reconnectConnection", label: "Reconnect Interface...", icon: Cable,
+      ...commandAvailability(canReconnectConnection, reconnectUnavailableReason),
+      execute: openReconnectConnection,
+    },
     addChildDesign: {
       id: "addChildDesign", label: "Create Child Design...", toolbarTitle: "创建子设计", icon: GitBranchPlus,
       ...commandAvailability(
@@ -1199,6 +1256,7 @@ export function BlockDesignStudio({
     canDelete,
     canDistributeSelection,
     canPaste,
+    canReconnectConnection,
     copySelectedModules,
     copyUnavailableReason,
     deleteUnavailableReason,
@@ -1217,10 +1275,12 @@ export function BlockDesignStudio({
     openAddChildDesign,
     openAddConnection,
     openAddPort,
+    openReconnectConnection,
     openSaveAs,
     pasteDesignFragment,
     pasteUnavailableReason,
     redoDesign,
+    reconnectUnavailableReason,
     requestViewportAction,
     requestSelection,
     requireAppliedInspectorDraft,
@@ -1341,9 +1401,29 @@ export function BlockDesignStudio({
   const childDesignNode = childDesignTarget
     ? document.levels.find((level) => level.id === childDesignTarget.levelId)?.nodes.find((node) => node.id === childDesignTarget.nodeId)
     : undefined;
-  const connectionEndpointLevel = connectionEndpointLevelId
-    ? document.levels.find((level) => level.id === connectionEndpointLevelId)
+  const connectionEndpointLevel = connectionEndpointRequest
+    ? document.levels.find((level) => level.id === connectionEndpointRequest.levelId)
     : undefined;
+  const connectionEndpointConnection = connectionEndpointRequest?.kind === "reconnect"
+    ? connectionEndpointLevel?.connections.find(
+      (connection) => connection.id === connectionEndpointRequest.connectionId,
+    )
+    : undefined;
+  const connectionEndpointInitial = connectionEndpointLevel && connectionEndpointConnection
+    ? connectionPortEndpoints(connectionEndpointLevel, connectionEndpointConnection)
+    : undefined;
+  const connectionEndpointMode: ConnectionEndpointDialogMode | undefined = connectionEndpointRequest?.kind === "create"
+    ? { kind: "create" }
+    : connectionEndpointConnection && connectionEndpointInitial
+      ? {
+        kind: "reconnect",
+        interfaceTitle: connectionEndpointConnection.label ??
+          document.interfaceDefinitions[connectionEndpointConnection.interfaceId]?.title ??
+          connectionEndpointConnection.interfaceId,
+        hasManualRouting: Boolean(connectionEndpointConnection.routing),
+        initial: connectionEndpointInitial,
+      }
+      : undefined;
   const errorCount = issues.filter((issue) => issue.severity === "error").length;
   const warningCount = issues.filter((issue) => issue.severity === "warning").length;
   const expandedTitles = document.levels.filter((level) => expandedLevelIds.has(level.id)).map((level) => level.title);
@@ -1371,13 +1451,22 @@ export function BlockDesignStudio({
             onResizeNode={resizeNode}
             onCreateConnection={createConnection}
             onRouteConnection={routeConnection}
-            onReconnectConnection={reconnectConnection}
+            onReconnectConnection={applyConnectionReconnect}
           />
         </ReactFlowProvider>
         {(layoutBusy || busy) && <div className="bd-canvas-busy" role="status">Updating diagram...</div>}
       </section>
     ),
-    properties: <Inspector document={document} selection={selection} onOperation={runOperation} onDelete={deleteSelection} onDraftChange={setInspectorDraftDirty} onSelect={requestSelectionFromNavigator} />,
+    properties: <Inspector
+      document={document}
+      selection={selection}
+      reconnectCommand={commands.reconnectConnection}
+      reconnectFocusRequest={inspectorReconnectFocusRequest}
+      onOperation={runOperation}
+      onDelete={deleteSelection}
+      onDraftChange={setInspectorDraftDirty}
+      onSelect={requestSelectionFromNavigator}
+    />,
     messages: <MessagesPanel issues={issues} focusRequest={messageFocusRequest} onSelect={selectIssue} />,
   };
 
@@ -1477,15 +1566,35 @@ export function BlockDesignStudio({
           } catch (error) { setCommandError(errorMessage(error)); }
         }}
       />
-      <SelectConnectionEndpointsDialog
-        level={connectionEndpointLevel}
-        error={commandError}
-        onClose={() => { setConnectionEndpointLevelId(undefined); setCommandError(undefined); }}
-        onContinue={(connection) => {
-          setConnectionEndpointLevelId(undefined);
-          createConnection(connection);
-        }}
-      />
+      {connectionEndpointMode && (
+        <SelectConnectionEndpointsDialog
+          key={connectionEndpointRequest?.kind === "reconnect"
+            ? `reconnect:${connectionEndpointRequest.levelId}:${connectionEndpointRequest.connectionId}`
+            : `create:${connectionEndpointRequest?.levelId}`}
+          level={connectionEndpointLevel}
+          mode={connectionEndpointMode}
+          error={commandError}
+          onClose={() => { setConnectionEndpointRequest(undefined); setCommandError(undefined); }}
+          onContinue={(connection) => {
+            if (connectionEndpointRequest?.kind === "reconnect") {
+              if (connectionEndpointMode.kind !== "reconnect") return;
+              if (applyConnectionReconnect(
+                connectionEndpointRequest.levelId,
+                connectionEndpointRequest.connectionId,
+                connection.source,
+                connection.target,
+              )) {
+                setConnectionEndpointRequest(undefined);
+                setInspectorReconnectFocusRequest((value) => value + 1);
+                setCommandNotice(`Reconnected ${connectionEndpointMode.interfaceTitle}.`);
+              }
+              return;
+            }
+            setConnectionEndpointRequest(undefined);
+            createConnection(connection);
+          }}
+        />
+      )}
       <AddChildDesignDialog
         open={Boolean(childDesignTarget && childDesignNode)}
         blockTitle={childDesignNode?.title ?? "module"}

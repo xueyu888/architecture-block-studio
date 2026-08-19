@@ -1,4 +1,10 @@
-import type { BlockDesignDocument, DesignLevel, InterfaceKind, PortDirection } from "./design";
+import type {
+  BlockConnection,
+  BlockDesignDocument,
+  DesignLevel,
+  InterfaceKind,
+  PortDirection,
+} from "./design";
 
 export interface ConnectablePortEndpoint {
   levelId: string;
@@ -43,6 +49,20 @@ export function listLevelPortEndpoints(level: DesignLevel): ConnectablePortEndpo
   })));
 }
 
+export function listConnectionSourceEndpoints(level: DesignLevel): ConnectablePortEndpoint[] {
+  return listLevelPortEndpoints(level).filter((endpoint) => endpoint.direction !== "input");
+}
+
+export function listConnectionTargetEndpoints(
+  level: DesignLevel,
+  source?: ConnectablePortEndpoint,
+): ConnectablePortEndpoint[] {
+  return listLevelPortEndpoints(level).filter((endpoint) => (
+    endpoint.direction !== "output" &&
+    (endpoint.nodeId !== source?.nodeId || endpoint.portId !== source.portId)
+  ));
+}
+
 export function normalizeConnectionEndpoints(
   first: ConnectablePortEndpoint | undefined,
   second: ConnectablePortEndpoint | undefined,
@@ -59,17 +79,54 @@ export function normalizeConnectionEndpoints(
 }
 
 export function firstConnectablePair(level: DesignLevel): NormalizedConnectionEndpoints | undefined {
-  const endpoints = listLevelPortEndpoints(level);
+  const sources = listConnectionSourceEndpoints(level);
+  const targets = listConnectionTargetEndpoints(level);
   for (const preferDifferentNode of [true, false]) {
-    for (const first of endpoints) {
-      for (const second of endpoints) {
-        if (preferDifferentNode && first.nodeId === second.nodeId) continue;
-        const normalized = normalizeConnectionEndpoints(first, second);
+    for (const source of sources) {
+      for (const target of targets) {
+        if (source.nodeId === target.nodeId && source.portId === target.portId) continue;
+        if (preferDifferentNode && source.nodeId === target.nodeId) continue;
+        const normalized = normalizeConnectionEndpoints(source, target);
         if (normalized) return normalized;
       }
     }
   }
   return undefined;
+}
+
+export function connectionPortEndpoints(
+  level: DesignLevel,
+  connection: BlockConnection,
+): NormalizedConnectionEndpoints | undefined {
+  const endpoints = listLevelPortEndpoints(level);
+  const source = endpoints.find((endpoint) => (
+    endpoint.nodeId === connection.source.nodeId && endpoint.portId === connection.source.portId
+  ));
+  const target = endpoints.find((endpoint) => (
+    endpoint.nodeId === connection.target.nodeId && endpoint.portId === connection.target.portId
+  ));
+  return normalizeConnectionEndpoints(source, target);
+}
+
+export function hasAlternativeConnectionEndpoints(
+  level: DesignLevel,
+  connection: BlockConnection,
+): boolean {
+  const current = connectionPortEndpoints(level, connection);
+  if (!current) return false;
+  const targets = listConnectionTargetEndpoints(level);
+  for (const source of listConnectionSourceEndpoints(level)) {
+    for (const target of targets) {
+      if (source.nodeId === target.nodeId && source.portId === target.portId) continue;
+      if (
+        source.nodeId !== current.source.nodeId ||
+        source.portId !== current.source.portId ||
+        target.nodeId !== current.target.nodeId ||
+        target.portId !== current.target.portId
+      ) return true;
+    }
+  }
+  return false;
 }
 
 export function listModuleInterfaces(

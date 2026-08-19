@@ -1,4 +1,5 @@
 import type {
+  BlockConnection,
   BlockDesignDocument,
   BlockNode,
   DesignIssue,
@@ -149,6 +150,18 @@ export function nodeForSelection(
   const level = document.levels.find((candidate) => candidate.id === selection.levelId);
   const node = level?.nodes.find((candidate) => candidate.id === selection.nodeId);
   return level && node ? { level, node } : undefined;
+}
+
+export function connectionForSelection(
+  document: BlockDesignDocument,
+  selection: SelectionRef,
+): { level: DesignLevel; connection: BlockConnection } | undefined {
+  if (selection.kind !== "connection") return undefined;
+  const level = document.levels.find((candidate) => candidate.id === selection.levelId);
+  const connection = level?.connections.find(
+    (candidate) => candidate.id === selection.connectionId,
+  );
+  return level && connection ? { level, connection } : undefined;
 }
 
 export function selectionKey(selection: SelectionRef): string {

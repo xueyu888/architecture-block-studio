@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  connectionForSelection,
   diagramSelectionItems,
   hierarchyLevelPath,
   levelForSelection,
@@ -81,6 +82,15 @@ describe("workspace selection protocol", () => {
     expect(levelForSelection(document, { kind: "level", levelId: "missing" }).id).toBe("system");
     expect(nodeForSelection(document, childSelection)?.node.id).toBe("child");
     expect(nodeForSelection(document, { kind: "connection", levelId: "system", connectionId: "missing" })).toBeUndefined();
+    expect(connectionForSelection(connectedDesign(), {
+      kind: "connection",
+      levelId: "system",
+      connectionId: "source-to-target",
+    })).toMatchObject({
+      level: { id: "system" },
+      connection: { id: "source-to-target" },
+    });
+    expect(connectionForSelection(document, childSelection)).toBeUndefined();
   });
 
   it("owns canonical replace and toggle semantics for diagram multi-selection", () => {

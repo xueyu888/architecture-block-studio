@@ -1270,7 +1270,7 @@ test("searches and runs the unified command palette without losing workflow focu
   const search = palette.getByRole("combobox", { name: "Search commands" });
   await expect(palette).toBeVisible();
   await expect(search).toBeFocused();
-  await expect(palette.getByRole("option")).toHaveCount(38);
+  await expect(palette.getByRole("option")).toHaveCount(39);
   await expect(palette.getByRole("option", { name: /^Command Palette/ })).toHaveCount(0);
 
   await search.fill("添加端口");
@@ -1282,6 +1282,15 @@ test("searches and runs the unified command palette without losing workflow focu
   await expect(palette).toBeVisible();
   await expect(search).toBeFocused();
   await clickWithPointer(page, unavailablePort);
+  await expect(palette).toBeVisible();
+  await expect(search).toBeFocused();
+
+  await search.fill("reconnect interface");
+  const unavailableReconnect = palette.getByRole("option", { name: /^Reconnect Interface/ });
+  await expect(palette.getByRole("option")).toHaveCount(1);
+  await expect(unavailableReconnect).toHaveAttribute("aria-disabled", "true");
+  await expect(unavailableReconnect).toContainText("Select one interface first.");
+  await clickWithPointer(page, unavailableReconnect);
   await expect(palette).toBeVisible();
   await expect(search).toBeFocused();
 
@@ -1520,6 +1529,8 @@ test("navigates application menus with a desktop keyboard model", async ({ page 
   await expect(designMenu.getByRole("menuitem", { name: /^Add Port/ })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(designMenu.getByRole("menuitem", { name: /^Add Interface/ })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(designMenu.getByRole("menuitem", { name: /^Reconnect Interface/ })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(designMenu.getByRole("menuitem", { name: /^Create Child Design/ })).toBeFocused();
   await page.keyboard.press("ArrowDown");
@@ -2602,6 +2613,53 @@ test("expands five hierarchy layers and audits every visible route and pair", as
     await page.waitForTimeout(500);
     await captureStudioScreenshot(page, "docs/screenshots/routing-five-level-detail.png");
   }
+
+  const sources = page.getByRole("region", { name: "Sources" });
+  await sources.getByRole("tab", { name: "Interfaces" }).click({ force: true });
+  await sources.getByLabel("Filter interfaces").fill("layer-5-flow-00");
+  const nestedInterface = sources.getByRole("list", { name: "Declared interfaces" }).getByRole("button");
+  await expect(nestedInterface).toHaveCount(1);
+  await nestedInterface.click({ force: true });
+  await expect(page.locator(".bd-inspector-title code")).toContainText(
+    "relay-4-00.out → layer-5.flow-00",
+  );
+  await page.keyboard.press("ControlOrMeta+K");
+  const nestedPalette = page.getByRole("dialog", { name: "Command Palette" });
+  await nestedPalette.getByRole("combobox", { name: "Search commands" }).fill("Reconnect Interface");
+  await page.keyboard.press("Enter");
+  const nestedDialog = page.getByRole("dialog", { name: "Reconnect Interface" });
+  await expect(nestedDialog.getByLabel("Source port")).toHaveValue('["relay-4-00","out"]');
+  const nestedTarget = nestedDialog.getByLabel("Target port");
+  await expect(nestedTarget).toHaveValue('["layer-5","flow-00"]');
+  await page.keyboard.press("Tab");
+  await expect(nestedTarget).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(nestedTarget).toHaveValue('["layer-5","flow-01"]');
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".bd-inspector-title code")).toContainText(
+    "relay-4-00.out → layer-5.flow-01",
+  );
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".bd-inspector-title code")).toContainText(
+    "relay-4-00.out → layer-5.flow-00",
+  );
+  await expect(page.locator(".react-flow__edge")).toHaveCount(20, { timeout: 60_000 });
+  const auditAfterNestedUndo = await exhaustiveRouteAudit(page);
+  expect(auditAfterNestedUndo).toMatchObject({
+    auditedRouteCount: 20,
+    auditedPairCount: 190,
+    expectedPairCount: 190,
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  await sources.getByRole("tab", { name: "Hierarchy" }).click({ force: true });
+
   await page.locator(
     '.bd-tree-select[data-level-id="level-5"][data-node-id="target-00"]',
   ).click({ force: true });
@@ -3230,6 +3288,140 @@ test("reconnects a selected edge endpoint and discards stale manual geometry", a
   expect(connection.source).toEqual({ nodeId: "agent-ui", portId: "session-command" });
   expect(connection.target).toEqual({ nodeId: "rust-agent-core", portId: "knowledge-lifecycle" });
   expect(connection.routing).toBeUndefined();
+});
+
+test("reconnects an interface entirely by keyboard with undo, redo, focus, and saved JSON", async ({ page, browserName }) => {
+  const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
+  await clickReachableEdgePoint(page, edge);
+  const segment = edge.locator(".bd-route-segment-handle").first();
+  await segment.focus();
+  await page.keyboard.press(await segment.getAttribute("data-route-axis") === "h" ? "ArrowDown" : "ArrowRight");
+  await waitForEditorIdle(page);
+  await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
+
+  await page.keyboard.press("ControlOrMeta+K");
+  const palette = page.getByRole("dialog", { name: "Command Palette" });
+  const search = palette.getByRole("combobox", { name: "Search commands" });
+  await expect(search).toBeFocused();
+  await page.keyboard.type("Reconnect Interface");
+  const reconnectOption = palette.getByRole("option", { name: /^Reconnect Interface/ });
+  await expect(reconnectOption).not.toHaveAttribute("aria-disabled");
+  await page.keyboard.press("Enter");
+
+  const dialog = page.getByRole("dialog", { name: "Reconnect Interface" });
+  const source = dialog.getByLabel("Source port");
+  const target = dialog.getByLabel("Target port");
+  const reconnect = dialog.getByRole("button", { name: "Reconnect", exact: true });
+  await expect(source).toBeFocused();
+  await expect(source).toHaveValue('["agent-ui","session-command"]');
+  await expect(target).toHaveValue('["rust-agent-core","session-command"]');
+  await expect(reconnect).toBeDisabled();
+  await expect(dialog).toContainText("clears the old manual route");
+
+  await page.keyboard.press("Tab");
+  await expect(target).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(target).toHaveValue('["rust-agent-core","knowledge-lifecycle"]');
+  await page.keyboard.press("Tab");
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(reconnect).toBeFocused();
+  await page.keyboard.press("Enter");
+  await waitForEditorIdle(page);
+
+  const inspector = page.getByRole("region", { name: "Properties" });
+  const reconnectEndpoints = inspector.getByRole("button", { name: "Reconnect endpoints..." });
+  await expect(reconnectEndpoints).toBeFocused();
+  await expect(edge.locator('[data-routing-mode="automatic"]')).toBeVisible();
+  await expect(page.locator(".bd-inspector-title code")).toContainText(
+    "agent-ui.session-command → rust-agent-core.knowledge-lifecycle",
+  );
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
+  await expect(page.locator(".bd-inspector-title code")).toContainText(
+    "agent-ui.session-command → rust-agent-core.session-command",
+  );
+  await page.keyboard.press("ControlOrMeta+Shift+Z");
+  await waitForEditorIdle(page);
+  await expect(edge.locator('[data-routing-mode="automatic"]')).toBeVisible();
+  await expect(page.locator(".bd-inspector-title code")).toContainText(
+    "agent-ui.session-command → rust-agent-core.knowledge-lifecycle",
+  );
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    microSegments: [],
+    sharedRoutes: [],
+  });
+  const reconnectAudit = await exhaustiveRouteAudit(page);
+  expect(reconnectAudit).toMatchObject({
+    auditedRouteCount: 10,
+    auditedPairCount: 45,
+    expectedPairCount: 45,
+    duplicateRouteIds: [],
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+
+  if (process.env.CAPTURE_KEYBOARD_RECONNECT === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/keyboard-reconnect.png");
+  }
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await downloadPromise).path();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  const savedConnection = saved.levels[0].connections.find(
+    (candidate: { id: string }) => candidate.id === "ui-session-command",
+  );
+  expect(savedConnection.source).toEqual({ nodeId: "agent-ui", portId: "session-command" });
+  expect(savedConnection.target).toEqual({ nodeId: "rust-agent-core", portId: "knowledge-lifecycle" });
+  expect(savedConnection.routing).toBeUndefined();
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
+  await reconnectEndpoints.focus();
+  await page.keyboard.press("Enter");
+  const sourceDialog = page.getByRole("dialog", { name: "Reconnect Interface" });
+  const replacementSource = sourceDialog.getByLabel("Source port");
+  await expect(replacementSource).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(replacementSource).toHaveValue('["rust-agent-core","session-notification"]');
+  await page.keyboard.press("Tab");
+  await expect(sourceDialog.getByLabel("Target port")).toHaveValue('["rust-agent-core","session-command"]');
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+  await waitForEditorIdle(page);
+  await expect(edge.locator('[data-routing-mode="automatic"]')).toBeVisible();
+  await expect(page.locator(".bd-inspector-title code")).toContainText(
+    "rust-agent-core.session-notification → rust-agent-core.session-command",
+  );
+  const sourceReconnectAudit = await exhaustiveRouteAudit(page);
+  expect(sourceReconnectAudit).toMatchObject({
+    auditedRouteCount: 10,
+    auditedPairCount: 45,
+    expectedPairCount: 45,
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
+  await expect(page.locator(".bd-inspector-title code")).toContainText(
+    "agent-ui.session-command → rust-agent-core.session-command",
+  );
 });
 
 test("keeps the dense port edge editor visible, separated, and label free", async ({ page, browserName }) => {

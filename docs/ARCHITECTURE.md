@@ -241,6 +241,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 - `planRouteJumps` 只从已验证 `PlannedRoute.points` 派生交叉处的 SVG 线桥：水平线跨过垂直线，相邻交点可合并，端点附近不画桥。它不改变路线、交叉目标、marker、命中几何或 JSON；浏览器逐线对审计必须确认每个严格交叉都有桥且不存在孤立桥。
 - 线路编辑器区分三种职责：空心菱形是从自动 / 手动路径派生的虚拟线段抓手，拖动会移动整段并物化手动 route；实心方点只投影已确认手动路线的真实折点，可拖动、Arrow 微调、Delete 或双击删除；小实心端点只提示可重连，真正的透明命中圆由 React Flow 管理。它们都不是新的设计事实。
 - 用户拖动线段或折点时，预览是临时 UI 状态；只有坐标真正改变，松手才提交一次 `connection/route`。拖动端点只提交一次 `connection/reconnect`。单击抓手、取消拖动或非法目标不得把自动路径误写成手动事实。
+- 键盘重连与 pointer 重连共享同一事实链。`model/graph` 拥有 source / target 候选、当前连接端点解析和“是否存在替代配对”的纯规则；`StudioCommands` 只表达当前选择下的可用性，Design 菜单、Command Palette 与 Inspector 只投影该命令；Dialog 只保存未提交的端点 key。端点未变化时提交按钮禁用，不调用 Editor；变化后仍只调用既有 `connection/reconnect`，由 Editor 原子校验并清除旧 waypoint。Dialog 关闭后的 Inspector 焦点请求是一次性工作区状态，不进入 JSON、历史或路由。
 - React Flow viewport 的 zoom 还派生一个根级 inverse-zoom CSS 变量；线段与折点抓手保持 20–24 CSS px 命中区，内部菱形 / 方点更小；重连仍保留 20 设计像素透明命中圆，但视觉只显示 10 设计像素实心点，避免与真实 Port 形成第二个大圆环。该变量和命中几何只参与交互展示，不改变 waypoint、端点或路由计算。
 - 键盘移动抓手时，每次 Arrow 只提交一个 8 设计像素的 `connection/route` 操作；因为受控 Edge 会在文档投影更新时重建，Canvas 用一次性 `RouteHandleFocusRequest` 按 edge、抓手类型、索引和新坐标等待完全匹配的几何后恢复焦点，不能提前命中旧 DOM。该请求只负责连续输入，不进入设计、历史或路由算法。
 - 手动路由提交与端点位置恢复都复用同一个正交化函数；相邻 waypoints 必须共享 x 或 y，Schema 同样校验这一不变量，外部 JSON 不能产生斜线。

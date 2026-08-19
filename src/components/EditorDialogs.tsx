@@ -1,5 +1,10 @@
 import { useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { firstConnectablePair, listLevelPortEndpoints, normalizeConnectionEndpoints } from "../model";
+import {
+  firstConnectablePair,
+  listConnectionSourceEndpoints,
+  listConnectionTargetEndpoints,
+  normalizeConnectionEndpoints,
+} from "../model";
 import type {
   ConnectablePortEndpoint,
   DesignLevel,
@@ -15,6 +20,7 @@ function DialogShell({
   title,
   children,
   submitLabel,
+  submitDisabled = false,
   error,
   onClose,
   onSubmit,
@@ -23,6 +29,7 @@ function DialogShell({
   title: string;
   children: ReactNode;
   submitLabel: string;
+  submitDisabled?: boolean;
   error?: string;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -40,7 +47,7 @@ function DialogShell({
         {error && <p className="bd-editor-error" role="alert">{error}</p>}
         <footer>
           <button type="button" onClick={onClose}>Cancel</button>
-          <button type="submit" className="is-primary">{submitLabel}</button>
+          <button type="submit" className="is-primary" disabled={submitDisabled}>{submitLabel}</button>
         </footer>
       </form>
     </div>
@@ -284,6 +291,15 @@ export interface PendingConnection {
   defaultInterfaceId: string;
 }
 
+export type ConnectionEndpointDialogMode =
+  | { kind: "create" }
+  | {
+    kind: "reconnect";
+    interfaceTitle: string;
+    hasManualRouting: boolean;
+    initial: NormalizedConnectionEndpoints;
+  };
+
 function endpointKey(endpoint: ConnectablePortEndpoint): string {
   return JSON.stringify([endpoint.nodeId, endpoint.portId]);
 }
@@ -294,38 +310,37 @@ function endpointLabel(endpoint: ConnectablePortEndpoint): string {
 
 export function SelectConnectionEndpointsDialog({
   level,
+  mode,
   error,
   onClose,
   onContinue,
 }: {
   level?: DesignLevel;
+  mode: ConnectionEndpointDialogMode;
   error?: string;
   onClose: () => void;
   onContinue: (connection: NormalizedConnectionEndpoints) => void;
 }) {
-  const endpoints = useMemo(() => level ? listLevelPortEndpoints(level) : [], [level]);
-  const sourceOptions = useMemo(
-    () => endpoints.filter((endpoint) => endpoint.direction !== "input"),
-    [endpoints],
-  );
-  const targetOptions = useMemo(
-    () => endpoints.filter((endpoint) => endpoint.direction !== "output"),
-    [endpoints],
-  );
+  const sourceOptions = useMemo(() => level ? listConnectionSourceEndpoints(level) : [], [level]);
   const [sourceKey, setSourceKey] = useState("");
   const [targetKey, setTargetKey] = useState("");
+  const initial = level
+    ? mode.kind === "reconnect" ? mode.initial : firstConnectablePair(level)
+    : undefined;
+  const initialSourceKey = initial ? endpointKey(initial.source) : "";
+  const initialTargetKey = initial ? endpointKey(initial.target) : "";
 
   useLayoutEffect(() => {
     if (!level) return;
-    const initial = firstConnectablePair(level);
-    setSourceKey(initial ? endpointKey(initial.source) : "");
-    setTargetKey(initial ? endpointKey(initial.target) : "");
-  }, [level]);
+    setSourceKey(initialSourceKey);
+    setTargetKey(initialTargetKey);
+  }, [initialSourceKey, initialTargetKey, level]);
 
   const source = sourceOptions.find((endpoint) => endpointKey(endpoint) === sourceKey);
-  const availableTargets = targetOptions.filter((endpoint) => (
-    endpoint.nodeId !== source?.nodeId || endpoint.portId !== source?.portId
-  ));
+  const availableTargets = useMemo(
+    () => level ? listConnectionTargetEndpoints(level, source) : [],
+    [level, source],
+  );
   const target = availableTargets.find((endpoint) => endpointKey(endpoint) === targetKey);
 
   useLayoutEffect(() => {
@@ -334,20 +349,35 @@ export function SelectConnectionEndpointsDialog({
     setTargetKey(endpointKey(preferred));
   }, [availableTargets, level, source, target]);
 
+  const normalized = normalizeConnectionEndpoints(source, target);
+  const endpointsChanged = mode.kind === "create" || Boolean(normalized && (
+    endpointKey(normalized.source) !== endpointKey(mode.initial.source) ||
+    endpointKey(normalized.target) !== endpointKey(mode.initial.target)
+  ));
+  const reconnectHint = mode.kind === "reconnect"
+    ? `${mode.interfaceTitle} keeps its interface contract. ${
+      mode.hasManualRouting
+        ? "Changing either endpoint clears the old manual route and recalculates an automatic route."
+        : "Changing either endpoint recalculates its automatic route."
+    }`
+    : undefined;
+
   return (
     <DialogShell
       open={Boolean(level)}
-      title="Connect Ports"
-      submitLabel="Continue"
+      title={mode.kind === "reconnect" ? "Reconnect Interface" : "Connect Ports"}
+      submitLabel={mode.kind === "reconnect" ? "Reconnect" : "Continue"}
+      submitDisabled={!normalized || !endpointsChanged}
       error={error}
       onClose={onClose}
       onSubmit={(event) => {
         event.preventDefault();
-        const normalized = normalizeConnectionEndpoints(source, target);
-        if (normalized) onContinue(normalized);
+        if (normalized && endpointsChanged) onContinue(normalized);
       }}
     >
-      <p className="bd-dialog-hint">Choose two ports in {level?.title}. The next step defines their shared interface contract.</p>
+      <p className="bd-dialog-hint">
+        {reconnectHint ?? `Choose two ports in ${level?.title}. The next step defines their shared interface contract.`}
+      </p>
       <label className="bd-form-field">
         <span>Source port</span>
         <select value={sourceKey} data-autofocus="true" onChange={(event) => setSourceKey(event.target.value)} required>
