@@ -21,6 +21,11 @@ export interface NormalizedConnectionEndpoints {
   target: ConnectablePortEndpoint;
 }
 
+export interface ConnectionEndpointReference {
+  nodeId: string;
+  portId: string;
+}
+
 export type ModuleInterfaceDirection = "incoming" | "outgoing" | "loopback";
 
 export interface ModuleInterfaceSummary {
@@ -76,6 +81,17 @@ export function normalizeConnectionEndpoints(
     return { levelId: first.levelId, source: second, target: first };
   }
   return undefined;
+}
+
+export function connectionEndpointsEqual(
+  connection: Pick<BlockConnection, "source" | "target">,
+  source: ConnectionEndpointReference,
+  target: ConnectionEndpointReference,
+): boolean {
+  return connection.source.nodeId === source.nodeId &&
+    connection.source.portId === source.portId &&
+    connection.target.nodeId === target.nodeId &&
+    connection.target.portId === target.portId;
 }
 
 export function firstConnectablePair(level: DesignLevel): NormalizedConnectionEndpoints | undefined {

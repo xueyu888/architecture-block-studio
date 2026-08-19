@@ -3,7 +3,9 @@ export {
   compactOrthogonalPoints,
   drawOrthogonalRoute,
   orthogonalizeRoutePoints,
+  routeConnectionPreview,
   restoreManualRoute,
+  type ConnectionPreviewBounds,
   type RoutePoint,
   type RouteJump,
 } from "./routeInterface";

@@ -30,12 +30,20 @@ import {
   type FitViewOptions,
   type MiniMapProps,
   type NodeChange,
+  type OnConnectEnd,
+  type OnConnectStart,
   type OnNodeDrag,
   type NodeMouseHandler,
 } from "@xyflow/react";
 import { normalizeConnectionEndpoints } from "../model";
 import type { NodeMove } from "../editor";
-import type { BlockDesignDocument, BlockPort, ConnectionRouting } from "../model";
+import type {
+  BlockDesignDocument,
+  BlockPort,
+  ConnectablePortEndpoint,
+  ConnectionRouting,
+  PortDirection,
+} from "../model";
 import {
   BLOCK_NODE_GEOMETRY,
   minimumNodeDimensions,
@@ -64,6 +72,13 @@ import {
 } from "../studio/selection";
 import { AlignmentGuideLayer } from "./AlignmentGuideLayer";
 import { BlockNodeComponent } from "./BlockNode";
+import {
+  ConnectionGestureFeedbackPanel,
+  ConnectionGesturePanel,
+  ConnectionGesturePreview,
+  type ActiveConnectionGesture,
+  type ConnectionGestureFeedback,
+} from "./ConnectionGestureLayer";
 import { canvasDetailLevel, type CanvasDetailLevel } from "./canvasDetail";
 import {
   canvasBoundsSelectBounds,
@@ -253,15 +268,17 @@ interface CanvasInnerProps {
     levelId: string;
     source: { nodeId: string; portId: string; label: string };
     target: { nodeId: string; portId: string; label: string };
-  }) => void;
+  }) => boolean;
   onRouteConnection: (levelId: string, connectionId: string, routing: ConnectionRouting | undefined) => boolean;
   onReconnectConnection: (
     levelId: string,
     connectionId: string,
     source: { nodeId: string; portId: string },
     target: { nodeId: string; portId: string },
-  ) => boolean;
+  ) => "changed" | "unchanged" | "rejected";
 }
+
+type ConnectionGestureCommitResult = "accepted" | "changed" | "unchanged" | "rejected";
 
 type RouteHandleFocusRequest = RouteHandleFocusTarget & {
   edgeId: string;
@@ -375,6 +392,8 @@ const CanvasInner = memo(function CanvasInner({
   const selectionFocusRevision = useRef(0);
   const [routeHandleFocusRequest, setRouteHandleFocusRequest] = useState<RouteHandleFocusRequest>();
   const [canvasAnnouncement, setCanvasAnnouncement] = useState("");
+  const [connectionGesture, setConnectionGesture] = useState<ActiveConnectionGesture>();
+  const [connectionFeedback, setConnectionFeedback] = useState<ConnectionGestureFeedback>();
   const [spacePanActive, setSpacePanActive] = useState(false);
   const [compactOverviewMapOpen, setCompactOverviewMapOpen] = useState(false);
   const [resizeRestoreRevision, setResizeRestoreRevision] = useState(0);
@@ -389,6 +408,12 @@ const CanvasInner = memo(function CanvasInner({
   const altClickGestureRef = useRef<AltClickGesture | undefined>(undefined);
   const suppressAltClickRef = useRef(false);
   const resizePreviewRef = useRef<ResizePreview | undefined>(undefined);
+  const connectionGestureRef = useRef<ActiveConnectionGesture | undefined>(connectionGesture);
+  const pendingReconnectGestureRef = useRef(false);
+  const connectionGestureCommitRef = useRef<ConnectionGestureCommitResult | undefined>(undefined);
+  const connectionGestureCancelledRef = useRef(false);
+  const connectionFeedbackRevision = useRef(0);
+  connectionGestureRef.current = connectionGesture;
   const multiSelection = selection.kind === "multiple";
   const cullViewportElements = layout.nodes.length >= VIEWPORT_CULL_NODE_COUNT
     || layout.edges.length >= VIEWPORT_CULL_EDGE_COUNT;
@@ -439,6 +464,40 @@ const CanvasInner = memo(function CanvasInner({
     viewportNavigationGeneration.current += 1;
     void setViewport(getViewport(), { duration: 0 });
   }, [getViewport, setViewport]);
+  const publishConnectionFeedback = useCallback((
+    tone: ConnectionGestureFeedback["tone"],
+    title: string,
+    detail: string,
+  ) => {
+    connectionFeedbackRevision.current += 1;
+    setConnectionFeedback({
+      revision: connectionFeedbackRevision.current,
+      tone,
+      title,
+      detail,
+    });
+    setCanvasAnnouncement(`${title} ${detail}`);
+  }, []);
+  const connectionCandidateCount = useMemo(() => {
+    if (!connectionGesture) return 0;
+    const candidates = new Map<string, ConnectablePortEndpoint>();
+    layout.nodes.forEach((node) => {
+      node.data.block.ports.forEach((port) => {
+        const endpoint = {
+          levelId: node.data.levelId,
+          nodeId: node.data.block.id,
+          nodeTitle: node.data.block.title,
+          portId: port.id,
+          label: port.label,
+          direction: port.direction,
+        };
+        if (normalizeConnectionEndpoints(connectionGesture.origin, endpoint)) {
+          candidates.set(`${endpoint.levelId}\u0000${endpoint.nodeId}\u0000${endpoint.portId}`, endpoint);
+        }
+      });
+    });
+    return candidates.size;
+  }, [connectionGesture, layout.nodes]);
   const onCanvasPointerMoveCapture = useCallback((event: ReactPointerEvent) => {
     interruptViewportNavigation();
     const altClickGesture = altClickGestureRef.current;
@@ -795,6 +854,84 @@ const CanvasInner = memo(function CanvasInner({
   const [edges, setEdges] = useState<CanvasFlowEdge[]>(() =>
     reconcileCanvasSelection(routedEdges, selectedEdgeIdsRef.current),
   );
+
+  useEffect(() => {
+    if (!connectionFeedback) return;
+    const revision = connectionFeedback.revision;
+    const timer = window.setTimeout(() => {
+      setConnectionFeedback((current) => current?.revision === revision ? undefined : current);
+    }, 2600);
+    return () => window.clearTimeout(timer);
+  }, [connectionFeedback]);
+
+  useEffect(() => {
+    const root = store.getState().domNode;
+    if (!root) return;
+    const ports = [...root.querySelectorAll<HTMLElement>(".bd-port")];
+    if (connectionGesture) root.dataset.connectionGesture = connectionGesture.kind;
+    else delete root.dataset.connectionGesture;
+    ports.forEach((element) => {
+      if (!connectionGesture) {
+        delete element.dataset.connectionRole;
+        return;
+      }
+      const { levelId, nodeId, portId, portDirection } = element.dataset;
+      if (!levelId || !nodeId || !portId || !portDirection) {
+        element.dataset.connectionRole = "incompatible";
+        return;
+      }
+      const endpoint: ConnectablePortEndpoint = {
+        levelId,
+        nodeId,
+        nodeTitle: "",
+        portId,
+        label: "",
+        direction: portDirection as PortDirection,
+      };
+      const origin = connectionGesture.origin;
+      element.dataset.connectionRole = origin.levelId === endpoint.levelId &&
+        origin.nodeId === endpoint.nodeId && origin.portId === endpoint.portId
+        ? "origin"
+        : normalizeConnectionEndpoints(origin, endpoint)
+          ? "candidate"
+          : "incompatible";
+    });
+    return () => {
+      delete root.dataset.connectionGesture;
+      ports.forEach((element) => delete element.dataset.connectionRole);
+    };
+  }, [connectionGesture, store]);
+
+  useEffect(() => {
+    if (!connectionGesture) return;
+    const cancelGesture = (reason: string) => {
+      const mode = connectionGestureRef.current?.kind ?? connectionGesture.kind;
+      connectionGestureCancelledRef.current = true;
+      connectionGestureCommitRef.current = undefined;
+      pendingReconnectGestureRef.current = false;
+      connectionGestureRef.current = undefined;
+      store.getState().cancelConnection();
+      setConnectionGesture(undefined);
+      publishConnectionFeedback(
+        "warning",
+        mode === "reconnect" ? "Reconnect canceled" : "Connection canceled",
+        `${reason} Design unchanged.`,
+      );
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      cancelGesture("Canceled with Escape.");
+    };
+    const onWindowBlur = () => cancelGesture("The canvas lost focus.");
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("blur", onWindowBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("blur", onWindowBlur);
+    };
+  }, [connectionGesture, publishConnectionFeedback, store]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1616,6 +1753,81 @@ const CanvasInner = memo(function CanvasInner({
     return normalizeConnectionEndpoints(first, second);
   }, [resolveEndpoint]);
 
+  const onConnectStart = useCallback<OnConnectStart>((_event, params) => {
+    const origin = resolveEndpoint(params.nodeId, params.handleId);
+    if (!origin) return;
+    const next: ActiveConnectionGesture = pendingReconnectGestureRef.current
+      ? { kind: "reconnect", origin }
+      : { kind: "create", origin };
+    connectionGestureCancelledRef.current = false;
+    connectionGestureCommitRef.current = undefined;
+    connectionGestureRef.current = next;
+    setConnectionFeedback(undefined);
+    setConnectionGesture(next);
+    setCanvasAnnouncement(
+      `${next.kind === "reconnect" ? "Reconnect" : "Connection"} started from ${origin.nodeTitle}, ${origin.label}. Escape cancels.`,
+    );
+  }, [resolveEndpoint]);
+
+  const onReconnectStart = useCallback(() => {
+    pendingReconnectGestureRef.current = true;
+  }, []);
+
+  const onConnectEnd = useCallback<OnConnectEnd>((_event, finalState) => {
+    if (connectionGestureCancelledRef.current) {
+      connectionGestureCancelledRef.current = false;
+      connectionGestureCommitRef.current = undefined;
+      pendingReconnectGestureRef.current = false;
+      connectionGestureRef.current = undefined;
+      setConnectionGesture(undefined);
+      return;
+    }
+    const active = connectionGestureRef.current;
+    if (!active) return;
+    const result = connectionGestureCommitRef.current;
+    if (result === "accepted") {
+      publishConnectionFeedback(
+        "success",
+        "Ports selected",
+        "Complete the interface contract to create the connection.",
+      );
+    } else if (result === "changed") {
+      publishConnectionFeedback(
+        "success",
+        "Interface reconnected",
+        "The old manual route was cleared and the new endpoints were routed automatically.",
+      );
+    } else if (result === "unchanged") {
+      publishConnectionFeedback(
+        "warning",
+        "Endpoint unchanged",
+        "The existing endpoints, manual route, and history were preserved.",
+      );
+    } else if (result === "rejected") {
+      publishConnectionFeedback(
+        "error",
+        active.kind === "reconnect" ? "Reconnect rejected" : "Connection rejected",
+        "Resolve the visible editor issue and try again. Design unchanged.",
+      );
+    } else if (finalState.toHandle) {
+      publishConnectionFeedback(
+        "error",
+        "Ports are not compatible",
+        "Connections require compatible directions on the same design level. Design unchanged.",
+      );
+    } else {
+      publishConnectionFeedback(
+        "warning",
+        active.kind === "reconnect" ? "Reconnect canceled" : "Connection canceled",
+        "Drop on a highlighted compatible port. Design unchanged.",
+      );
+    }
+    connectionGestureCommitRef.current = undefined;
+    pendingReconnectGestureRef.current = false;
+    connectionGestureRef.current = undefined;
+    setConnectionGesture(undefined);
+  }, [publishConnectionFeedback]);
+
   const snapMovingNode = useCallback((node: CanvasFlowNode, disableSnap: boolean) => {
     const gesture = alignmentGestureRef.current?.nodeId === node.id
       ? alignmentGestureRef.current
@@ -1708,13 +1920,17 @@ const CanvasInner = memo(function CanvasInner({
     restoreSourceNodes();
   }, [baseNodes, onCloneNodes, onMoveNodes, setNodes, snapMovingNode]);
   const onConnect = useCallback((connection: Connection) => {
+    if (connectionGestureCancelledRef.current) return;
     const normalized = normalizedConnection(connection);
-    if (normalized) onCreateConnection(normalized);
+    if (normalized) {
+      connectionGestureCommitRef.current = onCreateConnection(normalized) ? "accepted" : "rejected";
+    }
   }, [normalizedConnection, onCreateConnection]);
   const onReconnect = useCallback((edge: CanvasFlowEdge, connection: Connection) => {
+    if (connectionGestureCancelledRef.current) return;
     const normalized = normalizedConnection(connection);
     if (!normalized || !edge.data) return;
-    onReconnectConnection(
+    connectionGestureCommitRef.current = onReconnectConnection(
       edge.data.levelId,
       edge.data.connection.id,
       { nodeId: normalized.source.nodeId, portId: normalized.source.portId },
@@ -1778,13 +1994,17 @@ const CanvasInner = memo(function CanvasInner({
       onClickCapture={onCanvasClickCapture}
       onKeyDownCapture={onElementKeyDownCapture}
       onConnect={onConnect}
+      onConnectStart={onConnectStart}
+      onConnectEnd={onConnectEnd}
       onReconnect={onReconnect}
+      onReconnectStart={onReconnectStart}
       isValidConnection={isValidConnection}
       onError={warnReactFlowError}
       onPaneClick={onPaneClick}
       tabIndex={0}
       aria-label="Architecture diagram canvas"
       connectionMode={ConnectionMode.Loose}
+      connectionLineComponent={ConnectionGesturePreview}
       nodesConnectable
       edgesReconnectable
       snapToGrid
@@ -1812,6 +2032,14 @@ const CanvasInner = memo(function CanvasInner({
           <strong>PAN MODE</strong>
           <span>Drag the canvas · release Space to return</span>
         </Panel>
+      ) : null}
+      {connectionGesture ? (
+        <ConnectionGesturePanel
+          gesture={connectionGesture}
+          candidateCount={connectionCandidateCount}
+        />
+      ) : connectionFeedback ? (
+        <ConnectionGestureFeedbackPanel feedback={connectionFeedback} />
       ) : null}
       <AlignmentGuideLayer guides={alignmentGuides} />
       {routingFailure ? (

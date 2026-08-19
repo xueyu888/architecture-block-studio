@@ -111,6 +111,7 @@ import {
   type SelectionDistribution,
 } from "../layout";
 import {
+  connectionEndpointsEqual,
   connectionPortEndpoints,
   firstConnectablePair,
   hasAlternativeConnectionEndpoints,
@@ -942,9 +943,9 @@ export function BlockDesignStudio({
     target: { nodeId: string; portId: string; label: string };
   }) => {
     const currentDocument = documentRef.current;
-    if (!currentDocument || !requireAppliedInspectorDraft("creating an interface")) return;
+    if (!currentDocument || !requireAppliedInspectorDraft("creating an interface")) return false;
     const level = currentDocument.levels.find((candidate) => candidate.id === connection.levelId);
-    if (!level) return;
+    if (!level) return false;
     const connectionBase = suggestId(`${connection.source.nodeId}-to-${connection.target.nodeId}`, "connection");
     const interfaceBase = suggestId(`${connection.source.nodeId}.${connection.source.portId}-to-${connection.target.nodeId}.${connection.target.portId}`, "interface");
     setPendingConnection({
@@ -953,6 +954,7 @@ export function BlockDesignStudio({
       defaultInterfaceId: uniqueId(interfaceBase, Object.keys(currentDocument.interfaceDefinitions)),
     });
     setCommandError(undefined);
+    return true;
   }, [requireAppliedInspectorDraft]);
 
   const routeConnection = useCallback((levelId: string, connectionId: string, routing: ConnectionRouting | undefined): boolean => {
@@ -965,15 +967,19 @@ export function BlockDesignStudio({
     connectionId: string,
     source: { nodeId: string; portId: string },
     target: { nodeId: string; portId: string },
-  ): boolean => {
-    if (!requireAppliedInspectorDraft("reconnecting an interface")) return false;
-    return Boolean(runOperation({
+  ): "changed" | "unchanged" | "rejected" => {
+    if (!requireAppliedInspectorDraft("reconnecting an interface")) return "rejected";
+    const currentConnection = documentRef.current?.levels
+      .find((level) => level.id === levelId)?.connections
+      .find((connection) => connection.id === connectionId);
+    if (currentConnection && connectionEndpointsEqual(currentConnection, source, target)) return "unchanged";
+    return runOperation({
       type: "connection/reconnect",
       levelId,
       connectionId,
       source,
       target,
-    }));
+    }) ? "changed" : "rejected";
   }, [requireAppliedInspectorDraft, runOperation]);
 
   const canDelete = selection.kind === "node" || selection.kind === "port" || selection.kind === "connection";
@@ -1583,7 +1589,7 @@ export function BlockDesignStudio({
                 connectionEndpointRequest.connectionId,
                 connection.source,
                 connection.target,
-              )) {
+              ) === "changed") {
                 setConnectionEndpointRequest(undefined);
                 setInspectorReconnectFocusRequest((value) => value + 1);
                 setCommandNotice(`Reconnected ${connectionEndpointMode.interfaceTitle}.`);

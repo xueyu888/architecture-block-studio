@@ -3254,6 +3254,202 @@ test("exposes draggable real bends after a virtual segment becomes manual", asyn
   expect(await edge.locator(".bd-route-bend-handle").count()).toBeLessThan(bendCountBeforeDelete);
 });
 
+test("previews, cancels, rejects, preserves, and commits pointer connections consistently", async ({ page, browserName }) => {
+  const source = flowNode(page, "system::agent-ui")
+    .locator('.bd-port-handle-outer[data-handleid="session-command"]');
+  const sourcePort = source.locator("xpath=..");
+  const originalTarget = flowNode(page, "system::rust-agent-core")
+    .locator('.bd-port-handle-outer[data-handleid="session-command"]');
+  const replacementTarget = flowNode(page, "system::rust-agent-core")
+    .locator('.bd-port-handle-outer[data-handleid="knowledge-lifecycle"]');
+  const incompatibleTarget = flowNode(page, "system::rust-agent-core")
+    .locator('.bd-port-handle-outer[data-handleid="session-notification"]');
+  const replacementPort = replacementTarget.locator("xpath=..");
+  const incompatiblePort = incompatibleTarget.locator("xpath=..");
+  const sourceBox = await source.boundingBox();
+  expect(sourceBox).not.toBeNull();
+
+  await page.mouse.move(sourceBox!.x + sourceBox!.width / 2, sourceBox!.y + sourceBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(sourceBox!.x + 64, sourceBox!.y + 42, { steps: 4 });
+  const createPanel = page.locator('.bd-connection-gesture-panel[data-connection-mode="create"]');
+  await expect(createPanel).toBeVisible();
+  await expect(createPanel).toContainText("CONNECT PORTS");
+  await expect(createPanel).toContainText("compatible ports");
+  await expect(page.locator(".bd-react-flow")).toHaveAttribute("data-connection-gesture", "create");
+  await expect(sourcePort).toHaveAttribute("data-connection-role", "origin");
+  await expect(replacementPort).toHaveAttribute("data-connection-role", "candidate");
+  await expect(incompatiblePort).toHaveAttribute("data-connection-role", "incompatible");
+  const floatingPreview = page.locator('.bd-connection-preview[data-connection-status="searching"]');
+  await expect(floatingPreview).toBeVisible();
+  const floatingPath = await floatingPreview.locator(".bd-connection-preview-path").getAttribute("d");
+  expect(floatingPath).toMatch(/^M .* L /);
+  expect(floatingPath).not.toMatch(/[CQ]/);
+  await page.keyboard.press("Escape");
+  await expect(createPanel).toHaveCount(0);
+  await expect(page.locator(".bd-connection-feedback")).toContainText("Connection canceled");
+  await expect(page.locator(".bd-react-flow")).not.toHaveAttribute("data-connection-gesture");
+  await expect(replacementPort).not.toHaveAttribute("data-connection-role");
+  await page.mouse.up();
+
+  const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
+  await clickReachableEdgePoint(page, edge);
+  const segment = edge.locator(".bd-route-segment-handle").first();
+  await segment.focus();
+  await page.keyboard.press(await segment.getAttribute("data-route-axis") === "h" ? "ArrowDown" : "ArrowRight");
+  await waitForEditorIdle(page);
+  await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
+  await edge.focus();
+  await page.keyboard.press("ControlOrMeta+Shift+H");
+  await page.waitForTimeout(400);
+  const fitNotice = page.locator(".bd-command-notice");
+  if (await fitNotice.isVisible()) {
+    await fitNotice.getByRole("button", { name: "Dismiss" }).click({ force: true });
+  }
+
+  const updater = edge.locator(".react-flow__edgeupdater-target");
+  const updaterBox = await updater.boundingBox();
+  const replacementBox = await replacementTarget.boundingBox();
+  expect(updaterBox).not.toBeNull();
+  expect(replacementBox).not.toBeNull();
+  await page.mouse.move(updaterBox!.x + updaterBox!.width / 2, updaterBox!.y + updaterBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    replacementBox!.x + replacementBox!.width / 2,
+    replacementBox!.y + replacementBox!.height / 2,
+    { steps: 8 },
+  );
+  const reconnectPanel = page.locator('.bd-connection-gesture-panel[data-connection-mode="reconnect"]');
+  await expect(reconnectPanel).toHaveAttribute("data-connection-status", "valid");
+  await expect(reconnectPanel).toContainText("Ready to reconnect");
+  await expect(replacementTarget).toHaveClass(/valid/);
+  const attachedPreview = page.locator('.bd-connection-preview[data-connection-status="valid"]');
+  await expect(attachedPreview).toBeVisible();
+  const attachedPath = await attachedPreview.locator(".bd-connection-preview-path").getAttribute("d");
+  expect(attachedPath).toMatch(/^M .* L /);
+  expect(attachedPath).not.toMatch(/[CQ]/);
+  expect(await page.evaluate(() => {
+    const path = document.querySelector<SVGPathElement>(
+      '.bd-connection-preview[data-connection-status="valid"] .bd-connection-preview-path',
+    );
+    const target = document.querySelector<HTMLElement>(
+      '.react-flow__node[data-id="system::rust-agent-core"]',
+    );
+    const matrix = path?.getScreenCTM();
+    if (!path || !target || !matrix) return ["preview geometry unavailable"];
+    const rect = target.getBoundingClientRect();
+    const length = path.getTotalLength();
+    return Array.from({ length: 99 }, (_, index) => path.getPointAtLength(length * ((index + 1) / 100)))
+      .map((point) => new DOMPoint(point.x, point.y).matrixTransform(matrix))
+      .flatMap((point) => point.x > rect.left + 3 && point.x < rect.right - 3 &&
+        point.y > rect.top + 3 && point.y < rect.bottom - 3
+        ? [`${Math.round(point.x)},${Math.round(point.y)}`]
+        : []);
+  })).toEqual([]);
+  expect((await accessibilityResults(page, ".bd-connection-gesture-panel")).violations).toEqual([]);
+  expect(await textContrastIssues(page, ".bd-connection-gesture-panel")).toEqual([]);
+  if (process.env.CAPTURE_POINTER_CONNECTION === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/pointer-connection-feedback.png");
+  }
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".bd-connection-feedback")).toContainText("Reconnect canceled");
+  await page.mouse.up();
+  await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
+  await expect(page.locator(".bd-inspector-title code")).toContainText(
+    "agent-ui.session-command → rust-agent-core.session-command",
+  );
+
+  const originalBox = await originalTarget.boundingBox();
+  expect(originalBox).not.toBeNull();
+  const unchangedUpdaterBox = await updater.boundingBox();
+  expect(unchangedUpdaterBox).not.toBeNull();
+  await page.mouse.move(
+    unchangedUpdaterBox!.x + unchangedUpdaterBox!.width / 2,
+    unchangedUpdaterBox!.y + unchangedUpdaterBox!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(originalBox!.x + originalBox!.width / 2, originalBox!.y + originalBox!.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.locator(".bd-connection-feedback")).toContainText("Endpoint unchanged");
+  await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(edge.locator('[data-routing-mode="automatic"]')).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+Shift+Z");
+  await waitForEditorIdle(page);
+  await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
+
+  const invalidUpdaterBox = await updater.boundingBox();
+  const incompatibleBox = await incompatibleTarget.boundingBox();
+  expect(invalidUpdaterBox).not.toBeNull();
+  expect(incompatibleBox).not.toBeNull();
+  await page.mouse.move(invalidUpdaterBox!.x + invalidUpdaterBox!.width / 2, invalidUpdaterBox!.y + invalidUpdaterBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    incompatibleBox!.x + incompatibleBox!.width / 2,
+    incompatibleBox!.y + incompatibleBox!.height / 2,
+    { steps: 8 },
+  );
+  await expect(reconnectPanel).toHaveAttribute("data-connection-status", "invalid");
+  await expect(reconnectPanel).toContainText("not compatible");
+  await expect(page.locator('.bd-connection-preview[data-connection-status="invalid"]')).toBeVisible();
+  await page.mouse.up();
+  await expect(page.locator(".bd-connection-feedback")).toContainText("Ports are not compatible");
+  await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
+
+  const validUpdaterBox = await updater.boundingBox();
+  const validReplacementBox = await replacementTarget.boundingBox();
+  expect(validUpdaterBox).not.toBeNull();
+  expect(validReplacementBox).not.toBeNull();
+  await page.mouse.move(validUpdaterBox!.x + validUpdaterBox!.width / 2, validUpdaterBox!.y + validUpdaterBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    validReplacementBox!.x + validReplacementBox!.width / 2,
+    validReplacementBox!.y + validReplacementBox!.height / 2,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+  await waitForEditorIdle(page);
+  await expect(page.locator(".bd-connection-feedback")).toContainText("Interface reconnected");
+  await expect(edge.locator('[data-routing-mode="automatic"]')).toBeVisible();
+  await expect(page.locator(".bd-inspector-title code")).toContainText(
+    "agent-ui.session-command → rust-agent-core.knowledge-lifecycle",
+  );
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    microSegments: [],
+    sharedRoutes: [],
+  });
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 10,
+    auditedPairCount: 45,
+    expectedPairCount: 45,
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
+  await expect(page.locator(".bd-inspector-title code")).toContainText(
+    "agent-ui.session-command → rust-agent-core.session-command",
+  );
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 10,
+    auditedPairCount: 45,
+    expectedPairCount: 45,
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+});
+
 test("reconnects a selected edge endpoint and discards stale manual geometry", async ({ page }) => {
   const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
   await clickReachableEdgePoint(page, edge);

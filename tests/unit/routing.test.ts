@@ -4,6 +4,7 @@ import {
   compactOrthogonalPoints,
   drawOrthogonalRoute,
   planRouteJumps,
+  routeConnectionPreview,
   restoreManualRoute,
   type PlannedRoute,
 } from "../../src/routing";
@@ -82,6 +83,75 @@ describe("orthogonal route primitives", () => {
       { x: 80, y: 0 },
       { x: 80, y: 40 },
     ])).toBe("M 0, 0 L 80, 0 L 80, 40");
+  });
+
+  test("keeps both attached preview endpoints normal with a deterministic orthogonal middle", () => {
+    const preview = routeConnectionPreview({
+      from: { x: 100, y: 120 },
+      to: { x: 300, y: 220 },
+      fromPosition: "right",
+      toPosition: "left",
+      targetAttached: true,
+    });
+
+    expect(preview).toEqual([
+      { x: 100, y: 120 },
+      { x: 200, y: 120 },
+      { x: 200, y: 220 },
+      { x: 300, y: 220 },
+    ]);
+    expect(preview.slice(1).every((point, index) =>
+      point.x === preview[index].x || point.y === preview[index].y
+    )).toBe(true);
+  });
+
+  test("keeps an attached mixed-side preview outside both terminal cards", () => {
+    const sourceBounds = { left: 0, right: 100, top: 80, bottom: 160 };
+    const targetBounds = { left: 180, right: 340, top: 100, bottom: 240 };
+    const preview = routeConnectionPreview({
+      from: { x: 100, y: 120 },
+      to: { x: 260, y: 240 },
+      fromPosition: "right",
+      toPosition: "bottom",
+      targetAttached: true,
+      fromBounds: sourceBounds,
+      toBounds: targetBounds,
+    });
+
+    const crossesInterior = (bounds: typeof sourceBounds) => preview.slice(1).some((point, index) => {
+      const previous = preview[index];
+      return previous.y === point.y
+        ? previous.y > bounds.top && previous.y < bounds.bottom &&
+            Math.max(previous.x, point.x) > bounds.left && Math.min(previous.x, point.x) < bounds.right
+        : previous.x > bounds.left && previous.x < bounds.right &&
+            Math.max(previous.y, point.y) > bounds.top && Math.min(previous.y, point.y) < bounds.bottom;
+    });
+    expect(crossesInterior(sourceBounds)).toBe(false);
+    expect(crossesInterior(targetBounds)).toBe(false);
+    expect(preview).toEqual([
+      { x: 100, y: 120 },
+      { x: 114, y: 120 },
+      { x: 114, y: 254 },
+      { x: 260, y: 254 },
+      { x: 260, y: 240 },
+    ]);
+  });
+
+  test("keeps only the fixed port normal while the preview target is free", () => {
+    const preview = routeConnectionPreview({
+      from: { x: 80, y: 160 },
+      to: { x: 210, y: 260 },
+      fromPosition: "top",
+      toPosition: "bottom",
+      targetAttached: false,
+    });
+
+    expect(preview).toEqual([
+      { x: 80, y: 160 },
+      { x: 80, y: 146 },
+      { x: 80, y: 260 },
+      { x: 210, y: 260 },
+    ]);
   });
 
   test("renders a deterministic bridge for an unavoidable route crossing", () => {

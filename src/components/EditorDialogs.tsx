@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
+  connectionEndpointsEqual,
   firstConnectablePair,
   listConnectionSourceEndpoints,
   listConnectionTargetEndpoints,
@@ -350,9 +351,10 @@ export function SelectConnectionEndpointsDialog({
   }, [availableTargets, level, source, target]);
 
   const normalized = normalizeConnectionEndpoints(source, target);
-  const endpointsChanged = mode.kind === "create" || Boolean(normalized && (
-    endpointKey(normalized.source) !== endpointKey(mode.initial.source) ||
-    endpointKey(normalized.target) !== endpointKey(mode.initial.target)
+  const endpointsChanged = mode.kind === "create" || Boolean(normalized && !connectionEndpointsEqual(
+    mode.initial,
+    normalized.source,
+    normalized.target,
   ));
   const reconnectHint = mode.kind === "reconnect"
     ? `${mode.interfaceTitle} keeps its interface contract. ${

@@ -42,11 +42,13 @@ export function applyHistoryOperation(
   state: DesignHistoryState,
   operation: DesignOperation,
 ): DesignHistoryState {
+  const previousSnapshot = savedSnapshot(state.document);
   const document = applyDesignOperation(state.document, operation);
+  if (savedSnapshot(document) === previousSnapshot) return state;
   return {
     ...state,
     document,
-    past: [...state.past, historySnapshot(state.document)],
+    past: [...state.past, historyEncoder.encode(previousSnapshot)],
     future: [],
   };
 }

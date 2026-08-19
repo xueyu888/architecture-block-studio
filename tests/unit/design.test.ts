@@ -190,6 +190,26 @@ describe("connection reconnect operations", () => {
     expect(document.levels[0].connections[0].routing).toBeDefined();
   });
 
+  test("preserves manual geometry when a reconnect resolves to the existing endpoints", () => {
+    const document = applyDesignOperation(connectedDesign(), {
+      type: "connection/route",
+      levelId: "system",
+      connectionId: "source-to-target",
+      routing: { waypoints: [{ x: 20, y: 30 }, { x: 180, y: 30 }] },
+    });
+
+    const unchanged = applyDesignOperation(document, {
+      type: "connection/reconnect",
+      levelId: "system",
+      connectionId: "source-to-target",
+      source: { nodeId: "source", portId: "out" },
+      target: { nodeId: "target", portId: "in" },
+    });
+
+    expect(unchanged.levels[0].connections[0]).toEqual(document.levels[0].connections[0]);
+    expect(unchanged.levels[0].connections[0].routing).toBeDefined();
+  });
+
   test("rejects invalid endpoint direction without mutating the source document", () => {
     const document = connectedDesign();
     const before = serializeDesign(document);

@@ -52,6 +52,7 @@ function Port({
   port,
   index,
   sidePorts,
+  levelId,
   nodeId,
   inspect,
   expanded,
@@ -59,6 +60,7 @@ function Port({
   port: BlockPort;
   index: number;
   sidePorts: readonly BlockPort[];
+  levelId: string;
   nodeId: string;
   inspect?: (nodeId: string, port: BlockPort) => void;
   expanded: boolean;
@@ -68,6 +70,10 @@ function Port({
   return (
     <div
       className={`bd-port bd-port-${port.side}`}
+      data-level-id={levelId}
+      data-node-id={nodeId}
+      data-port-id={port.id}
+      data-port-direction={port.direction}
       style={vertical ? { top: `${offset}%` } : { left: `${offset}%` }}
       title={`${port.label} · ${port.direction}${port.dataType ? ` · ${port.dataType}` : ""}`}
     >
@@ -140,12 +146,14 @@ function PortLabel({
 function PortRail({
   side,
   ports,
+  levelId,
   nodeId,
   inspect,
   expanded,
 }: {
   side: PortSide;
   ports: readonly BlockPort[];
+  levelId: string;
   nodeId: string;
   inspect?: (nodeId: string, port: BlockPort) => void;
   expanded: boolean;
@@ -159,6 +167,7 @@ function PortRail({
           port={port}
           index={index}
           sidePorts={ports}
+          levelId={levelId}
           nodeId={nodeId}
           inspect={inspect}
           expanded={expanded}
@@ -312,6 +321,7 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
           key={side}
           side={side}
           ports={portsBySide[side]}
+          levelId={data.levelId}
           nodeId={block.id}
           inspect={data.inspectPort}
           expanded={data.expanded}

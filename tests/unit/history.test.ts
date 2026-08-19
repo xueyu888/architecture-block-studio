@@ -56,6 +56,19 @@ describe("design history state machine", () => {
     expect(redoDesignHistory(branched)).toBeUndefined();
   });
 
+  test("does not create history or clear redo for a semantic no-op", () => {
+    const initial = createDesignHistory(createBlankDesign("history", "History"), true);
+    const edited = applyHistoryOperation(initial, rename("First"));
+    const undone = undoDesignHistory(edited)!;
+
+    const unchanged = applyHistoryOperation(undone, rename("History"));
+
+    expect(unchanged).toBe(undone);
+    expect(unchanged.past).toEqual([]);
+    expect(unchanged.future).toHaveLength(1);
+    expect(redoDesignHistory(unchanged)?.document.title).toBe("First");
+  });
+
   test("marks the exact current snapshot as saved", () => {
     const initial = createDesignHistory(createBlankDesign("history", "History"), true);
     const edited = applyHistoryOperation(initial, rename("Saved Edit"));

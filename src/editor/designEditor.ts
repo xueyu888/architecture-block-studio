@@ -1,5 +1,6 @@
 import {
   BLOCK_DESIGN_SCHEMA_VERSION,
+  connectionEndpointsEqual,
   parseBlockDesignDocument,
   type BlockConnection,
   type BlockDesignDocument,
@@ -457,6 +458,7 @@ export function applyDesignOperation(
       const level = requireLevel(next, operation.levelId);
       const connection = level.connections.find((candidate) => candidate.id === operation.connectionId) ??
         editError(`Connection ${operation.connectionId} does not exist in ${level.title}.`);
+      if (connectionEndpointsEqual(connection, operation.source, operation.target)) break;
       const reconnected = {
         ...connection,
         source: { ...operation.source },

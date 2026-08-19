@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  connectionEndpointsEqual,
   connectionPortEndpoints,
   firstConnectablePair,
   hasAlternativeConnectionEndpoints,
@@ -114,5 +115,20 @@ describe("connection endpoint normalization", () => {
       required: false,
     });
     expect(hasAlternativeConnectionEndpoints(level, connection)).toBe(true);
+  });
+
+  test("compares endpoint identity without treating labels or route geometry as endpoint facts", () => {
+    const connection = connectedDesign().levels[0].connections[0];
+
+    expect(connectionEndpointsEqual(
+      connection,
+      { nodeId: "source", portId: "out" },
+      { nodeId: "target", portId: "in" },
+    )).toBe(true);
+    expect(connectionEndpointsEqual(
+      connection,
+      { nodeId: "source", portId: "out" },
+      { nodeId: "target", portId: "other" },
+    )).toBe(false);
   });
 });
