@@ -271,7 +271,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 
 节点拖动预览与克隆事实同样分离。普通拖动把同组目标位置提交为一次 `nodes/move`；Ctrl/⌘ 拖动只从同一组目标位置求一个统一平移，Studio 据当前 `BlockDesignDocument` 构造完整 `DesignFragment` 并提交一次 `fragment/insert`。无论插入成功或被草稿 / Schema 拒绝，Canvas 都恢复原节点预览；成功后选择切换到新模块。gesture、modifier 和 React Flow 临时坐标不进入 JSON，外部连接仍遵守片段边界被排除。
 
-`Ctrl/⌘ A` 与 Edit → Select All 只把当前 Level 的全部 module / connection 交给 `selectAllInLevel` 构造 canonical 选择；`Ctrl/⌘ Shift A` 与 Clear Selection 清空图形对象并回到当前 Level 上下文。两者都复用 `StudioCommands` 的可用性与执行链，不修改 viewport、文档或历史；当事件来自 input、textarea、select 或可编辑元素时，Studio 不拦截浏览器原生全选。
+`Ctrl/⌘ A` 与 Edit → Select All 只把当前 Level 的全部 module / connection 交给 `selectAllInLevel` 构造 canonical 选择；`Select Modules in Level / Select Interfaces in Level` 把同一 Level 和明确的 diagram kind 交给 `selectDiagramKindInLevel`，互斥替换为完整类型集合。`Ctrl/⌘ Shift A` 与 Clear Selection 清空图形对象并回到当前 Level 上下文。四者都复用 `StudioCommands` 的可用性与执行链，不读取 DOM 挂载窗口，不修改 viewport、文档或历史；空类型集合给出明确原因。当事件来自 input、textarea、select 或可编辑元素时，Studio 不拦截浏览器原生全选。
 
 模块直接接口的邻接事实只由 `model/graph.listDirectConnections` 拥有：输入一个 Level 和已有节点集合，按文档顺序返回每条入站、出站或自环 connection 一次。Inspector 的单模块摘要与 `directInterfaceSelectionExpansion` 共用这个查询，避免展示与批量选择各自解释“直接”。选择层只按 Level 对所选模块分组、合并 canonical connection 引用并给出 `no-modules / no-direct-interfaces / all-direct-interfaces-selected` 结果；Edit 与 Command Palette 投影同一个 `StudioCommand`。成功或拒绝都不改变文档、History 或 viewport，未应用 Inspector 草稿仍先经过统一选择保护。
 

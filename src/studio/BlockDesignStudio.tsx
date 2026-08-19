@@ -132,6 +132,7 @@ import {
   replaceDiagramSelection,
   sameSelection,
   selectAllInLevel,
+  selectDiagramKindInLevel,
   selectionExists,
   selectionForIssue,
   type SelectionRef,
@@ -1112,6 +1113,38 @@ export function BlockDesignStudio({
         setCommandError(undefined);
         setCommandNotice(
           `Selected ${activeLevelDiagramItemCount} diagram ${activeLevelDiagramItemCount === 1 ? "object" : "objects"} in ${activeLevel.title}.`,
+        );
+      },
+    },
+    selectModulesInLevel: {
+      id: "selectModulesInLevel", label: "Select Modules in Level", icon: Box,
+      ...commandAvailability(
+        Boolean(activeLevel && activeLevel.nodes.length > 0),
+        "The current design level has no modules to select.",
+      ),
+      execute: () => {
+        if (!activeLevel) return;
+        const next = selectDiagramKindInLevel(activeLevel, "node");
+        if (!requestSelection(next)) return;
+        setCommandError(undefined);
+        setCommandNotice(
+          `Selected ${activeLevel.nodes.length} ${activeLevel.nodes.length === 1 ? "module" : "modules"} in ${activeLevel.title}.`,
+        );
+      },
+    },
+    selectInterfacesInLevel: {
+      id: "selectInterfacesInLevel", label: "Select Interfaces in Level", icon: Cable,
+      ...commandAvailability(
+        Boolean(activeLevel && activeLevel.connections.length > 0),
+        "The current design level has no interfaces to select.",
+      ),
+      execute: () => {
+        if (!activeLevel) return;
+        const next = selectDiagramKindInLevel(activeLevel, "connection");
+        if (!requestSelection(next)) return;
+        setCommandError(undefined);
+        setCommandNotice(
+          `Selected ${activeLevel.connections.length} ${activeLevel.connections.length === 1 ? "interface" : "interfaces"} in ${activeLevel.title}.`,
         );
       },
     },

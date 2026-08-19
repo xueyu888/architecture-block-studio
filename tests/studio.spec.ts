@@ -1321,7 +1321,7 @@ test("searches and runs the unified command palette without losing workflow focu
   const search = palette.getByRole("combobox", { name: "Search commands" });
   await expect(palette).toBeVisible();
   await expect(search).toBeFocused();
-  await expect(palette.getByRole("option")).toHaveCount(40);
+  await expect(palette.getByRole("option")).toHaveCount(42);
   await expect(palette.getByRole("option", { name: /^Command Palette/ })).toHaveCount(0);
 
   await search.fill("添加端口");
@@ -1767,6 +1767,20 @@ test("guides a new user from an empty design to the first module", async ({ page
   await expect(emptyState).toContainText("Module");
   await expect(emptyState).toContainText("Port");
   await expect(emptyState).toContainText("Interface");
+
+  await page.keyboard.press("ControlOrMeta+K");
+  const palette = page.getByRole("dialog", { name: "Command Palette" });
+  const search = palette.getByRole("combobox", { name: "Search commands" });
+  await search.fill("modules in level");
+  const modulesCommand = palette.getByRole("option", { name: /^Select Modules in Level/ });
+  await expect(modulesCommand).toHaveAttribute("aria-disabled", "true");
+  await expect(modulesCommand).toContainText("The current design level has no modules to select.");
+  await search.fill("interfaces in level");
+  const interfacesCommand = palette.getByRole("option", { name: /^Select Interfaces in Level/ });
+  await expect(interfacesCommand).toHaveAttribute("aria-disabled", "true");
+  await expect(interfacesCommand).toContainText("The current design level has no interfaces to select.");
+  await page.keyboard.press("Escape");
+
   await emptyState.getByRole("button", { name: "Add first module" }).click({ force: true });
 
   const moduleDialog = page.getByRole("dialog", { name: /Add Module/ });
@@ -2600,6 +2614,21 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
   expect(await canvasViewportTransform(page)).toBe(selectionViewportBefore);
   await expect(page.locator(".bd-statusbar")).toContainText("Saved");
   await assertCompleteAudit();
+
+  await runMenuCommand(page, "Edit", /^Select Interfaces in Level/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(100);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("100 objects selected");
+  await expect(page.locator(".bd-multi-metrics dd")).toHaveText(["0", "100", "1"]);
+  expect(await canvasViewportTransform(page)).toBe(selectionViewportBefore);
+  await assertCompleteAudit();
+
+  await runMenuCommand(page, "Edit", /^Select Modules in Level/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(101);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("101 objects selected");
+  await expect(page.locator(".bd-multi-metrics dd")).toHaveText(["101", "0", "1"]);
+  expect(await canvasViewportTransform(page)).toBe(selectionViewportBefore);
   await page.keyboard.press("ControlOrMeta+Shift+A");
 
   const stressSource = flowNode(page, "system::satellite-left-00")
@@ -2968,6 +2997,21 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   await expect(page.locator(".bd-interface-underlay")).toHaveCount(0);
   if (!stress) expect(await routeNodeCollisions(page)).toEqual([]);
   metrics.loadToInteractiveMs = Math.round(performance.now() - loadStarted);
+
+  const typedSelectionViewport = await canvasViewportTransform(page);
+  const selectInterfacesStarted = performance.now();
+  await runMenuCommand(page, "Edit", /^Select Interfaces in Level/);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText(`${connectionCount} objects selected`);
+  await expect(page.locator(".bd-multi-metrics dd")).toHaveText(["0", String(connectionCount), "1"]);
+  metrics.selectAllInterfacesMs = Math.round(performance.now() - selectInterfacesStarted);
+  const selectModulesStarted = performance.now();
+  await runMenuCommand(page, "Edit", /^Select Modules in Level/);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText(`${nodeCount} objects selected`);
+  await expect(page.locator(".bd-multi-metrics dd")).toHaveText([String(nodeCount), "0", "1"]);
+  metrics.selectAllModulesMs = Math.round(performance.now() - selectModulesStarted);
+  expect(await canvasViewportTransform(page)).toBe(typedSelectionViewport);
+  await page.keyboard.press("ControlOrMeta+Shift+A");
+
   await defaultHierarchy.evaluate((list) => list.scrollTo({ top: list.scrollHeight }));
   await expect(defaultHierarchy).toHaveAttribute("data-rendered-results", "80");
   await defaultHierarchy.evaluate((list) => list.scrollTo({ top: 0 }));
@@ -5263,6 +5307,74 @@ test("selects and clears every object in the current level with standard edit co
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("17 objects selected");
   await runMenuCommand(page, "Edit", /^Clear Selection/);
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("System Overview");
+});
+
+test("selects every module or every interface in the current level without design side effects", async ({ page, browserName }) => {
+  const inspector = page.getByRole("region", { name: "Properties" });
+  const core = flowNode(page, "system::rust-agent-core");
+  await core.click({ force: true });
+  const viewportBefore = await canvasViewportTransform(page);
+  const title = inspector.getByLabel("Title", { exact: true });
+  await title.fill("Rust Agent Core draft");
+
+  const discardDialogPromise = page.waitForEvent("dialog");
+  const rejectedSelection = runMenuCommand(page, "Edit", /^Select Modules in Level/);
+  const discardDialog = await discardDialogPromise;
+  expect(discardDialog.message()).toContain("Discard unapplied Inspector changes");
+  await discardDialog.dismiss();
+  await rejectedSelection;
+  await expect(core).toHaveClass(/selected/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+  await expect(title).toHaveValue("Rust Agent Core draft");
+
+  await title.fill("Rust Agent Core");
+  await title.blur();
+  await runMenuCommand(page, "Edit", /^Select Modules in Level/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(7);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("7 objects selected");
+  await expect(inspector.locator(".bd-multi-metrics dd")).toHaveText(["7", "0", "1"]);
+  await expect(page.locator(".bd-command-notice")).toContainText("Selected 7 modules in System Overview.");
+  expect(await canvasViewportTransform(page)).toBe(viewportBefore);
+
+  await runMenuCommand(page, "Edit", /^Select Modules in Level/);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(7);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
+
+  await page.keyboard.press("ControlOrMeta+K");
+  const palette = page.getByRole("dialog", { name: "Command Palette" });
+  await palette.getByRole("combobox", { name: "Search commands" }).fill("interfaces in level");
+  const interfacesCommand = palette.getByRole("option", { name: /^Select Interfaces in Level/ });
+  await expect(interfacesCommand).not.toHaveAttribute("aria-disabled", "true");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(10);
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("10 objects selected");
+  await expect(inspector.locator(".bd-multi-metrics dd")).toHaveText(["0", "10", "1"]);
+  await expect(page.locator(".bd-command-notice")).toContainText("Selected 10 interfaces in System Overview.");
+  expect(await canvasViewportTransform(page)).toBe(viewportBefore);
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
+  await expect(
+    page.getByRole("toolbar", { name: "Architecture design tools" })
+      .getByRole("button", { name: /^撤销/ }),
+  ).toBeDisabled();
+
+  const audit = await exhaustiveRouteAudit(page);
+  expect(audit).toMatchObject({
+    auditedRouteCount: 10,
+    auditedPairCount: 45,
+    expectedPairCount: 45,
+    duplicateRouteIds: [],
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  await runMenuCommand(page, "View", /^Fit Selection/);
+  await page.waitForTimeout(400);
+  if (process.env.CAPTURE_TYPED_SELECTION === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/select-interfaces-in-level.png");
+  }
 });
 
 test("expands selected modules to every direct interface without changing the design", async ({ page, browserName }) => {

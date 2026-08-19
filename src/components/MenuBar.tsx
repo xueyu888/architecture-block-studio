@@ -31,6 +31,8 @@ const MENU_DEFINITIONS: Array<{
       "undo",
       "redo",
       "selectAll",
+      "selectModulesInLevel",
+      "selectInterfacesInLevel",
       "selectDirectInterfaces",
       "clearSelection",
       "copySelection",

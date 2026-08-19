@@ -61,6 +61,22 @@ export function selectAllInLevel(level: DesignLevel): SelectionRef {
   ], level.id);
 }
 
+export function selectDiagramKindInLevel(
+  level: DesignLevel,
+  kind: DiagramSelectionRef["kind"],
+): SelectionRef {
+  return replaceDiagramSelection(
+    kind === "node"
+      ? level.nodes.map((node) => ({ kind, levelId: level.id, nodeId: node.id }))
+      : level.connections.map((connection) => ({
+        kind,
+        levelId: level.id,
+        connectionId: connection.id,
+      })),
+    level.id,
+  );
+}
+
 export type DirectInterfaceSelectionExpansion =
   | {
     available: true;

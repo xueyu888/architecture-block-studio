@@ -9,6 +9,7 @@ import {
   replaceDiagramSelection,
   sameSelection,
   selectAllInLevel,
+  selectDiagramKindInLevel,
   selectionContains,
   selectionExists,
   selectionForIssue,
@@ -124,6 +125,31 @@ describe("workspace selection protocol", () => {
     expect(selectAllInLevel({ ...level, nodes: [], connections: [] })).toEqual({
       kind: "level",
       levelId: "system",
+    });
+  });
+
+  it("selects only modules or only interfaces through the same canonical protocol", () => {
+    const level = connectedDesign().levels[0];
+    expect(diagramSelectionItems(selectDiagramKindInLevel(level, "node"))).toEqual([
+      { kind: "node", levelId: "system", nodeId: "source" },
+      { kind: "node", levelId: "system", nodeId: "target" },
+    ]);
+    expect(selectDiagramKindInLevel(level, "connection")).toEqual({
+      kind: "connection",
+      levelId: "system",
+      connectionId: "source-to-target",
+    });
+    expect(selectDiagramKindInLevel({ ...level, nodes: [], connections: [] }, "node"))
+      .toEqual({ kind: "level", levelId: "system" });
+    expect(selectDiagramKindInLevel({ ...level, nodes: [], connections: [] }, "connection"))
+      .toEqual({ kind: "level", levelId: "system" });
+
+    const fiveLevel = fiveLevelRoutingDesignDocument();
+    fiveLevel.levels.forEach((candidate, index) => {
+      expect(diagramSelectionItems(selectDiagramKindInLevel(candidate, "node")))
+        .toHaveLength(candidate.nodes.length);
+      expect(diagramSelectionItems(selectDiagramKindInLevel(candidate, "connection")))
+        .toHaveLength(index === fiveLevel.levels.length - 1 ? 0 : 2);
     });
   });
 
