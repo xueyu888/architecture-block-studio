@@ -46,6 +46,7 @@ import type {
 } from "../model";
 import {
   BLOCK_NODE_GEOMETRY,
+  DESIGN_GRID_SIZE,
   alignmentRectBounds,
   minimumNodeDimensions,
   snapMovingRect,
@@ -112,14 +113,13 @@ const nodeTypes = { block: BlockNodeComponent };
 const edgeTypes = { interface: InterfaceEdgeComponent };
 const FIT_PADDING = 0.28;
 const NO_SELECTED_IDS: readonly string[] = [];
-const SNAP_GRID: [number, number] = [16, 16];
 const MIN_ZOOM = 0.18;
 const MAX_ZOOM = 2.4;
 const NODE_KEYBOARD_DELTAS: Readonly<Record<string, { x: number; y: number; direction: string }>> = {
-  ArrowLeft: { x: -SNAP_GRID[0], y: 0, direction: "left" },
-  ArrowRight: { x: SNAP_GRID[0], y: 0, direction: "right" },
-  ArrowUp: { x: 0, y: -SNAP_GRID[1], direction: "up" },
-  ArrowDown: { x: 0, y: SNAP_GRID[1], direction: "down" },
+  ArrowLeft: { x: -DESIGN_GRID_SIZE.x, y: 0, direction: "left" },
+  ArrowRight: { x: DESIGN_GRID_SIZE.x, y: 0, direction: "right" },
+  ArrowUp: { x: 0, y: -DESIGN_GRID_SIZE.y, direction: "up" },
+  ArrowDown: { x: 0, y: DESIGN_GRID_SIZE.y, direction: "down" },
 };
 const CANVAS_OBJECT_CONTROL_SELECTOR = "button:not([disabled]), [tabindex='0']";
 const FIT_VIEW_OPTIONS = { padding: FIT_PADDING };
@@ -158,7 +158,7 @@ const toneColors: Record<string, string> = {
 };
 
 const CANVAS_BACKGROUND = (
-  <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--canvas-grid)" />
+  <Background variant={BackgroundVariant.Dots} gap={DESIGN_GRID_SIZE.x} size={1} color="var(--canvas-grid)" />
 );
 
 function CanvasViewportControls({
@@ -318,6 +318,7 @@ interface AlignmentGesture {
   originalLocalPosition: { x: number; y: number };
   candidates: AlignmentRect[];
   tolerance: number;
+  grid: { x: number; y: number; originX: number; originY: number };
   limits: ResizeLimits;
 }
 
@@ -656,6 +657,11 @@ const CanvasInner = memo(function CanvasInner({
       originalLocalPosition: { ...subject.position },
       candidates,
       tolerance: ALIGNMENT_TOLERANCE_PX / zoom,
+      grid: {
+        ...DESIGN_GRID_SIZE,
+        originX: subject.internals.positionAbsolute.x - subject.position.x,
+        originY: subject.internals.positionAbsolute.y - subject.position.y,
+      },
       limits: {
         minWidth: minimum.width,
         minHeight: minimum.height,
@@ -694,6 +700,7 @@ const CanvasInner = memo(function CanvasInner({
       gesture.candidates,
       gesture.tolerance,
       gesture.limits,
+      gesture.grid,
     );
     resizePreviewRef.current = {
       nodeId: node.id,
@@ -1740,14 +1747,14 @@ const CanvasInner = memo(function CanvasInner({
           minimum.width,
           Math.min(
             BLOCK_NODE_GEOMETRY.maximumWidth,
-            currentWidth + (event.key === "ArrowLeft" ? -SNAP_GRID[0] : event.key === "ArrowRight" ? SNAP_GRID[0] : 0),
+            currentWidth + (event.key === "ArrowLeft" ? -DESIGN_GRID_SIZE.x : event.key === "ArrowRight" ? DESIGN_GRID_SIZE.x : 0),
           ),
         ),
         height: Math.max(
           minimum.height,
           Math.min(
             BLOCK_NODE_GEOMETRY.maximumHeight,
-            currentHeight + (event.key === "ArrowUp" ? -SNAP_GRID[1] : event.key === "ArrowDown" ? SNAP_GRID[1] : 0),
+            currentHeight + (event.key === "ArrowUp" ? -DESIGN_GRID_SIZE.y : event.key === "ArrowDown" ? DESIGN_GRID_SIZE.y : 0),
           ),
         ),
       };
@@ -1929,7 +1936,7 @@ const CanvasInner = memo(function CanvasInner({
       x: gesture.original.x + node.position.x - gesture.originalLocalPosition.x,
       y: gesture.original.y + node.position.y - gesture.originalLocalPosition.y,
     };
-    const snapped = snapMovingRect(preview, gesture.candidates, gesture.tolerance);
+    const snapped = snapMovingRect(preview, gesture.candidates, gesture.tolerance, gesture.grid);
     setAlignmentGuides(snapped.guides);
     return {
       position: {
@@ -2135,8 +2142,6 @@ const CanvasInner = memo(function CanvasInner({
           connectionLineComponent={ConnectionGesturePreview}
           nodesConnectable
           edgesReconnectable
-          snapToGrid
-          snapGrid={SNAP_GRID}
           minZoom={MIN_ZOOM}
           maxZoom={MAX_ZOOM}
           autoPanOnConnect

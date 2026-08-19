@@ -128,6 +128,8 @@ Iteration 88 对照 draw.io `scrollPointToVisible` 与 `mxPanningManager` 的持
 
 Iteration 89 对照 draw.io `mxGraphHandler` 在 gesture 起点冻结 selection bounds、由 `mxGuide` 对整个 bounds 求吸附的职责边界，修正多选拖动仍把被抓节点当作 subject 的漂移。`alignmentRectBounds` 只从全部成员 absolute rect 派生一个不可变包围框，现有 `snapMovingRect` 对它求唯一 correction，Canvas 再把 correction 等量投影给每个 dragged node；同一选择从 Compact Author 或 Expanded Coordinator 起拖都精确落到 `(612,64) / (868,288)`。Alt 手势得到未吸附 `(608,64) / (864,288)`，Ctrl clone 复用同一组 correction 并一次 Undo 恢复；跨父级选择因没有共同候选空间而不猜吸附。最终 144 / 144 unit（19 files / 1.47 秒）、1899-module build（7.07 秒）、Chromium 71 / 71 + Firefox 70 / 70 = 141 / 141（4.0 分钟）通过；完整回归再次覆盖五层 20 / 190、Hub 100 / 4950、200 / 400 和 1000 / 2000。首张截图因内部接口出现无意义大绕行而未放行；调整 fixture 的端口法向和净空后重拍的 `group-boundary-alignment.png` 已人工复核，两条线路均只有必要折点，洋红 guide 不穿文字、不挡端口或 Inspector。
 
+Iteration 90 完成第十次十轮产品、图形操作与架构复评。对照 draw.io 当前 `mxGraph.isGridEnabledEvent`、`mxGraphHandler` 和 `mxGuide` 后发现一个可复现的协议裂缝：React Flow 全局 `snapToGrid` 先改写拖动 / resize 几何，自有 Alt 只关闭后置辅助线，因此界面虽然声称自由摆放，保存结果仍被隐藏 16px 网格限制。`DESIGN_GRID_SIZE` 现成为背景点阵、pointer move / resize 与键盘几何步长的唯一事实；`snapMovingRect` / `snapResizingRect` 在每个轴上让邻近对齐优先、未命中才按父级相对网格取整，Canvas 关闭第三方全局吸附。直接手势开始后按 Alt 同时跳过网格和辅助线，预览与松手提交复用同一纯结果；普通移动保存网格坐标，Alt 移动保存明确非网格坐标，Alt resize 从旧隐藏结果 `256 × 145` 变为原始指针结果 `253 × 145`。最终 146 / 146 unit（19 files / 1.53 秒）、1899-module build（6.71 秒）、Chromium 71 / 71 + Firefox 70 / 70 = 141 / 141（6.2 分钟）通过；五层逐条 / 逐对审计 20 / 190，非均匀 100 连接 Hub 审计 100 / 4950，200 / 400 与 1000 / 2000 均完成真实交互。压力档首次可交互 4174 ms、十次编辑 3423 ms、guide drag 3328 ms、最终测量内存 82,033,471 bytes；这些是本机观测，不是正式预算。重新拍摄的 `alignment-guides.png`、`group-boundary-alignment.png` 与 `same-size-guides.png` 已逐张人工复核，参考线只占用空白或卡片边界，线路无回钩、穿卡、共线搅绕、线中标签或 Inspector 遮挡。复评确认编辑链仍是 `BlockDesignDocument → Editor → layout / routing → Canvas` 单向投影，但移动时实时等距参考线尚未具备，整体仍未达到 draw.io 同等级别。
+
 ## 每次迭代的最小验证门槛
 
 每个完成的迭代必须留下与风险相称的证据：
@@ -174,6 +176,7 @@ Iteration 89 对照 draw.io `mxGraphHandler` 在 gesture 起点冻结 selection 
 - 选中线路必须直接暴露可区分的虚拟线段点、真实折点和端点抓手；视觉图形小于命中区，端点抓手不能与 Port 叠成大双圆环，线路仍不得出现中部标签。
 - 线段 / 折点拖动、键盘微调、折点删除、Reset Auto 和端点重连都必须经具名原子操作进入同一 Undo / Redo 与保存链；预览、焦点恢复和非法拖动不得成为第二份路线或端点事实。
 - 选中且允许 authored placement 的模块必须提供四边 / 四角 resize；控制点视觉小于命中区，不能遮挡 Port。内容安全下限由统一几何 Owner 计算，pointer 与 Ctrl/Cmd + Shift + Arrow 都只通过 `node/resize` 提交位置和尺寸，拒绝时恢复原文档投影；Shift + Arrow 单独按下不得改动设计或第三方画布状态。
+- 模块 move / resize 的背景网格、键盘步长和 pointer 吸附必须消费同一 `DESIGN_GRID_SIZE`；邻近模块参考线在对应轴优先，未命中轴才落网格。直接手势开始后按 Alt 必须同时关闭网格与参考线，预览和最终 JSON 不得被第三方隐藏吸附再次改写。
 - 多选必须由显式工作区协议拥有，不能把 React Flow 内部 selected 数组或框选矩形当成文档事实；成组移动只提交一次 `nodes/move` 并由一次 Undo 恢复。多选期间隐藏单对象编辑抓手，未定义的批量删除必须给出禁用原因。
 - 多选对齐至少需要 2 个、分布至少需要 3 个同一 Level 的 authored 模块，且每个模块只能有一个可编辑投影；接口混选、跨层、展开 hierarchy、布局未就绪或未应用草稿必须给出同源禁用原因。目标位置只能由纯几何函数计算，一条命令只提交一次 `nodes/move`；selection 与 viewport 保持稳定，布局和路由从新文档几何重算。
 - 空白画布提供清晰的第一步，不迫使新用户猜工具栏图标。

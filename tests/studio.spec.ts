@@ -4109,6 +4109,7 @@ test("aligns a pointer-moved module and lets Alt bypass guides for one gesture",
     (candidate: { id: string }) => candidate.id === "project",
   );
   expect(savedNode.layout.position.x).toBeGreaterThan(370);
+  expect(savedNode.layout.position.x % 16).toBe(0);
   expect(savedNode.layout.position.y).toBe(650);
 
   await page.keyboard.press("ControlOrMeta+Z");
@@ -4126,7 +4127,9 @@ test("aligns a pointer-moved module and lets Alt bypass guides for one gesture",
   savedNode = saved.levels.find((level: { id: string }) => level.id === "system").nodes.find(
     (candidate: { id: string }) => candidate.id === "project",
   );
-  expect(savedNode.layout.position.y).not.toBe(650);
+  expect(savedNode.layout.position.y).toBe(650);
+  expect(savedNode.layout.position.x).toBeGreaterThan(370);
+  expect(savedNode.layout.position.x % 16).not.toBe(0);
 });
 
 test("snaps a selected group by its full boundary regardless of the grabbed member", async ({ page, browserName }) => {
@@ -5763,7 +5766,16 @@ test("matches a sibling size while resizing and lets Alt bypass size snapping", 
   await page.mouse.up();
   await page.keyboard.up("Alt");
   await waitForEditorIdle(page);
-  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("256 × 145");
+  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("253 × 145");
+
+  const precisionDownloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const precisionSavedPath = await (await precisionDownloadPromise).path();
+  const precisionSaved = JSON.parse(await readFile(precisionSavedPath!, "utf8"));
+  const precisionSavedNode = precisionSaved.levels
+    .find((level: { id: string }) => level.id === "system").nodes
+    .find((candidate: { id: string }) => candidate.id === "platform-provider");
+  expect(precisionSavedNode.layout).toMatchObject({ width: 253, height: 145 });
 });
 
 test("resizes a focused module only with the draw.io keyboard chord", async ({ page }) => {

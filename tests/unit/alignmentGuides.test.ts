@@ -74,6 +74,20 @@ describe("alignment guides", () => {
     ]);
   });
 
+  test("uses alignment before the parent-relative grid on each movement axis", () => {
+    const result = snapMovingRect(
+      rect("subject", 191, 107),
+      [rect("target", 294, 300)],
+      5,
+      { x: 16, y: 16, originX: 6, originY: 10 },
+    );
+
+    expect(result.rect).toMatchObject({ x: 194, y: 106 });
+    expect(result.guides).toEqual([
+      expect.objectContaining({ kind: "line", axis: "x", coordinate: 294 }),
+    ]);
+  });
+
   test("leaves moving geometry unchanged outside the screen-derived tolerance", () => {
     const subject = rect("subject", 90, 40);
     expect(snapMovingRect(subject, [rect("target", 200, 200)], 5)).toEqual({
@@ -116,6 +130,20 @@ describe("alignment guides", () => {
     expect(result.guides).toEqual([
       expect.objectContaining({ kind: "size", axis: "width", targetId: "target" }),
     ]);
+  });
+
+  test("snaps unmatched active resize edges to the parent-relative grid", () => {
+    const result = snapResizingRect(
+      rect("subject", 6, 10, 100, 80),
+      rect("subject", 6, 10, 109, 87),
+      [],
+      4,
+      limits,
+      { x: 16, y: 16, originX: 6, originY: 10 },
+    );
+
+    expect(result.rect).toEqual(rect("subject", 6, 10, 112, 80));
+    expect(result.guides).toEqual([]);
   });
 
   test("keeps resize results inside the content and workspace limits", () => {

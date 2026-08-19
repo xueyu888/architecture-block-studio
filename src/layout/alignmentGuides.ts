@@ -34,6 +34,15 @@ export interface AlignmentSnapResult {
   guides: AlignmentGuide[];
 }
 
+export interface AlignmentGrid {
+  x: number;
+  y: number;
+  originX?: number;
+  originY?: number;
+}
+
+export const DESIGN_GRID_SIZE = { x: 16, y: 16 } as const;
+
 export interface ResizeLimits {
   minWidth: number;
   minHeight: number;
@@ -136,13 +145,18 @@ export function snapMovingRect(
   subject: AlignmentRect,
   candidates: readonly AlignmentRect[],
   tolerance: number,
+  grid?: AlignmentGrid,
 ): AlignmentSnapResult {
   const xMatch = closestAxisMatch(subject, candidates, "x", tolerance);
   const yMatch = closestAxisMatch(subject, candidates, "y", tolerance);
   const rect = {
     ...subject,
-    x: subject.x + (xMatch?.delta ?? 0),
-    y: subject.y + (yMatch?.delta ?? 0),
+    x: xMatch
+      ? subject.x + xMatch.delta
+      : snapGridCoordinate(subject.x, grid?.x, grid?.originX),
+    y: yMatch
+      ? subject.y + yMatch.delta
+      : snapGridCoordinate(subject.y, grid?.y, grid?.originY),
   };
   return {
     rect,
@@ -151,6 +165,11 @@ export function snapMovingRect(
       ...(yMatch ? [lineGuide(rect, "y", yMatch)] : []),
     ],
   };
+}
+
+function snapGridCoordinate(value: number, step?: number, origin = 0): number {
+  if (!step || step <= 0) return value;
+  return origin + Math.round((value - origin) / step) * step;
 }
 
 function changed(left: number, right: number): boolean {
@@ -216,6 +235,7 @@ export function snapResizingRect(
   candidates: readonly AlignmentRect[],
   tolerance: number,
   limits: ResizeLimits,
+  grid?: AlignmentGrid,
 ): AlignmentSnapResult {
   const originalRight = original.x + original.width;
   const originalBottom = original.y + original.height;
@@ -279,6 +299,35 @@ export function snapResizingRect(
         rect = beforeSizeSnap;
       }
     }
+  }
+
+  const hasXSnap = guides.some((guide) =>
+    guide.kind === "line" ? guide.axis === "x" : guide.axis === "width");
+  const hasYSnap = guides.some((guide) =>
+    guide.kind === "line" ? guide.axis === "y" : guide.axis === "height");
+  if (!hasXSnap && grid?.x && (leftChanged || rightChanged)) {
+    const beforeGridSnap = rect;
+    const right = rect.x + rect.width;
+    if (leftChanged && !rightChanged) {
+      const x = snapGridCoordinate(rect.x, grid.x, grid.originX);
+      rect = { ...rect, x, width: right - x };
+    } else {
+      const snappedRight = snapGridCoordinate(right, grid.x, grid.originX);
+      rect = { ...rect, width: snappedRight - rect.x };
+    }
+    if (!withinLimits(rect, limits)) rect = beforeGridSnap;
+  }
+  if (!hasYSnap && grid?.y && (topChanged || bottomChanged)) {
+    const beforeGridSnap = rect;
+    const bottom = rect.y + rect.height;
+    if (topChanged && !bottomChanged) {
+      const y = snapGridCoordinate(rect.y, grid.y, grid.originY);
+      rect = { ...rect, y, height: bottom - y };
+    } else {
+      const snappedBottom = snapGridCoordinate(bottom, grid.y, grid.originY);
+      rect = { ...rect, height: snappedBottom - rect.y };
+    }
+    if (!withinLimits(rect, limits)) rect = beforeGridSnap;
   }
   return { rect, guides };
 }
