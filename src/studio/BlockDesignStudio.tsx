@@ -97,12 +97,15 @@ import {
 import {
   loadDesignFromFile,
   loadDesignFromObject,
+  loadDesignFromText,
   loadDesignFromUrl,
   type DesignLoadError,
 } from "../io/loadDesign";
+import { getDesktopBridge } from "../io/desktopBridge";
 import {
   downloadDesign,
   normalizeDesignFileName,
+  serializeDesign,
   suggestedDesignFileName,
 } from "../io/saveDesign";
 import {
@@ -243,6 +246,7 @@ export function BlockDesignStudio({
   initialSourceLabel = "embedded document",
 }: BlockDesignStudioProps) {
   const bootDocument = useMemo(() => createBlankDesign("studio-loading", "Loading Design"), []);
+  const desktopBridge = useMemo(() => getDesktopBridge(), []);
   const editor = useDesignEditor(bootDocument);
   const [documentInstalled, setDocumentInstalled] = useState(false);
   const document = documentInstalled ? editor.document : undefined;
@@ -349,28 +353,51 @@ export function BlockDesignStudio({
     setBusy(true);
     setLoadError(undefined);
     try {
-      installDocument(await loadDesignFromUrl(url), url);
+      const next = await loadDesignFromUrl(url);
+      if (!initial) await desktopBridge?.clearFileBinding();
+      installDocument(next, url);
     } catch (error) {
       setLoadError(errorMessage(error));
       if (!initial) setLoadDialogOpen(true);
     } finally {
       setBusy(false);
     }
-  }, [installDocument, mayDiscardChanges]);
+  }, [desktopBridge, installDocument, mayDiscardChanges]);
 
   const openFile = useCallback(async (file: File) => {
     if (!mayDiscardChanges()) return;
     setBusy(true);
     setLoadError(undefined);
     try {
-      installDocument(await loadDesignFromFile(file), file.name);
+      const next = await loadDesignFromFile(file);
+      await desktopBridge?.clearFileBinding();
+      installDocument(next, file.name);
     } catch (error) {
       setLoadError(errorMessage(error));
       setLoadDialogOpen(true);
     } finally {
       setBusy(false);
     }
-  }, [installDocument, mayDiscardChanges]);
+  }, [desktopBridge, installDocument, mayDiscardChanges]);
+
+  const openDesktopDesign = useCallback(async () => {
+    if (!desktopBridge || !mayDiscardChanges()) return;
+    setBusy(true);
+    setLoadError(undefined);
+    try {
+      const result = await desktopBridge.openDesign();
+      if (result.status === "canceled") return;
+      const next = loadDesignFromText(result.content, result.fileName);
+      if (!await desktopBridge.acceptOpenedDesign(result.token)) {
+        throw new Error("The selected desktop file was no longer available to accept.");
+      }
+      installDocument(next, result.fileName);
+    } catch (error) {
+      setCommandError(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }, [desktopBridge, installDocument, mayDiscardChanges]);
 
   useEffect(() => {
     if (initialLoadStarted.current) return;
@@ -466,14 +493,21 @@ export function BlockDesignStudio({
   }, [connectionEndpointRequest, document]);
 
   useEffect(() => {
-    if (!editor.dirty && !inspectorDraftDirty) return;
+    if (desktopBridge || (!editor.dirty && !inspectorDraftDirty)) return;
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warnBeforeUnload);
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
-  }, [editor.dirty, inspectorDraftDirty]);
+  }, [desktopBridge, editor.dirty, inspectorDraftDirty]);
+
+  useEffect(() => {
+    desktopBridge?.setDirty({
+      documentDirty: editor.dirty,
+      inspectorDraftDirty,
+    });
+  }, [desktopBridge, editor.dirty, inspectorDraftDirty]);
 
   const requestSelection = useCallback((next: SelectionRef): boolean => {
     if (sameSelection(selectionRef.current, next)) return true;
@@ -596,22 +630,56 @@ export function BlockDesignStudio({
     setCommandNotice(undefined);
   }, [confirmDiscardInspectorDraft, editor.redo]);
 
-  const saveCurrent = useCallback(() => {
-    if (!document) return;
-    if (!requireAppliedInspectorDraft("saving")) return;
+  const persistDesktopDesign = useCallback(async (
+    mode: "save" | "saveAs" | "export",
+  ): Promise<boolean> => {
+    if (!document || !desktopBridge) return false;
+    if (!requireAppliedInspectorDraft(mode === "export" ? "exporting" : "saving")) return false;
+    try {
+      const result = await desktopBridge.saveDesign({
+        content: serializeDesign(document),
+        suggestedFileName: mode === "export"
+          ? `${document.id}.export.block-design.json`
+          : fileName,
+        mode,
+      });
+      if (result.status === "canceled") return false;
+      if (mode !== "export") {
+        setFileName(result.fileName);
+        setSourceLabel(result.fileName);
+        editor.markSaved();
+      }
+      setCommandError(undefined);
+      return true;
+    } catch (error) {
+      setCommandError(errorMessage(error));
+      return false;
+    }
+  }, [desktopBridge, document, editor.markSaved, fileName, requireAppliedInspectorDraft]);
+
+  const saveCurrent = useCallback(async (): Promise<boolean> => {
+    if (!document) return false;
+    if (desktopBridge) return persistDesktopDesign("save");
+    if (!requireAppliedInspectorDraft("saving")) return false;
     try {
       const savedName = downloadDesign(document, fileName);
       setFileName(savedName);
       setSourceLabel(savedName);
       editor.markSaved();
       setCommandError(undefined);
+      return true;
     } catch (error) {
       setCommandError(errorMessage(error));
+      return false;
     }
-  }, [document, editor.markSaved, fileName, requireAppliedInspectorDraft]);
+  }, [desktopBridge, document, editor.markSaved, fileName, persistDesktopDesign, requireAppliedInspectorDraft]);
 
   const exportCurrent = useCallback(() => {
     if (!document) return;
+    if (desktopBridge) {
+      void persistDesktopDesign("export");
+      return;
+    }
     if (!requireAppliedInspectorDraft("exporting")) return;
     try {
       downloadDesign(document, `${document.id}.export.block-design.json`);
@@ -619,13 +687,24 @@ export function BlockDesignStudio({
     } catch (error) {
       setCommandError(errorMessage(error));
     }
-  }, [document, requireAppliedInspectorDraft]);
+  }, [desktopBridge, document, persistDesktopDesign, requireAppliedInspectorDraft]);
 
   const openSaveAs = useCallback(() => {
+    if (desktopBridge) {
+      void persistDesktopDesign("saveAs");
+      return;
+    }
     if (!requireAppliedInspectorDraft("opening Save As")) return;
     setCommandError(undefined);
     setSaveAsDialogOpen(true);
-  }, [requireAppliedInspectorDraft]);
+  }, [desktopBridge, persistDesktopDesign, requireAppliedInspectorDraft]);
+
+  useEffect(() => {
+    if (!desktopBridge) return;
+    return desktopBridge.onSaveBeforeClose(() => {
+      void saveCurrent().then((saved) => desktopBridge.completeSaveBeforeClose(saved));
+    });
+  }, [desktopBridge, saveCurrent]);
 
   const deleteSelection = useCallback(() => {
     if (!document || selection.kind === "document" || selection.kind === "level") return;
@@ -1377,7 +1456,10 @@ export function BlockDesignStudio({
     },
     openDesign: {
       id: "openDesign", label: "Open Design...", toolbarTitle: "打开设计", icon: FolderOpen, enabled: true,
-      execute: () => setLoadDialogOpen(true),
+      execute: () => {
+        if (desktopBridge) void openDesktopDesign();
+        else setLoadDialogOpen(true);
+      },
     },
     save: {
       id: "save", label: "Save", toolbarTitle: "保存设计", shortcut: "Ctrl/⌘ S", icon: Save,
@@ -1709,6 +1791,7 @@ export function BlockDesignStudio({
     directInterfaceUnavailableReason,
     directNeighborhoodExpansion,
     directNeighborhoodUnavailableReason,
+    desktopBridge,
     incomingInterfaceExpansion,
     incomingInterfaceUnavailableReason,
     incomingNeighborhoodExpansion,
@@ -1730,6 +1813,7 @@ export function BlockDesignStudio({
     openAddConnection,
     openAddPort,
     openReconnectConnection,
+    openDesktopDesign,
     openSaveAs,
     outgoingInterfaceExpansion,
     outgoingInterfaceUnavailableReason,
@@ -1870,11 +1954,15 @@ export function BlockDesignStudio({
         {loadError && <pre>{loadError}</pre>}
         {!busy && <div className="bd-boot-actions">
           <button type="button" className="bd-command-button" onClick={() => setNewDialogOpen(true)}><FilePlus2 size={15} /> New design</button>
-          <button type="button" className="bd-command-button" onClick={() => setLoadDialogOpen(true)}><FolderOpen size={15} /> Open another design</button>
+          <button type="button" className="bd-command-button" onClick={() => {
+            if (desktopBridge) void openDesktopDesign();
+            else setLoadDialogOpen(true);
+          }}><FolderOpen size={15} /> Open another design</button>
         </div>}
         <LoadDesignDialog open={loadDialogOpen} busy={busy} error={loadError} onClose={() => { setLoadDialogOpen(false); setLoadError(undefined); }} onLoadFile={(file) => void openFile(file)} onLoadUrl={(url) => void openUrl(url)} />
-        <NewDesignDialog open={newDialogOpen} error={commandError} idFromTitle={(title) => suggestId(title, "design")} onClose={() => { setNewDialogOpen(false); setCommandError(undefined); }} onCreate={({ id, title }) => {
+        <NewDesignDialog open={newDialogOpen} error={commandError} idFromTitle={(title) => suggestId(title, "design")} onClose={() => { setNewDialogOpen(false); setCommandError(undefined); }} onCreate={async ({ id, title }) => {
           try {
+            await desktopBridge?.clearFileBinding();
             installDocument(createBlankDesign(id, title), "New unsaved design", false);
             setNewDialogOpen(false);
           } catch (error) { setCommandError(errorMessage(error)); }
@@ -2036,8 +2124,9 @@ export function BlockDesignStudio({
       )}
       <CommandPalette open={commandPaletteOpen} commands={commands} onClose={() => setCommandPaletteOpen(false)} />
       <LoadDesignDialog open={loadDialogOpen} busy={busy} error={loadError} onClose={() => { setLoadDialogOpen(false); setLoadError(undefined); }} onLoadFile={(file) => void openFile(file)} onLoadUrl={(url) => void openUrl(url)} />
-      <NewDesignDialog open={newDialogOpen} error={commandError} idFromTitle={(title) => suggestId(title, "design")} onClose={() => { setNewDialogOpen(false); setCommandError(undefined); }} onCreate={({ id, title }) => {
+      <NewDesignDialog open={newDialogOpen} error={commandError} idFromTitle={(title) => suggestId(title, "design")} onClose={() => { setNewDialogOpen(false); setCommandError(undefined); }} onCreate={async ({ id, title }) => {
         try {
+          await desktopBridge?.clearFileBinding();
           installDocument(createBlankDesign(id, title), "New unsaved design", false);
           setNewDialogOpen(false);
         } catch (error) { setCommandError(errorMessage(error)); }

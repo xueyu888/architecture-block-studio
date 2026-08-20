@@ -2,7 +2,7 @@
   "schemaVersion": "2.1",
   "id": "architecture-block-studio.source-architecture.v1",
   "title": "Architecture Block Studio — Source Architecture",
-  "summary": "Generated from 65 managed source files and 27 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
+  "summary": "Generated from 66 managed source files and 27 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
   "entryLevelId": "product-boundary",
   "sourceRef": {
     "label": "architecture-block-studio",
@@ -592,7 +592,7 @@
               "label": "Studio",
               "side": "right",
               "direction": "input",
-              "dataType": "2 import declarations",
+              "dataType": "3 import declarations",
               "required": true,
               "order": 2
             },
@@ -623,7 +623,7 @@
               "architectureGroupId": "core",
               "hierarchyDepth": "5",
               "sourcePaths": "src/io/",
-              "sourceFileCount": "2"
+              "sourceFileCount": "3"
             }
           },
           "layout": {
@@ -1169,7 +1169,7 @@
               "label": "I/O",
               "side": "left",
               "direction": "output",
-              "dataType": "2 import declarations",
+              "dataType": "3 import declarations",
               "required": true,
               "order": 2
             },
@@ -1666,7 +1666,7 @@
         {
           "id": "import-studio-to-io",
           "interfaceId": "source-import.io",
-          "label": "Studio Orchestrator → Canonical File I/O · 2 import declarations",
+          "label": "Studio Orchestrator → Canonical File I/O · 3 import declarations",
           "source": {
             "nodeId": "studio",
             "portId": "depends-io"

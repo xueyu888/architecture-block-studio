@@ -28,18 +28,31 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 
 依赖方向从稳定的文档契约指向派生能力，再由 Studio 组合成产品。布局、路由或组件不得反向拥有文档语义。
 
+Windows 交付层只适配操作系统能力，不进入设计内核：
+
+```text
+React Studio ──具名 DesktopBridge──► sandbox preload ──具名 IPC──► Electron main
+     │                                                                  │
+     └── BlockDesignDocument ◄── canonical JSON ────────────────────────┘
+                                                                        ├─ 原生 Open / Save 对话框
+                                                                        └─ 受限 JSON 原子读写
+```
+
+`BlockDesignDocument` 仍是设计事实，Editor 仍唯一拥有 dirty / saved baseline。Electron main 只拥有窗口会话中的当前文件路径、原生对话框和磁盘 IO；路径不返回 renderer、不写入 JSON。preload 只暴露逐项命名的方法，不暴露 Node、任意 IPC、任意路径或通用文件系统。
+
 ## 模块与 Owner
 
 | 模块 | 原则与所有权 | 公开接口 | 边界与失败行为 |
 | --- | --- | --- | --- |
 | `src/model` | 拥有文档结构、Schema 版本与迁移、语义设计规则和无状态图查询 | `BlockDesignDocument`、`BLOCK_DESIGN_SCHEMA_VERSION`、`blockDesignSchemaCompatibility`、`parseBlockDesignDocument`、`validateBlockDesignDocument`、`listModuleInterfaces`、`normalizeConnectionEndpoints` | 不负责 UI、历史或布局；版本与结构非法时在字段路径拒绝，语义问题输出 DRC，查询与连接规范化不持有状态 |
 | `src/editor` | 拥有原子文档变换、历史、dirty 判断与可移植设计片段的引用完整性 | `DesignOperation`、`DesignFragment`、`createDesignFragment`、`parseDesignFragment`、`applyDesignOperation`、`useDesignEditor`、具名工厂 | 不渲染、不路由、不持久化；片段必须自包含，失败不产生部分修改 |
-| `src/io` | 拥有外部 JSON 与已校验文档之间的转换 | `loadDesignFromObject/File/Url`、`serializeDesign`、`downloadDesign` | 不解释模块业务；加载失败保留已安装文档 |
+| `src/io` | 拥有外部 JSON 与已校验文档之间的转换，以及 renderer 可见的最小桌面文件协议 | `loadDesignFromObject/Text/File/Url`、`serializeDesign`、`downloadDesign`、`ArchitectureBlockStudioDesktopBridge` | 不解释模块业务、不持有系统路径；加载失败保留已安装文档 |
 | `src/layout` | 从文档与展开状态派生纯复合节点、边和位置投影，定义布局真正消费的签名，并提供不持有交互状态的网格、辅助线、多选编排与组选区缩放几何 | `layoutBlockDesign`、`layoutFrameSignature`、`layoutProjectionSignature`、`DESIGN_GRID_SIZE`、`snapMovingRect`、`snapResizingRect`、`resizeSelectionGroup`、`alignSelection`、`distributeSelection`、`LayoutResult`、`PlacementMode` | 不依赖 Studio 或 React 交互回调，不修改源文档；没有合法辅助线时只应用显式网格策略，没有网格时原样返回预览几何，非法几何、编排输入或布局失败上抛给 Studio |
 | `src/routing` | 从绝对布局几何和锁定 waypoint 构造 `RoutingScene`，统一拥有版本化正交多连接策略、规模资源预算、确定性求解、证明等级与独立验证；同一布局投影还向 pointer preview 提供只读障碍、规范端口和层级域，另提供手工路线编辑几何与线桥 | `createRoutingLayoutProjectionFromLayout`、`createRoutingSceneFromLayout`、`solveConnectionPreview`、`routingPolicyForScene`、`solveRoutingScene`、`verifyRoutingResult`、`planRouteJumps`、`RoutingScene`、`RoutingPolicy`、`RoutingResult` | 设计坐标是路由事实；不移动模块、不改文档、不持有 gesture；preview 只解一条可丢弃 leg，不参与多线 lane 协调；规模只收紧同一策略的有界资源，不改变几何与失败语义。失败返回明确无解，不调用第二套自动 fallback。完整合同见 [`ROUTING.md`](ROUTING.md) |
 | `src/components` | 将纯布局投影组合为可交互 Canvas，拥有选中几何的 viewport framing、具名缩放请求投影与直接手势的持续边缘平移，并展示用户视图、发出用户意图 | `CanvasBlockNodeData`、`CanvasInterfaceEdgeData`、`CanvasViewportActionRequest`、`ViewportAutoPanController`、`canvasGeometryBounds`、Canvas、Node、Edge、Tree、Inspector、Dialogs、Dock、Messages | 交互回调只存在于 Canvas 投影；viewport 只消费节点矩形、线路点集、指针压力和可丢弃动作请求，不直接深改文档，自动平移不得提交设计操作，局部表单草稿不得伪装成已提交事实 |
 | `src/studio` | 组合公开能力，拥有工作区选择协议、临时设计剪贴板与无碰撞粘贴位置投影 | `BlockDesignStudio`、`BlockDesignStudioProps`、`SelectionRef`、`selectAllInLevel`、`findDesignFragmentPlacement` 及纯选择查询 | 不重新定义 Schema、片段引用、布局或编辑规则；系统剪贴板失败时同源退化，组合失败应可见、可恢复 |
 | `src/App.tsx` | 提供独立应用的默认装配 | 默认示例 URL 与查询参数入口 | 示例不是核心依赖，不拥有设计内容 |
+| `desktop` | 拥有 Windows 窗口、会话文件绑定、原生对话框、关闭保护与 JSON 原子读写 | Electron main、sandbox preload、具名 IPC、`readDesignFile`、`writeDesignFile` | 不解释或修改设计语义；renderer 不获得 Node / 路径 / 通用 IPC，失败不清除 dirty 或替换当前文件绑定 |
 | `tests/performance` + `scripts/performance-baseline.mjs` | 拥有压力观测样本合同与重复聚合入口 | `performance-sample v1`、`performance-trend-report v1`、`pnpm performance:baseline` | 只验证产品合同，不被运行时代码依赖，不写回设计 JSON；环境或样本漂移时停止生成可信报告 |
 
 `BlockDesignStudio.tsx` 当前承担较多编排职责，但它仍通过上述公开接口组合模块。后续只有在出现独立变化原因时才拆出命令协调器；不能建立囊括所有能力的全局 Service 或共享可变状态。
@@ -81,7 +94,7 @@ flowchart LR
   io --> model
 ```
 
-图中箭头严格表达“左侧源码模块 import 右侧模块”，不是运行时数据流，也不按卡片相对位置猜方向。`Studio Orchestrator` 与叶子 `Command & Selection` 分开，是因为前者拥有产品组合，后者只拥有无 UI 依赖的命令和选择协议；Canvas 与 Workbench 也按直接画布手势和外围审查界面分开。这个划分恰好覆盖当前 65 个受管源码文件，不能漏文件或让一个文件同时属于多个模块。
+图中箭头严格表达“左侧源码模块 import 右侧模块”，不是运行时数据流，也不按卡片相对位置猜方向。`Studio Orchestrator` 与叶子 `Command & Selection` 分开，是因为前者拥有产品组合，后者只拥有无 UI 依赖的命令和选择协议；Canvas 与 Workbench 也按直接画布手势和外围审查界面分开。这个划分恰好覆盖当前 66 个受管源码文件，不能漏文件或让一个文件同时属于多个模块。桌面主进程是 OS 适配边界，不反向进入这张 renderer 源码依赖图。
 
 生成和验证必须保持以下不变量：
 
@@ -268,14 +281,17 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 ## 加载、保存与失败语义
 
 - `loadDesignFromObject` 是所有加载路径的共同结构校验入口。
+- 桌面文本、本地文件、URL 和嵌入对象最终都经过同一个 `loadDesignFromObject`；UTF-8 BOM 只在文本边界剥离。
 - URL、本地文件和嵌入对象只有解析成功后才会调用安装逻辑。
 - 解析失败返回 `DesignLoadError` 与字段路径，当前设计保持不变。
 - `serializeDesign` 使用两空格缩进和结尾换行；`interfaceDefinitions` 与模块 / 接口 `attributes` 按稳定 key 顺序写出，Level、模块、Port、连接与 waypoint 数组保留设计顺序。
 - canonicalization 只生成临时 IO 投影，不修改 `BlockDesignDocument`；Save、Save As、Export 和 dirty baseline 共用这一个序列化合同。
-- Save / Save As 通过浏览器下载文件；Save 会把精确当前快照标记为 saved。
-- Export JSON 只导出副本，不改变 dirty 状态。
+- Windows Open 先读取并返回一次性 token，renderer 完成 Schema 校验后才确认当前文件绑定；非法 JSON 不能偷换当前文件。
+- Windows Save / Save As 使用相邻临时文件、flush 和 rename 完成原子替换；只有写入成功后 Editor 才把精确当前快照标记为 saved。
+- Export JSON 只导出副本，不改变当前文件绑定或 dirty 状态。
+- 新建、从开发 URL 或浏览器文件载入会显式清除桌面文件绑定；文件路径只留在对应窗口的主进程状态中。
 
-当前没有浏览器 File System Access 原地写回，也没有崩溃后的自动恢复。它们必须以独立文件安全设计引入，不能绕过浏览器权限或把 localStorage 当作正式设计事实源。
+开发浏览器保留下载适配器，用于自动化验证，不是产品文件语义。当前仍没有崩溃后的自动恢复；恢复副本必须作为独立文件安全设计引入，不能把 localStorage 或临时 UI 状态当作正式设计事实源。
 
 ## 布局与布线不变量
 

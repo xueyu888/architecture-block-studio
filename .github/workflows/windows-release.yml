@@ -1,0 +1,39 @@
+name: Windows Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:unit
+      - run: pnpm typecheck
+      - run: pnpm typecheck:desktop
+      - run: pnpm desktop:build
+      - run: pnpm desktop:test:shell
+      - run: pnpm desktop:package:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - shell: pwsh
+        run: Get-FileHash release/*.exe -Algorithm SHA256 | ForEach-Object { "$(Split-Path $_.Path -Leaf)  $($_.Hash.ToLower())" } | Set-Content release/SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          files: |
+            release/*.exe
+            release/SHA256SUMS.txt

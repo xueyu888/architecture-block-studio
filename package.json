@@ -1,7 +1,10 @@
 {
   "name": "architecture-block-studio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Architecture block and protocol design workbench",
+  "main": "dist-desktop/desktop/main.js",
+  "author": "Architecture Block Studio contributors",
+  "repository": "https://github.com/xueyu888/architecture-block-studio",
   "license": "MIT",
   "keywords": [
     "architecture",
@@ -19,6 +22,13 @@
   "scripts": {
     "dev": "vite",
     "build": "pnpm verify:self-architecture && tsc -b && vite build",
+    "desktop:compile": "tsc -p tsconfig.desktop.json --pretty false && node scripts/generate-desktop-preload.mjs",
+    "desktop:icons": "node scripts/generate-desktop-icons.mjs",
+    "desktop:build": "pnpm build && pnpm desktop:compile && pnpm desktop:icons",
+    "desktop:start": "pnpm desktop:build && electron .",
+    "desktop:test": "pnpm desktop:build && xvfb-run -a playwright test --config playwright.desktop.config.ts",
+    "desktop:test:shell": "playwright test --config playwright.desktop.config.ts",
+    "desktop:package:win": "pnpm desktop:build && electron-builder --config electron-builder-win.json --win nsis --x64 --publish never",
     "generate:self-architecture": "node scripts/generate-self-architecture.mjs",
     "verify:self-architecture": "node scripts/generate-self-architecture.mjs --check",
     "test": "pnpm test:unit && pnpm test:e2e",
@@ -29,6 +39,7 @@
     "test:e2e:firefox": "playwright test --project=firefox-core",
     "test:e2e:all": "playwright test",
     "typecheck": "tsc -b --pretty false",
+    "typecheck:desktop": "tsc -p tsconfig.desktop.json --pretty false --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -42,10 +53,15 @@
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
+    "@types/node": "22",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "5.1.1",
     "axe-core": "4.10.2",
+    "electron": "43.4.1",
+    "electron-builder": "26.15.3",
+    "png-to-ico": "2.1.8",
+    "sharp": "0.34.4",
     "typescript": "5.9.3",
     "vite": "7.2.2",
     "vitest": "3.2.4"

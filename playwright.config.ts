@@ -11,6 +11,7 @@ const reuseExistingServer = !process.env.CI && process.env.PLAYWRIGHT_REUSE_SERV
 export default defineConfig({
   testDir: "./tests",
   testMatch: "**/*.spec.ts",
+  testIgnore: "desktop/**/*.spec.ts",
   fullyParallel: false,
   timeout: 90_000,
   retries: 0,

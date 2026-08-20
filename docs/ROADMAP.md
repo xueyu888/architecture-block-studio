@@ -2,7 +2,7 @@
 
 ## 当前成熟度
 
-当前版本为 **0.1 可用基础版**：核心本地编辑闭环、层级投影与渐进搜索、跨视口交叉定位、直接依赖审查、鼠标 / 键盘接口创建、自动 / 可直接调整的手动正交路由、模块 resize、移动 / 尺寸吸附、完整包围 / Alt 几何相交框选与多选、当前 Level 全选 / 清空、原子对齐 / 分布、子图 Copy / Cut / Paste / Duplicate、选中线路聚焦、五类直接手势的视口边缘持续自动平移、低缩放信息收敛、DRC、草稿保护、model-owned `2.0 -> 2.1` 逐步迁移与兼容矩阵、canonical JSON 文件流、公开编辑合同单测，以及 200 / 400 大型设计全量几何门禁、1000 / 2000 压力 Canvas 视口裁剪和可重复 observation-only 性能报告已经成立。Iteration 100 建立了由 65 个真实源码文件生成五层架构 JSON 的双向依赖门禁，Iteration 101 又补齐可恢复的层级视图根并逐条审计全部 27 条 import；崩溃恢复、历史容量策略、固定 CI 性能预算和 Windows 桌面交付仍未达到生产级。
+当前版本为 **0.2 Windows 桌面基础版**：核心本地编辑闭环、层级聚焦、依赖审查、专业图形操作、DRC、Schema 迁移、canonical JSON 文件流、大图路由门禁与压力观测已经成立。Iteration 102 新增安全 Electron 壳、受限 preload、原生 Open / Save / Save As / Export、原子文件替换、关闭保护、Windows x64 NSIS 安装包和 tag 发布流水线；renderer 的 66 个受管源码文件继续生成五层架构 JSON 并双向闭合 27 条 import。崩溃恢复、历史容量策略、固定 CI 性能预算、商业代码签名与更高阶审查工作流仍未达到生产级。
 
 路线图记录真实完成的迭代，不用计划数量冒充执行数量。长期目标可以拆成 100 个小步，但每一行都必须对应实际代码、验证或文档证据。
 
@@ -22,7 +22,7 @@ P0 未收敛前不扩展协作或服务端事实源。源码分析作为适配�
 | --- | --- | --- | --- |
 | P0 | 进行中 | Schema 生命周期 | Iteration 8–9 建立 `2.0 -> 2.1` 纯迁移与路径合同；Iteration 26 完成 model-owned 逐步迁移注册表、不可变支持矩阵、输入 / 输出 golden fixtures 和非法版本合同；2.1 全局未知字段应严格拒绝还是保留写回仍待明确 |
 | P0 | 已完成 | 文件输出稳定性 | Iteration 27 让无序 record 使用 canonical key order，设计数组保持原顺序；Save、Save As、Export 与 dirty baseline 共用同一序列化合同 |
-| P0 | 待设计 | 崩溃恢复 | 当前只有 beforeunload 与浏览器下载，没有自动恢复副本 |
+| P0 | 待设计 | 崩溃恢复 | Windows 关闭前保护已成立，但仍没有异常崩溃后的自动恢复副本 |
 | P0 | 进行中 | 历史内存 | Iteration 28 将历史收敛为 canonical compact UTF-8 快照并建立 1000 / 2000、20 次操作字节与时间基线；Iteration 37 让 Vitest 单 fork 显式暴露 GC，三轮 GC 后进程增量稳定为约 36.4 MB，并区分确定性快照字节与环境 heap 观测；仍无容量上限，淘汰和恢复语义待设计 |
 | P1 | 已完成 | 首屏 React 警告 | Iteration 1 已限制 `BaseEdge` 属性边界，并将测试监听前移到 navigation 之前 |
 | P1 | 已完成 | Inspector 草稿丢失 | Iteration 3 已显示 UNAPPLIED 状态，切换对象需确认，保存与结构命令要求先处理草稿 |
@@ -37,15 +37,15 @@ P0 未收敛前不扩展协作或服务端事实源。源码分析作为适配�
 | P1 | 已完成 | 端点方向与端口文字 | Iteration 63 让每条真实连接只在 JSON target 显示一个语义箭头并把 Port Handle 改为中性连接点；Iteration 64 将稳定 Handle 与四侧标签轨道拆开，端口名、Header、Owner 和线路端点不再争用同一几何空间 |
 | P1 | 已完成 | 模块尺寸直接编辑 | Iteration 66 以 `node.layout.position / width / height` 为唯一持久几何，提供单模块四边 / 四角 pointer resize、内容安全下限、Ctrl/Cmd + Shift + Arrow 精调、路由跟随、Undo / Redo、保存和草稿拒绝恢复；Iteration 98 用同一几何事实补齐同父级多模块统一八向 resize 与一次 `nodes/resize` |
 | P2 | 已完成 | 连线可读性与手动路由 | Iteration 7–52 建立基础正交避障与手动 route；Iteration 65 完成虚拟线段点、真实折点、端点重连和小型抓手；Iteration 71 以独立场景级多连接策略替换哈希 lane、模块对 channel、逐线 smart-edge 和事后偏移，加入层级 commodity / Gate、确定性联合目标、绕行上限、证明等级与独立验证 |
-| P2 | 进行中 | 图形直接操作 | 单线支持线段 / 折点 / 端点直接编辑，模块支持 resize 与 guides；Iteration 68–69 补齐显式多选、框选、原子成组移动、六向对齐与等中心分布，Iteration 72 补齐完整子图 Copy / Paste / Duplicate，Iteration 74–75 补齐当前 Level 全选 / 清空和选中线路完整聚焦，Iteration 81–82 统一普通完整包围、Alt 真实几何相交框选与重叠对象逐层命中，Iteration 83 统一 Canvas 复合焦点遍历，Iteration 84–87 让鼠标与键盘端点重连共用候选、Editor、Undo / Redo、保存和场景级实时避障链，Iteration 88 统一直接手势边缘自动平移，Iteration 89 让多选与克隆按完整组边界吸附，Iteration 90–91 将背景网格、对齐、实时等距和 Alt 精确绕过收敛为一个纯几何策略，Iteration 92 用一个 `objects/delete` 闭合模块 / 接口混选、层级级联与一次 Undo，Iteration 93–96 让模块选择扩展到直接接口、完整类型集合和可逐层、按方向探索的依赖邻域，Iteration 97 复用同一片段与删除合同补齐原子 Cut，Iteration 98 用统一组选区与批量 Editor operation 补齐多模块八向 resize，Iteration 99 让对象右键菜单与右键平移共享 5px 手势判定并继续复用同一命令事实，Iteration 100 用真实五层源码图总验收这些操作和路线。当前主要差距是进入 / 退出层级的聚焦视图，后续不得把临时 UI 状态当成并行设计事实 |
+| P2 | 进行中 | 图形直接操作 | 单线段 / 折点 / 端点编辑、模块与组 resize、框选、多选、吸附、对齐、分布、子图 Copy / Cut / Paste / Duplicate、右键菜单、层级 Enter / Exit / Home 与依赖邻域审查已沿同一文档 / Editor / Selection 合同成立；仍需继续用真实复杂架构场景对照 draw.io，不能把局部能力数量冒充同等级整体体验 |
 | P2 | 已完成 | 多尺度总览可读性 | Iteration 41 从 viewport 唯一派生 detail level；低缩放只隐藏不可读的次级文字，保留模块标题、端口名、把手和线路，放大自动恢复完整细节 |
 | P2 | 已完成 | 高频命令效率 | Iteration 55 已建立菜单字符定位，Iteration 59 已统一命令 Tooltip；Iteration 61 用 `Ctrl/⌘ K` 建立可搜索命令面板，名称、快捷键、可用性、禁用原因和执行仍只来自 `StudioCommands`，高频动作不再依赖记忆菜单分类或跨工作区 Tab |
 | P2 | 进行中 | 大设计性能 | Iteration 16 建立 200 / 400 全量几何基线；Iteration 28 建立 1000 / 2000 heap 与连续编辑基线并消除无关编辑整图重排；Iteration 29、34 完成 Sources 搜索、接口与默认层级渐进挂载；Iteration 31 收敛选择投影；Iteration 32 仅对压力档启用 Canvas 视口裁剪；Iteration 35 建立带版本原始样本、重复执行入口和只观察趋势报告；Iteration 36 让压力跨图定位只做一次 viewport 变换，并修复 MiniMap 冻结初始回调；Iteration 50 最新三轮最终测量内存中位数约 65.3 MB，Sources / MiniMap 定位中位数 217 / 63 ms；固定 CI 数值预算尚未建立 |
 | P3 | 进行中 | 样式事实源 | Iteration 18 已删除旧三栏工作区与当前 Dock 工作台之间确定无效的覆盖声明和旧 DOM 样式；Iteration 42 收敛高频 surface、border、row text、control size 与 motion token 并删除四个死 token；Iteration 58–59 完成工作台视觉重塑和统一命令 Tooltip；Iteration 62 将常驻 Toolbar 收敛为 12 个直接工作流动作；其余低频状态色仍按独立语义保留 |
-| P3 | 进行中 | 浏览器矩阵 | Chromium 82 / 82 完整自动化；Iteration 38 将 Firefox 扩展为除 Chromium CDP heap 采样外的全部产品合同，当前 81 / 81 通过；WebKit、Windows 和 macOS 尚未验证 |
+| P3 | 进行中 | Windows 桌面交付 | Iteration 102 已建立 Electron 启动、sandbox / context isolation、原生文件端到端与 Windows x64 NSIS tag 构建；商业代码签名、SmartScreen 信誉和真实安装 / 卸载人工矩阵仍待补齐 |
 | P3 | 进行中 | 可访问性 | 已有 dialog focus trap、WCAG A / AA 结构与文本对比度门禁、桌面菜单，以及 Chromium / Firefox 连续无鼠标核心旅程；Iteration 48 为被接受的模块键盘移动补齐位置 live 公告，Iteration 55 补齐字符定位，Iteration 56 为禁用命令补齐可见原因与 accessible name，Iteration 61 补齐可搜索 listbox、焦点恢复与下游 Dialog / Messages 交接；读屏人工验证与 WebKit 自动化仍缺 |
 | P4 | 待完善 | 高级审查工作流 | 设计 Diff、传递影响范围、源码定位与评审状态尚未建立；不能用临时高亮伪装这些事实 |
-| P4 | 已有参考实现 | 源码可视化适配 | 浏览器运行时不扫描代码；Iteration 100 提供仓库内 TypeScript AST 适配器，将 65 个源码文件、12 个责任模块与 27 条跨模块 import 生成五层 `BlockDesignDocument`，build 双向检查源码与示例漂移；其他语言继续通过公开契约接入 |
+| P4 | 已有参考实现 | 源码可视化适配 | renderer 运行时不扫描代码；仓库内 TypeScript AST 适配器将当前 66 个源码文件、12 个责任模块与 27 条跨模块 import 生成五层 `BlockDesignDocument`，build 双向检查源码与示例漂移；其他语言继续通过公开契约接入 |
 | P4 | 待评估 | 仓库与协作 | 单人文件模型稳定后再决定 Git diff、评论、协作和服务端边界 |
 
 ## 阶段路线
@@ -79,7 +79,7 @@ P0 未收敛前不扩展协作或服务端事实源。源码分析作为适配�
 ### Phase 4：规模、平台与生态
 
 - 建立大型和压力设计，完成性能测量与降级策略。
-- 扩展 Firefox、WebKit、Windows 与 macOS 验证。
+- 深化 Windows 安装、升级、卸载、文件保存与桌面可访问性验证；浏览器矩阵只服务渲染内核回归。
 - 提供语言无关的源码 / AI 适配器接口和示例。
 - 在文件与版本模型成熟后评估仓库集成和多人协作。
 
@@ -223,9 +223,10 @@ Iteration 63–72 的实现顺序只会因 P0 或上一轮证据揭示的新根�
 | Iteration 99 | 右键此前只能平移，模块、接口和多选的高频操作仍要跨到菜单或命令面板；直接叠加浏览器 `contextmenu` 又会让短按、节点内起拖、选中草稿和 viewport pan 形成竞争，并可能在拖动松手后误弹菜单 | 对照 draw.io [`mxPopupMenuHandler`](https://github.com/jgraph/drawio/blob/dev/src/main/webapp/mxgraph/src/handler/mxPopupMenuHandler.js#L141-L210)，Canvas 用一个 5 CSS px gesture 记录器决定 menu 或 pan：短按按真实节点 / 路线几何产生选择意图，超容差后由 Canvas 同步平移并永久取消菜单。`contextMenuModel` 只按对象种类组织既有 command id，`CanvasContextMenu` 只管位置、焦点与关闭；Studio 继续拥有草稿保护和 canonical selection，所有动作最终仍执行同一 `StudioCommands` | 173 / 173 unit（21 files / 1.55 秒）；1902-module build（Vite 6.98 秒）；当前最终检出 Chromium 81 / 81 + Firefox 80 / 80 = 161 / 161（7.2 分钟）完整回归。节点、真实线段、多选、Shift+F10、Home / End / 字符定位、Escape 焦点恢复、禁用原因、草稿拒绝、viewport 边缘约束和右拖互斥均通过；五层 20 / 190、Hub 100 / 4,950、200 / 400、1000 / 2000 继续通过；截图人工复核 | JSON / History / route / viewport 与命令资格都没有进入菜单状态；一次右键手势只产生 pan 或 menu。当前仍缺 WebKit、真实触控板、读屏与桌面系统验证，整体仍未达到 draw.io |
 | Iteration 100 | 只在人工 fixture 上证明操作能力，仍不足以证明 Studio 能可靠可视化和审查真实代码；手工维护自身架构 JSON 又会让源码与图成为两个依赖事实源 | 新增 `generate-self-architecture.mjs`：以真实源码文件和 TypeScript AST 相对 import 为事实，要求 65 个文件唯一归入 12 个责任模块，双向生成 27 条依赖并拒绝缺失、虚构、无法解析和环；JSON 只保留五层上下文与可审查合同。production build 先执行 byte-for-byte 门禁，浏览器通过现有层级、邻域、线路、Inspector 和保存链消费该示例，不新增运行时扫描器 | 175 / 175 unit（22 files / 1.70 秒）；1902-module build（Vite 7.09 秒）；Chromium 82 / 82 + Firefox 81 / 81 = 163 / 163（5.0 分钟）。真实图展开为 4 个边界 + 12 个源码模块、27 条依赖，逐线及 351 pairs 在双浏览器全部通过；Studio 邻域精确为 9 modules / 8 interfaces，卡片 resize / Undo、Sources 定位、物理选线、合同审查、保存回读通过；200 / 400 与 1000 / 2000 再通过；三张截图人工复核 | 源码与 import 是事实，适配器拥有语义模块映射，JSON 是可替换的生成投影，UI 状态与测试证据都不反向定义依赖。仍未达到 draw.io：五层嵌套只能整体展开，缺少进入 / 退出容器的层级聚焦与 breadcrumb，低缩放局部审查仍不够直接 |
 | Iteration 101 | 五层整体展开保留上下文，却把真实模块缩小到难以审查；若把当前层写进 JSON、浏览器 URL 或复用展开集合，又会制造第二份结构事实与不可恢复状态 | `BlockDesignDocument` 继续唯一拥有层级；Studio 只拥有可丢弃 `viewRootLevelId`，纯 `hierarchyLevelTrail` 派生 breadcrumb 和父级 owner，layout 只接收 `rootLevelId` 改变投影起点。Enter / Exit / Home、Escape、Hierarchy 双击、breadcrumb 与 Sources 共用导航边界，inline expansion 保持正交 | 177 / 177 unit（23 files / 1.60 秒）；1902-module build（Vite 8.47 秒）；Chromium 83 / 83 + Firefox 82 / 82 = 165 / 165（5.3 分钟）；五层连续进入 / 退出、父模块焦点、breadcrumb、Sources、草稿拒绝、保存深相等和 browser history 双浏览器通过；第 5 层 12 modules / 27 routes / 351 pairs 全审计；1000 / 2000 压力再次通过；两张截图人工复核 | 视图根、breadcrumb、Fit 与 reveal 均不进入 JSON / History / geometry。仍未达到 draw.io；产品边界已改为 Windows-only，下一轮先完成安全 Electron 壳与原生文件闭环，不再投入移动端 |
+| Iteration 102 | 浏览器下载不能提供 Windows 软件需要的原位保存、原生对话框、窗口关闭保护和安装发布；直接给 renderer Node 或路径又会破坏文件边界 | `BlockDesignDocument` / canonical serializer 继续拥有设计与磁盘内容，Editor 拥有 dirty；Electron main 只拥有窗口、一次性 open token、当前文件路径、原生 dialog 和 32 MiB JSON 原子读写，sandbox preload 只暴露 8 个具名能力。Open 校验后才绑定，Save 成功后才 `markSaved`，路径不进 JSON；仅构建 Windows x64 NSIS | 180 / 180 unit（24 files）；1903-module production build；Electron 壳、7 modules / 10 interfaces、无 Node / require、具名 bridge、原生 Open → accept → Save As 字节一致 1 / 1；Windows tag workflow 在 Windows runner 重跑类型、单元、Electron 与打包并发布 SHA-256；`windows-desktop-app.png` 人工复核工作台、端口和路线无遮挡 | 浏览器只保留开发 / 测试适配器，不是第二产品；安装包未使用商业代码签名，SmartScreen 信誉、真实安装 / 卸载人工矩阵与崩溃恢复仍待补齐。整体仍未达到 draw.io，下一轮回到图形界面与操作能力 |
 
 ## 下一轮
 
-**Iteration 102 — Windows 桌面应用第一条完整文件闭环。**
+**Iteration 103 — Windows 桌面上的图形操作复评与下一项根因修正。**
 
-复用现有 React/Vite 编辑内核，以 Electron 主进程、隔离 preload 和最小具名 IPC 契约承接 Windows 窗口与文件系统。Open、Save、Save As、启动文件和未保存关闭保护必须使用同一 canonical JSON 与 Editor dirty 事实，renderer 不获得 Node 或任意文件系统能力。配置 Windows x64 安装包与 CI 构建入口，并区分“可测试的浏览器渲染内核”与“唯一产品交付形态 Windows 桌面端”；不增加 macOS、Linux、手机或平板适配。先完成可验证的本地文件读写和打包骨架，再继续图形操作迭代。
+在已发布 Windows 壳内重走模块创建、连接、密集线路、手工线路、resize、多选、层级进入和代码审查旅程，继续与 draw.io 的公开实现和真实操作对照。先以逐线视觉证据选择一个通用根因，再沿现有 `BlockDesignDocument → Editor → layout / routing → Canvas` 单向链完成最小闭环；不为个别截图加特判，也不投入移动端、网页产品或其他桌面系统。

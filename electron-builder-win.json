@@ -1,0 +1,33 @@
+{
+  "appId": "io.github.xueyu888.architectureblockstudio",
+  "productName": "Architecture Block Studio",
+  "asar": true,
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**",
+    "dist-desktop/**",
+    "desktop/ipcChannels.json",
+    "package.json"
+  ],
+  "win": {
+    "icon": "build/icon.ico",
+    "signExecutable": false,
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Architecture Block Studio",
+    "artifactName": "Architecture-Block-Studio-${version}-windows-x64-setup.${ext}"
+  }
+}

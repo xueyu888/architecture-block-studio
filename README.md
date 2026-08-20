@@ -10,7 +10,7 @@ Architecture Block Studio 把代码系统表达成可编辑、可校验、可版
 - **理解**：把已有代码或外部分析结果映射成模块、端口和依赖关系，从整体上读懂系统。
 - **审查**：在代码变更后检查职责漂移、隐式依赖、越界调用与接口合同变化，补足逐行 Code Review 的结构视角。
 
-![Architecture Block Studio 专业工作台](docs/screenshots/professional-workbench.png)
+![Architecture Block Studio Windows 桌面工作台](docs/screenshots/windows-desktop-app.png)
 
 ## 为什么是现在
 
@@ -201,6 +201,17 @@ Ctrl/⌘ 拖动复用同一份可校验片段合同，但由指针明确给出�
 
 ## 5 分钟开始使用
 
+### Windows 用户
+
+1. 前往 [Releases](https://github.com/xueyu888/architecture-block-studio/releases/latest) 下载 `Architecture-Block-Studio-*-windows-x64-setup.exe`。
+2. 运行安装程序并从开始菜单启动 Architecture Block Studio。
+3. 选择 **File → Open Design** 加载任意合法 `.json` / `.block-design.json`，或直接从内置示例开始探索。
+4. 编辑完成后使用 **Save** 原位保存，使用 **Save As** 保留新副本；磁盘写入成功前不会清除未保存状态。
+
+当前仅发布 Windows x64 桌面版，不提供网页产品或移动端。安装包暂未使用商业代码签名证书；若 Windows SmartScreen 提示“未知发布者”，请先核对 Release 页面提供的 SHA-256，再决定是否运行。
+
+### 源码开发
+
 需要 Node.js 22+ 与 pnpm 10.7+。
 
 ```bash
@@ -210,7 +221,7 @@ pnpm install
 pnpm dev --host 127.0.0.1 --port 4317
 ```
 
-打开 [http://127.0.0.1:4317](http://127.0.0.1:4317)。应用会先展示仓库内置的 AIO Agent Runtime 示例；它只是演示数据，不是运行时依赖。
+打开 [http://127.0.0.1:4317](http://127.0.0.1:4317)。这个地址只用于开发与自动化测试；正式产品使用 Windows 桌面壳。应用会先展示仓库内置的 AIO Agent Runtime 示例，它只是演示数据，不是运行时依赖。
 
 最短设计路径：
 
@@ -219,16 +230,17 @@ pnpm dev --host 127.0.0.1 --port 4317
 3. 为模块添加 input、output 或 bidirectional 端口。
 4. 从输出端口拖向输入端口，或选择 **Design → Add Interface** 用键盘选择端点，然后补全类型化接口合同。
 5. 点击连线，在右侧 Inspector 审查名称、方向、Owner 与失败行为。
-6. 运行 DRC，使用 **Save As** 下载 `.block-design.json` 文件。
+6. 运行 DRC，使用 **Save** 或 **Save As** 写入 `.block-design.json` 文件。
 
 ## 加载自己的设计
 
-当前设计内容来自一份 `BlockDesignDocument v2` JSON，可通过四种方式安装：
+当前设计内容来自一份 `BlockDesignDocument v2` JSON。Windows 桌面版通过原生文件对话框加载和保存：
 
 - **本地文件**：在 **File → Open Design** 中选择任意合法 JSON。
-- **远程 URL**：加载同源或允许 CORS 的 HTTP(S) JSON。
-- **启动参数**：使用 `?design=<encoded-url>` 替换默认示例。
-- **组件嵌入**：向 `BlockDesignStudio` 传入 `initialDocument` 或 `initialDesignUrl`。
+- **原位保存**：已打开文件使用 **Save** 原子替换；新设计首次保存会打开原生保存对话框。
+- **副本与导出**：**Save As** 绑定新文件，**Export JSON** 只输出副本，不改变当前文件绑定或 dirty 基线。
+
+开发渲染器仍保留 URL、`?design=<encoded-url>` 与 `initialDocument` / `initialDesignUrl` 入口，供自动化、嵌入实验和适配器验证使用；它们不是另一套正式产品文件模型。
 
 内置示例位于 [`public/examples/aio-agent-runtime.block-design.json`](public/examples/aio-agent-runtime.block-design.json)，可以复制、修改或换成自己的文档。加载是事务性的：新文件只有在解析成功后才会替换当前设计；无效文件不会破坏正在编辑的内容。
 
@@ -238,7 +250,7 @@ pnpm dev --host 127.0.0.1 --port 4317
 http://127.0.0.1:4317/?design=%2Fexamples%2Farchitecture-block-studio.block-design.json
 ```
 
-这份示例不是手绘宣传图。生成器会遍历 `src` 中的 TypeScript、TSX 与 CSS 文件，要求每个文件恰好属于一个责任模块，并把所有可解析的跨模块相对 import 投影为接口；当前示例覆盖 65 个源码文件、12 个责任模块、27 条跨模块依赖和 5 层上下文。缺失归属、虚构依赖、无法解析的引用或模块环都会使验证失败。
+这份示例不是手绘宣传图。生成器会遍历 `src` 中的 TypeScript、TSX 与 CSS 文件，要求每个文件恰好属于一个责任模块，并把所有可解析的跨模块相对 import 投影为接口；当前示例覆盖 66 个源码文件、12 个责任模块、27 条跨模块依赖和 5 层上下文。缺失归属、虚构依赖、无法解析的引用或模块环都会使验证失败。
 
 ```bash
 pnpm generate:self-architecture  # 源码结构变化后重新生成示例
@@ -274,16 +286,21 @@ pnpm verify:self-architecture    # 检查示例与当前源码是否一致
 pnpm exec playwright install chromium firefox
 pnpm verify:self-architecture
 pnpm typecheck
+pnpm typecheck:desktop
 pnpm build
 pnpm test
 pnpm test:e2e:firefox
+pnpm desktop:test
+pnpm desktop:package:win
 ```
 
 ## 当前边界
 
 - 当前是本地单人工作台，不包含账号、服务端存储、多人协作或冲突合并。
-- Save / Save As 使用浏览器下载语义，不会越过浏览器权限覆盖任意系统文件。
+- 产品只支持 Windows x64 桌面端；浏览器只作为渲染内核与开发测试入口，不规划移动端。
+- Windows Save / Save As 只经受限 preload 与原生对话框访问 `.json` 文件；文件路径属于窗口会话，不进入设计 JSON。
 - 当前写出 `BlockDesignDocument 2.1`，可显式读取并迁移 `2.0`；尚未提供 v1 或 Draw.io 导入器。
+- 当前安装包未签名；代码签名证书与 SmartScreen 信誉仍是后续发行基础设施事项。
 - 可视化审查补充模块与接口视角，不替代逐行 Code Review、测试、静态分析或安全审计。
 
 ## 许可证

@@ -29,6 +29,15 @@ export function loadDesignFromObject(input: unknown): BlockDesignDocument {
   }
 }
 
+export function loadDesignFromText(text: string, sourceName: string): BlockDesignDocument {
+  try {
+    return loadDesignFromObject(JSON.parse(text.replace(/^\uFEFF/, "")));
+  } catch (error) {
+    if (error instanceof DesignLoadError) throw error;
+    throw new DesignLoadError(`Unable to parse ${sourceName}.`, describeError(error));
+  }
+}
+
 export async function loadDesignFromUrl(url: string): Promise<BlockDesignDocument> {
   let response: Response;
   try {
@@ -50,12 +59,7 @@ export async function loadDesignFromUrl(url: string): Promise<BlockDesignDocumen
 }
 
 export async function loadDesignFromFile(file: File): Promise<BlockDesignDocument> {
-  try {
-    return loadDesignFromObject(JSON.parse(await file.text()));
-  } catch (error) {
-    if (error instanceof DesignLoadError) throw error;
-    throw new DesignLoadError(`Unable to parse ${file.name}.`, describeError(error));
-  }
+  return loadDesignFromText(await file.text(), file.name);
 }
 
 export function requestedDesignUrl(): string | undefined {

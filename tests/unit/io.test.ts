@@ -3,6 +3,7 @@ import {
   DesignLoadError,
   loadDesignFromFile,
   loadDesignFromObject,
+  loadDesignFromText,
   loadDesignFromUrl,
 } from "../../src/io/loadDesign";
 import {
@@ -46,6 +47,15 @@ describe("design loading", () => {
       name: "DesignLoadError",
       message: "Unable to parse broken.block-design.json.",
     });
+  });
+
+  test("parses desktop text through the same validated document contract", () => {
+    const expected = connectedDesign();
+    expect(loadDesignFromText(JSON.stringify(expected), "desktop.block-design.json")).toEqual(expected);
+    expect(loadDesignFromText(`\uFEFF${JSON.stringify(expected)}`, "windows.block-design.json")).toEqual(expected);
+    expect(() => loadDesignFromText("{", "broken.block-design.json")).toThrow(
+      "Unable to parse broken.block-design.json.",
+    );
   });
 
   test("reports HTTP status without attempting to install a document", async () => {

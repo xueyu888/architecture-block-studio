@@ -1,0 +1,82 @@
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { _electron as electron, expect, test } from "@playwright/test";
+
+test("launches the isolated Windows desktop shell and renders the full workbench", async () => {
+  const environment = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => name !== "ELECTRON_RUN_AS_NODE"),
+  ) as Record<string, string>;
+  const application = await electron.launch({ args: ["."], env: environment });
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "architecture-block-studio-desktop-"));
+  try {
+    const window = await application.firstWindow();
+    await window.waitForLoadState("domcontentloaded");
+    await expect(window.getByText("Architecture Block Studio").first()).toBeVisible();
+    await expect(window.locator(".react-flow__node")).toHaveCount(7, { timeout: 30_000 });
+    await expect(window.locator(".react-flow__edge")).toHaveCount(10, { timeout: 30_000 });
+
+    const isolation = await window.evaluate(() => ({
+      bridgePlatform: window.architectureBlockStudioDesktop?.platform,
+      hasNodeProcess: "process" in window,
+      hasRequire: "require" in window,
+      bridgeKeys: Object.keys(window.architectureBlockStudioDesktop ?? {}).sort(),
+    }));
+    expect(isolation).toEqual({
+      bridgePlatform: "win32",
+      hasNodeProcess: false,
+      hasRequire: false,
+      bridgeKeys: [
+        "acceptOpenedDesign",
+        "clearFileBinding",
+        "completeSaveBeforeClose",
+        "onSaveBeforeClose",
+        "openDesign",
+        "platform",
+        "saveDesign",
+        "setDirty",
+      ],
+    });
+
+    const inputPath = join(temporaryDirectory, "opened.block-design.json");
+    const outputPath = join(temporaryDirectory, "saved-as.block-design.json");
+    const inputContent = await readFile(resolve("public/examples/aio-agent-runtime.block-design.json"), "utf8");
+    await writeFile(inputPath, inputContent, "utf8");
+    await application.evaluate(({ dialog }, selectedPath) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedPath] });
+    }, inputPath);
+    const opened = await window.evaluate(() => window.architectureBlockStudioDesktop!.openDesign());
+    expect(opened.status).toBe("opened");
+    if (opened.status !== "opened") throw new Error("Expected the desktop file to open.");
+    expect(opened.fileName).toBe("opened.block-design.json");
+    expect(JSON.parse(opened.content).id).toBe("aio.agent-runtime.v1");
+    expect(await window.evaluate(
+      (token) => window.architectureBlockStudioDesktop!.acceptOpenedDesign(token),
+      opened.token,
+    )).toBe(true);
+
+    await application.evaluate(({ dialog }, selectedPath) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: selectedPath });
+    }, outputPath);
+    const saved = await window.evaluate(
+      ({ content }) => window.architectureBlockStudioDesktop!.saveDesign({
+        content,
+        suggestedFileName: "saved-as.block-design.json",
+        mode: "saveAs",
+      }),
+      { content: opened.content },
+    );
+    expect(saved).toEqual({ status: "saved", fileName: "saved-as.block-design.json" });
+    expect(await readFile(outputPath, "utf8")).toBe(opened.content);
+
+    const screenshotDirectory = resolve("docs/screenshots");
+    await mkdir(screenshotDirectory, { recursive: true });
+    await window.screenshot({
+      path: resolve(screenshotDirectory, "windows-desktop-app.png"),
+      animations: "disabled",
+    });
+  } finally {
+    await application.close();
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});

@@ -156,15 +156,17 @@ Iteration 100 把仓库自身作为真实用户输入，而不是继续增加只
 
 Iteration 101 对照 draw.io / mxGraph 的 current-root、enter、exit 与 home 层级职责，将“当前看哪一层”从 inline expansion 中正交拆出。`BlockDesignDocument` 继续唯一拥有五层结构；Studio 只保存可丢弃 `viewRootLevelId`，`hierarchyLevelTrail` 派生 breadcrumb 与父级返回选择，`layoutBlockDesign(rootLevelId)` 只改变投影起点。Enter Module、Exit Module、Architecture Home、Escape、Hierarchy 双击和 breadcrumb 共用同一导航边界；退出会在唯一 owner 成立时重新选中父模块，Sources 定位仍优先原位展开当前根内路径。五层真实源码图连续进入到第 5 层后精确显示 12 modules / 27 interfaces，并逐条审计全部 27 routes / 351 pairs；保存 JSON 与原文件深相等，浏览器 history 不变，未应用 Inspector 草稿取消后视图根不变。最终 177 / 177 unit（23 files / 1.60 秒）、1902-module build（Vite 8.47 秒）、Chromium 83 / 83 + Firefox 82 / 82 = 165 / 165（5.3 分钟）通过；200 / 400 全量压力仍完成 400 条接口路线门禁，1000 / 2000 视口裁剪压力再次通过，首次可交互 3,916 ms、十次编辑 3,664 ms、选择模块 293 ms、1000 障碍连接预览峰值 6.8 ms。`hierarchy-focused-source-architecture.png` 与刷新的 `object-context-menu.png` 已人工复核：breadcrumb、12 个模块、27 条线和 10 个菜单动作清楚，0 线中标签、0 无桥交叉。整体仍未达到 draw.io；用户已把产品交付边界改为 Windows-only，下一闭环转向安全桌面壳、本地文件语义与 Windows 安装包。
 
+Iteration 102 将 Windows 文件能力限制在独立 Electron 适配层：main process 唯一拥有窗口会话路径、原生 dialog、关闭保护和 32 MiB JSON 原子读写；sandbox preload 由同一 IPC channel 清单生成，只暴露 8 个具名方法；renderer 无 `process`、无 `require`、无通用 IPC，也看不到系统路径。Open 使用一次性 token，只有 renderer 通过既有 Schema 校验后才绑定；Save / Save As 只有在相邻临时文件 flush + rename 成功后才清除 Editor dirty；Export 不改变绑定或 dirty。最终 180 / 180 unit（24 files）、1903-module production build 和 Electron 真实启动 1 / 1 通过；桌面端到端精确验证 7 modules / 10 interfaces、隔离边界，以及原生 Open → accept → Save As 的 UTF-8 字节一致性。Windows x64 NSIS 由 tag workflow 在 Windows runner 构建并生成 SHA-256；当前没有商业代码签名证书，因此发布物明确为未签名。`windows-desktop-app.png` 已人工复核：工作台层级、7 个模块、10 条路线、端口和 Properties 可辨，0 线中标签、0 卡片或面板遮挡。整体仍未达到 draw.io，下一轮继续图形交互与视觉迭代。
+
 ## 每次迭代的最小验证门槛
 
 每个完成的迭代必须留下与风险相称的证据：
 
 1. `pnpm typecheck` 或等价的 `pnpm build` 通过。
 2. 与改动 Owner 对应的测试通过；公共状态链变化必须跑完整 E2E。
-3. 浏览器中真实完成受影响旅程，不只调用内部函数。
+3. 在产品 Windows 壳或与风险对应的真实 renderer 中完成受影响旅程，不只调用内部函数。
 4. 检查 console error、page error、未处理 Promise 与可见失败反馈。
-5. UI 变化在 1680 × 1050 主视口截图检查；响应式或窄屏变化增加对应视口。
+5. UI 变化在 Windows 桌面窗口截图检查；窗口尺寸变化只覆盖桌面缩放、最大化与分屏，不建立移动端门禁。
 6. 记录本轮目标、根因、修改、证据和剩余问题到 `ROADMAP.md`。
 7. 不以更新截图、降低断言或扩大超时来掩盖回归。
 
@@ -272,13 +274,11 @@ Iteration 101 对照 draw.io / mxGraph 的 current-root、enter、exit 与 home 
 
 | 平台 | 开发门槛 | 正式发布门槛 |
 | --- | --- | --- |
-| Chromium / Linux | 每次完整 E2E | 必须通过 |
-| Chromium / Windows | 关键文件与编辑流程 | 必须通过 |
-| Chromium / macOS | 冒烟与快捷键差异 | 必须通过 |
-| Firefox | 除 Chromium CDP 性能采样外的全部产品 E2E | 必须通过 |
-| WebKit / Safari | 当前未覆盖 | 核心流程、布局和下载必须通过 |
+| Electron / Windows x64 | 启动、隔离、原生文件链、安装包构建 | 必须通过 |
+| Chromium / Linux | renderer 完整 E2E 与压力观测 | 内核回归证据，不作为独立产品发布 |
+| Firefox / Linux | 除 Chromium CDP 性能采样外的 renderer E2E | 兼容性回归证据，不作为独立产品发布 |
 
-快捷键显示和行为必须处理 Ctrl / Meta 差异。平台未验证时，文档只能说明已验证范围。
+产品快捷键以 Windows Ctrl 语义为准；renderer 测试中的 Meta 兼容只用于组件健壮性，不代表 macOS 产品支持。Windows 安装包未签名时必须公开说明，不能把可构建提升为已建立 SmartScreen 信誉。
 
 ## 测试分层
 

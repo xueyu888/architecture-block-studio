@@ -1,0 +1,9 @@
+{
+  "openDesign": "desktop:open-design",
+  "acceptOpenedDesign": "desktop:accept-opened-design",
+  "saveDesign": "desktop:save-design",
+  "clearFileBinding": "desktop:clear-file-binding",
+  "dirtyState": "desktop:dirty-state",
+  "saveBeforeClose": "desktop:save-before-close",
+  "saveBeforeCloseComplete": "desktop:save-before-close-complete"
+}
