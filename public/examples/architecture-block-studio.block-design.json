@@ -1,0 +1,1778 @@
+{
+  "schemaVersion": "2.1",
+  "id": "architecture-block-studio.source-architecture.v1",
+  "title": "Architecture Block Studio — Source Architecture",
+  "summary": "Generated from 65 managed source files and 27 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
+  "entryLevelId": "product-boundary",
+  "sourceRef": {
+    "label": "architecture-block-studio",
+    "href": "https://github.com/xueyu888/architecture-block-studio"
+  },
+  "interfaceDefinitions": {
+    "source-import.app": {
+      "kind": "internal",
+      "title": "Application Assembly public import surface",
+      "protocol": "ES module dependency",
+      "owner": "src/App.tsx",
+      "principle": "Consumers depend on the public exports owned by Application Assembly.",
+      "purpose": "Make compile-time use of Application Assembly explicit and source-verifiable.",
+      "boundary": "The edge proves a resolved relative source import, not runtime ownership or data mutation.",
+      "failure": "An unresolved, undeclared, fabricated, or cyclic module dependency fails the architecture gate.",
+      "sourceRef": {
+        "label": "src/App.tsx",
+        "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/App.tsx"
+      },
+      "code": "src/App.tsx",
+      "codeLanguage": "text",
+      "attributes": {
+        "architectureModuleId": "app",
+        "evidence": "TypeScript/CSS resolved relative import"
+      }
+    },
+    "source-import.canvas": {
+      "kind": "internal",
+      "title": "Canvas Interaction public import surface",
+      "protocol": "ES module dependency",
+      "owner": "src/components · canvas surface",
+      "principle": "Consumers depend on the public exports owned by Canvas Interaction.",
+      "purpose": "Make compile-time use of Canvas Interaction explicit and source-verifiable.",
+      "boundary": "The edge proves a resolved relative source import, not runtime ownership or data mutation.",
+      "failure": "An unresolved, undeclared, fabricated, or cyclic module dependency fails the architecture gate.",
+      "sourceRef": {
+        "label": "src/components · canvas surface",
+        "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/components/AlignmentGuideLayer.tsx"
+      },
+      "code": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/viewportAutoPan.ts",
+      "codeLanguage": "text",
+      "attributes": {
+        "architectureModuleId": "canvas",
+        "evidence": "TypeScript/CSS resolved relative import"
+      }
+    },
+    "source-import.editor": {
+      "kind": "internal",
+      "title": "Atomic Editor public import surface",
+      "protocol": "ES module dependency",
+      "owner": "src/editor",
+      "principle": "Consumers depend on the public exports owned by Atomic Editor.",
+      "purpose": "Make compile-time use of Atomic Editor explicit and source-verifiable.",
+      "boundary": "The edge proves a resolved relative source import, not runtime ownership or data mutation.",
+      "failure": "An unresolved, undeclared, fabricated, or cyclic module dependency fails the architecture gate.",
+      "sourceRef": {
+        "label": "src/editor",
+        "href": "https://github.com/xueyu888/architecture-block-studio/tree/main/src/editor"
+      },
+      "code": "src/editor/",
+      "codeLanguage": "text",
+      "attributes": {
+        "architectureModuleId": "editor",
+        "evidence": "TypeScript/CSS resolved relative import"
+      }
+    },
+    "source-import.io": {
+      "kind": "internal",
+      "title": "Canonical File I/O public import surface",
+      "protocol": "ES module dependency",
+      "owner": "src/io",
+      "principle": "Consumers depend on the public exports owned by Canonical File I/O.",
+      "purpose": "Make compile-time use of Canonical File I/O explicit and source-verifiable.",
+      "boundary": "The edge proves a resolved relative source import, not runtime ownership or data mutation.",
+      "failure": "An unresolved, undeclared, fabricated, or cyclic module dependency fails the architecture gate.",
+      "sourceRef": {
+        "label": "src/io",
+        "href": "https://github.com/xueyu888/architecture-block-studio/tree/main/src/io"
+      },
+      "code": "src/io/",
+      "codeLanguage": "text",
+      "attributes": {
+        "architectureModuleId": "io",
+        "evidence": "TypeScript/CSS resolved relative import"
+      }
+    },
+    "source-import.layout": {
+      "kind": "internal",
+      "title": "Layout Projection public import surface",
+      "protocol": "ES module dependency",
+      "owner": "src/layout",
+      "principle": "Consumers depend on the public exports owned by Layout Projection.",
+      "purpose": "Make compile-time use of Layout Projection explicit and source-verifiable.",
+      "boundary": "The edge proves a resolved relative source import, not runtime ownership or data mutation.",
+      "failure": "An unresolved, undeclared, fabricated, or cyclic module dependency fails the architecture gate.",
+      "sourceRef": {
+        "label": "src/layout",
+        "href": "https://github.com/xueyu888/architecture-block-studio/tree/main/src/layout"
+      },
+      "code": "src/layout/",
+      "codeLanguage": "text",
+      "attributes": {
+        "architectureModuleId": "layout",
+        "evidence": "TypeScript/CSS resolved relative import"
+      }
+    },
+    "source-import.model": {
+      "kind": "internal",
+      "title": "Model Contract public import surface",
+      "protocol": "ES module dependency",
+      "owner": "src/model",
+      "principle": "Consumers depend on the public exports owned by Model Contract.",
+      "purpose": "Make compile-time use of Model Contract explicit and source-verifiable.",
+      "boundary": "The edge proves a resolved relative source import, not runtime ownership or data mutation.",
+      "failure": "An unresolved, undeclared, fabricated, or cyclic module dependency fails the architecture gate.",
+      "sourceRef": {
+        "label": "src/model",
+        "href": "https://github.com/xueyu888/architecture-block-studio/tree/main/src/model"
+      },
+      "code": "src/model/",
+      "codeLanguage": "text",
+      "attributes": {
+        "architectureModuleId": "model",
+        "evidence": "TypeScript/CSS resolved relative import"
+      }
+    },
+    "source-import.protocols": {
+      "kind": "internal",
+      "title": "Command & Selection public import surface",
+      "protocol": "ES module dependency",
+      "owner": "src/studio/commands.ts · selection.ts",
+      "principle": "Consumers depend on the public exports owned by Command & Selection.",
+      "purpose": "Make compile-time use of Command & Selection explicit and source-verifiable.",
+      "boundary": "The edge proves a resolved relative source import, not runtime ownership or data mutation.",
+      "failure": "An unresolved, undeclared, fabricated, or cyclic module dependency fails the architecture gate.",
+      "sourceRef": {
+        "label": "src/studio/commands.ts · selection.ts",
+        "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/studio/commands.ts"
+      },
+      "code": "src/studio/commands.ts\nsrc/studio/selection.ts",
+      "codeLanguage": "text",
+      "attributes": {
+        "architectureModuleId": "protocols",
+        "evidence": "TypeScript/CSS resolved relative import"
+      }
+    },
+    "source-import.routing": {
+      "kind": "internal",
+      "title": "Routing Engine public import surface",
+      "protocol": "ES module dependency",
+      "owner": "src/routing",
+      "principle": "Consumers depend on the public exports owned by Routing Engine.",
+      "purpose": "Make compile-time use of Routing Engine explicit and source-verifiable.",
+      "boundary": "The edge proves a resolved relative source import, not runtime ownership or data mutation.",
+      "failure": "An unresolved, undeclared, fabricated, or cyclic module dependency fails the architecture gate.",
+      "sourceRef": {
+        "label": "src/routing",
+        "href": "https://github.com/xueyu888/architecture-block-studio/tree/main/src/routing"
+      },
+      "code": "src/routing/",
+      "codeLanguage": "text",
+      "attributes": {
+        "architectureModuleId": "routing",
+        "evidence": "TypeScript/CSS resolved relative import"
+      }
+    },
+    "source-import.studio": {
+      "kind": "internal",
+      "title": "Studio Orchestrator public import surface",
+      "protocol": "ES module dependency",
+      "owner": "src/studio · composition",
+      "principle": "Consumers depend on the public exports owned by Studio Orchestrator.",
+      "purpose": "Make compile-time use of Studio Orchestrator explicit and source-verifiable.",
+      "boundary": "The edge proves a resolved relative source import, not runtime ownership or data mutation.",
+      "failure": "An unresolved, undeclared, fabricated, or cyclic module dependency fails the architecture gate.",
+      "sourceRef": {
+        "label": "src/studio · composition",
+        "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/studio/BlockDesignStudio.tsx"
+      },
+      "code": "src/studio/BlockDesignStudio.tsx\nsrc/studio/fragmentPlacement.ts\nsrc/studio/index.ts",
+      "codeLanguage": "text",
+      "attributes": {
+        "architectureModuleId": "studio",
+        "evidence": "TypeScript/CSS resolved relative import"
+      }
+    },
+    "source-import.styles": {
+      "kind": "internal",
+      "title": "Visual Tokens public import surface",
+      "protocol": "ES module dependency",
+      "owner": "src/styles.css",
+      "principle": "Consumers depend on the public exports owned by Visual Tokens.",
+      "purpose": "Make compile-time use of Visual Tokens explicit and source-verifiable.",
+      "boundary": "The edge proves a resolved relative source import, not runtime ownership or data mutation.",
+      "failure": "An unresolved, undeclared, fabricated, or cyclic module dependency fails the architecture gate.",
+      "sourceRef": {
+        "label": "src/styles.css",
+        "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/styles.css"
+      },
+      "code": "src/styles.css",
+      "codeLanguage": "text",
+      "attributes": {
+        "architectureModuleId": "styles",
+        "evidence": "TypeScript/CSS resolved relative import"
+      }
+    },
+    "source-import.workbench": {
+      "kind": "internal",
+      "title": "Workbench Components public import surface",
+      "protocol": "ES module dependency",
+      "owner": "src/components · workbench surfaces",
+      "principle": "Consumers depend on the public exports owned by Workbench Components.",
+      "purpose": "Make compile-time use of Workbench Components explicit and source-verifiable.",
+      "boundary": "The edge proves a resolved relative source import, not runtime ownership or data mutation.",
+      "failure": "An unresolved, undeclared, fabricated, or cyclic module dependency fails the architecture gate.",
+      "sourceRef": {
+        "label": "src/components · workbench surfaces",
+        "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/components/CanvasContextMenu.tsx"
+      },
+      "code": "src/components/CanvasContextMenu.tsx\nsrc/components/CommandPalette.tsx\nsrc/components/DockWorkspace.tsx\nsrc/components/EditorDialogs.tsx\nsrc/components/HierarchyTree.tsx\nsrc/components/Inspector.tsx\nsrc/components/LoadDesignDialog.tsx\nsrc/components/MenuBar.tsx\nsrc/components/MessagesPanel.tsx\nsrc/components/StudioToolbar.tsx\nsrc/components/Tooltip.tsx\nsrc/components/contextMenuModel.ts\nsrc/components/hierarchyRows.ts\nsrc/components/useDialogFocus.ts",
+      "codeLanguage": "text",
+      "attributes": {
+        "architectureModuleId": "workbench",
+        "evidence": "TypeScript/CSS resolved relative import"
+      }
+    }
+  },
+  "levels": [
+    {
+      "id": "product-boundary",
+      "title": "Product Boundary",
+      "description": "Depth 1: the version-controlled architecture design product.",
+      "nodes": [
+        {
+          "id": "architecture-block-studio",
+          "title": "Architecture Block Studio",
+          "kind": "boundary",
+          "tone": "neutral",
+          "process": "ARCHITECTURE SCOPE",
+          "summary": "Design, visualize, and human-review code module and interface architecture as canonical JSON.",
+          "owner": "Architecture Block Studio",
+          "hierarchy": {
+            "childLevelId": "browser-runtime",
+            "portBindings": []
+          },
+          "ports": [],
+          "inspector": {
+            "principle": "Keep architecture intent explicit, inspectable, editable, and version controlled.",
+            "purpose": "Design, visualize, and human-review code module and interface architecture as canonical JSON.",
+            "boundary": "This product does not infer arbitrary business architecture inside its editing runtime.",
+            "failure": "Invalid child references or source drift fail validation without inventing a fallback scope.",
+            "sourceRef": {
+              "label": "README.md",
+              "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/README.md"
+            },
+            "code": "README.md",
+            "codeLanguage": "text",
+            "attributes": {
+              "architectureRole": "scope",
+              "hierarchyDepth": "1"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 40,
+              "y": 40
+            },
+            "width": 320,
+            "height": 190,
+            "pinned": true
+          }
+        }
+      ],
+      "connections": [],
+      "layout": {
+        "direction": "LEFT",
+        "spacing": 80,
+        "layerSpacing": 140
+      }
+    },
+    {
+      "id": "browser-runtime",
+      "title": "Browser Runtime",
+      "description": "Depth 2: standalone React application installation.",
+      "parentLevelId": "product-boundary",
+      "nodes": [
+        {
+          "id": "react-application",
+          "title": "React Browser Application",
+          "kind": "boundary",
+          "tone": "neutral",
+          "process": "ARCHITECTURE SCOPE",
+          "summary": "Mount one desktop workbench and load a replaceable BlockDesignDocument source.",
+          "owner": "Architecture Block Studio",
+          "hierarchy": {
+            "childLevelId": "workbench-composition",
+            "portBindings": []
+          },
+          "ports": [],
+          "inspector": {
+            "principle": "Install the editor without moving design facts into the host shell.",
+            "purpose": "Mount one desktop workbench and load a replaceable BlockDesignDocument source.",
+            "boundary": "The browser host does not own document semantics, layout, routing, or history.",
+            "failure": "Invalid child references or source drift fail validation without inventing a fallback scope.",
+            "sourceRef": {
+              "label": "src/main.tsx",
+              "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/main.tsx"
+            },
+            "code": "src/main.tsx",
+            "codeLanguage": "text",
+            "attributes": {
+              "architectureRole": "scope",
+              "hierarchyDepth": "2"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 40,
+              "y": 40
+            },
+            "width": 320,
+            "height": 190,
+            "pinned": true
+          }
+        }
+      ],
+      "connections": [],
+      "layout": {
+        "direction": "LEFT",
+        "spacing": 80,
+        "layerSpacing": 140
+      }
+    },
+    {
+      "id": "workbench-composition",
+      "title": "Workbench Composition",
+      "description": "Depth 3: application composition before source boundaries are expanded.",
+      "parentLevelId": "browser-runtime",
+      "nodes": [
+        {
+          "id": "module-architecture",
+          "title": "Module Architecture",
+          "kind": "boundary",
+          "tone": "neutral",
+          "process": "ARCHITECTURE SCOPE",
+          "summary": "Compose stable module owners through explicit one-way source dependencies.",
+          "owner": "Architecture Block Studio",
+          "hierarchy": {
+            "childLevelId": "source-architecture",
+            "portBindings": []
+          },
+          "ports": [],
+          "inspector": {
+            "principle": "Module internals own facts and behavior; the Studio owns only composition.",
+            "purpose": "Compose stable module owners through explicit one-way source dependencies.",
+            "boundary": "A grouping is not allowed to hide cycles, unmapped files, or fabricated dependencies.",
+            "failure": "Invalid child references or source drift fail validation without inventing a fallback scope.",
+            "sourceRef": {
+              "label": "docs/ARCHITECTURE.md",
+              "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/docs/ARCHITECTURE.md"
+            },
+            "code": "docs/ARCHITECTURE.md",
+            "codeLanguage": "text",
+            "attributes": {
+              "architectureRole": "scope",
+              "hierarchyDepth": "3"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 40,
+              "y": 40
+            },
+            "width": 320,
+            "height": 190,
+            "pinned": true
+          }
+        }
+      ],
+      "connections": [],
+      "layout": {
+        "direction": "LEFT",
+        "spacing": 80,
+        "layerSpacing": 140
+      }
+    },
+    {
+      "id": "source-architecture",
+      "title": "Verified Source Architecture",
+      "description": "Depth 4: a single source-verification boundary before concrete modules are projected.",
+      "parentLevelId": "workbench-composition",
+      "nodes": [
+        {
+          "id": "verified-source-graph",
+          "title": "Verified Source Graph",
+          "kind": "boundary",
+          "tone": "neutral",
+          "process": "ARCHITECTURE SCOPE",
+          "summary": "Every managed source file has one module owner and every cross-module edge resolves to a repository import.",
+          "owner": "Architecture Block Studio",
+          "hierarchy": {
+            "childLevelId": "runtime-modules",
+            "portBindings": []
+          },
+          "ports": [],
+          "inspector": {
+            "principle": "Keep source ownership and dependency direction executable instead of maintaining a decorative diagram.",
+            "purpose": "Every managed source file has one module owner and every cross-module edge resolves to a repository import.",
+            "boundary": "Semantic groups enrich module meaning but cannot hide files, fabricate edges, or permit cycles.",
+            "failure": "Invalid child references or source drift fail validation without inventing a fallback scope.",
+            "sourceRef": {
+              "label": "scripts/generate-self-architecture.mjs",
+              "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/scripts/generate-self-architecture.mjs"
+            },
+            "code": "scripts/generate-self-architecture.mjs",
+            "codeLanguage": "text",
+            "attributes": {
+              "architectureRole": "scope",
+              "hierarchyDepth": "4"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 40,
+              "y": 40
+            },
+            "width": 320,
+            "height": 190,
+            "pinned": true
+          }
+        }
+      ],
+      "connections": [],
+      "layout": {
+        "direction": "LEFT",
+        "spacing": 80,
+        "layerSpacing": 140
+      }
+    },
+    {
+      "id": "runtime-modules",
+      "title": "Runtime Source Modules",
+      "description": "Depth 5: twelve responsibility-owned source modules and every resolved cross-module dependency.",
+      "parentLevelId": "source-architecture",
+      "nodes": [
+        {
+          "id": "model",
+          "title": "Model Contract",
+          "kind": "domain",
+          "tone": "sand",
+          "process": "DESIGN CORE",
+          "summary": "Provide the unique design vocabulary consumed by every downstream capability.",
+          "owner": "src/model",
+          "ports": [
+            {
+              "id": "used-by-canvas",
+              "label": "Canvas",
+              "side": "right",
+              "direction": "input",
+              "dataType": "5 import declarations",
+              "required": true,
+              "order": 0
+            },
+            {
+              "id": "used-by-editor",
+              "label": "Editor",
+              "side": "right",
+              "direction": "input",
+              "dataType": "4 import declarations",
+              "required": true,
+              "order": 1
+            },
+            {
+              "id": "used-by-io",
+              "label": "I/O",
+              "side": "right",
+              "direction": "input",
+              "dataType": "2 import declarations",
+              "required": true,
+              "order": 2
+            },
+            {
+              "id": "used-by-layout",
+              "label": "Layout",
+              "side": "right",
+              "direction": "input",
+              "dataType": "4 import declarations",
+              "required": true,
+              "order": 3
+            },
+            {
+              "id": "used-by-protocols",
+              "label": "Protocols",
+              "side": "right",
+              "direction": "input",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 4
+            },
+            {
+              "id": "used-by-routing",
+              "label": "Routing",
+              "side": "right",
+              "direction": "input",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 5
+            },
+            {
+              "id": "used-by-studio",
+              "label": "Studio",
+              "side": "right",
+              "direction": "input",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 6
+            },
+            {
+              "id": "used-by-workbench",
+              "label": "Workbench",
+              "side": "right",
+              "direction": "input",
+              "dataType": "8 import declarations",
+              "required": true,
+              "order": 7
+            }
+          ],
+          "inspector": {
+            "principle": "Own BlockDesignDocument, schema evolution, semantic validation, and stateless graph queries.",
+            "purpose": "Provide the unique design vocabulary consumed by every downstream capability.",
+            "boundary": "No React, workspace, history, layout, routing, or file-download ownership.",
+            "failure": "Reject invalid structure at a field path and return semantic issues without mutating input.",
+            "sourceRef": {
+              "label": "src/model",
+              "href": "https://github.com/xueyu888/architecture-block-studio/tree/main/src/model"
+            },
+            "code": "src/model/",
+            "codeLanguage": "text",
+            "attributes": {
+              "architectureRole": "source-module",
+              "architectureModuleId": "model",
+              "architectureGroupId": "core",
+              "hierarchyDepth": "5",
+              "sourcePaths": "src/model/",
+              "sourceFileCount": "6"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 0,
+              "y": 360
+            },
+            "width": 286,
+            "height": 332,
+            "pinned": true
+          }
+        },
+        {
+          "id": "io",
+          "title": "Canonical File I/O",
+          "kind": "adapter",
+          "tone": "blue",
+          "process": "DESIGN CORE",
+          "summary": "Load URL or local files and serialize stable save/download output.",
+          "owner": "src/io",
+          "ports": [
+            {
+              "id": "used-by-app",
+              "label": "App",
+              "side": "right",
+              "direction": "input",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 0
+            },
+            {
+              "id": "used-by-editor",
+              "label": "Editor",
+              "side": "right",
+              "direction": "input",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 1
+            },
+            {
+              "id": "used-by-studio",
+              "label": "Studio",
+              "side": "right",
+              "direction": "input",
+              "dataType": "2 import declarations",
+              "required": true,
+              "order": 2
+            },
+            {
+              "id": "depends-model",
+              "label": "Model",
+              "side": "left",
+              "direction": "output",
+              "dataType": "2 import declarations",
+              "required": true,
+              "order": 0
+            }
+          ],
+          "inspector": {
+            "principle": "Own conversion between external JSON and a validated canonical document.",
+            "purpose": "Load URL or local files and serialize stable save/download output.",
+            "boundary": "Does not interpret module business meaning or retain an installed document.",
+            "failure": "Return explicit load errors and preserve the previously installed design.",
+            "sourceRef": {
+              "label": "src/io",
+              "href": "https://github.com/xueyu888/architecture-block-studio/tree/main/src/io"
+            },
+            "code": "src/io/",
+            "codeLanguage": "text",
+            "attributes": {
+              "architectureRole": "source-module",
+              "architectureModuleId": "io",
+              "architectureGroupId": "core",
+              "hierarchyDepth": "5",
+              "sourcePaths": "src/io/",
+              "sourceFileCount": "2"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 340,
+              "y": 40
+            },
+            "width": 286,
+            "height": 197,
+            "pinned": true
+          }
+        },
+        {
+          "id": "editor",
+          "title": "Atomic Editor",
+          "kind": "service",
+          "tone": "red",
+          "process": "DESIGN CORE",
+          "summary": "Turn validated user intent into one complete document transition and one undo boundary.",
+          "owner": "src/editor",
+          "ports": [
+            {
+              "id": "used-by-canvas",
+              "label": "Canvas",
+              "side": "right",
+              "direction": "input",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 0
+            },
+            {
+              "id": "used-by-studio",
+              "label": "Studio",
+              "side": "right",
+              "direction": "input",
+              "dataType": "2 import declarations",
+              "required": true,
+              "order": 1
+            },
+            {
+              "id": "used-by-workbench",
+              "label": "Workbench",
+              "side": "right",
+              "direction": "input",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 2
+            },
+            {
+              "id": "depends-io",
+              "label": "I/O",
+              "side": "left",
+              "direction": "output",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 0
+            },
+            {
+              "id": "depends-model",
+              "label": "Model",
+              "side": "left",
+              "direction": "output",
+              "dataType": "4 import declarations",
+              "required": true,
+              "order": 1
+            }
+          ],
+          "inspector": {
+            "principle": "Own atomic DesignOperation transforms, history, dirty state, and portable fragments.",
+            "purpose": "Turn validated user intent into one complete document transition and one undo boundary.",
+            "boundary": "Does not render, route, choose workspace focus, or perform external file transport.",
+            "failure": "Any failed precondition leaves the original document and history unchanged.",
+            "sourceRef": {
+              "label": "src/editor",
+              "href": "https://github.com/xueyu888/architecture-block-studio/tree/main/src/editor"
+            },
+            "code": "src/editor/",
+            "codeLanguage": "text",
+            "attributes": {
+              "architectureRole": "source-module",
+              "architectureModuleId": "editor",
+              "architectureGroupId": "core",
+              "hierarchyDepth": "5",
+              "sourcePaths": "src/editor/",
+              "sourceFileCount": "6"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 680,
+              "y": 70
+            },
+            "width": 286,
+            "height": 197,
+            "pinned": true
+          }
+        },
+        {
+          "id": "layout",
+          "title": "Layout Projection",
+          "kind": "projection",
+          "tone": "green",
+          "process": "GEOMETRY PROJECTION",
+          "summary": "Provide deterministic design-coordinate geometry without storing UI gestures.",
+          "owner": "src/layout",
+          "ports": [
+            {
+              "id": "used-by-canvas",
+              "label": "Canvas",
+              "side": "right",
+              "direction": "input",
+              "dataType": "5 import declarations",
+              "required": true,
+              "order": 0
+            },
+            {
+              "id": "used-by-routing",
+              "label": "Routing",
+              "side": "right",
+              "direction": "input",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 1
+            },
+            {
+              "id": "used-by-studio",
+              "label": "Studio",
+              "side": "right",
+              "direction": "input",
+              "dataType": "2 import declarations",
+              "required": true,
+              "order": 2
+            },
+            {
+              "id": "depends-model",
+              "label": "Model",
+              "side": "left",
+              "direction": "output",
+              "dataType": "4 import declarations",
+              "required": true,
+              "order": 0
+            }
+          ],
+          "inspector": {
+            "principle": "Derive compound node geometry, placement signatures, guides, arrangement, and resize math.",
+            "purpose": "Provide deterministic design-coordinate geometry without storing UI gestures.",
+            "boundary": "Cannot mutate BlockDesignDocument or depend on Studio and React components.",
+            "failure": "Invalid geometry or placement failures surface to the Studio without fallback facts.",
+            "sourceRef": {
+              "label": "src/layout",
+              "href": "https://github.com/xueyu888/architecture-block-studio/tree/main/src/layout"
+            },
+            "code": "src/layout/",
+            "codeLanguage": "text",
+            "attributes": {
+              "architectureRole": "source-module",
+              "architectureModuleId": "layout",
+              "architectureGroupId": "geometry",
+              "hierarchyDepth": "5",
+              "sourcePaths": "src/layout/",
+              "sourceFileCount": "8"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 340,
+              "y": 350
+            },
+            "width": 286,
+            "height": 197,
+            "pinned": true
+          }
+        },
+        {
+          "id": "routing",
+          "title": "Routing Engine",
+          "kind": "projection",
+          "tone": "green",
+          "process": "GEOMETRY PROJECTION",
+          "summary": "Produce readable obstacle-aware routes and disposable connection previews.",
+          "owner": "src/routing",
+          "ports": [
+            {
+              "id": "used-by-canvas",
+              "label": "Canvas",
+              "side": "right",
+              "direction": "input",
+              "dataType": "4 import declarations",
+              "required": true,
+              "order": 0
+            },
+            {
+              "id": "depends-layout",
+              "label": "Layout",
+              "side": "left",
+              "direction": "output",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 0
+            },
+            {
+              "id": "depends-model",
+              "label": "Model",
+              "side": "left",
+              "direction": "output",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 1
+            }
+          ],
+          "inspector": {
+            "principle": "Own scene adaptation, deterministic orthogonal solving, route editing, and independent verification.",
+            "purpose": "Produce readable obstacle-aware routes and disposable connection previews.",
+            "boundary": "Does not move modules, own gestures, or write automatic routes into JSON.",
+            "failure": "Return an explicit unresolved result instead of using a second hidden router.",
+            "sourceRef": {
+              "label": "src/routing",
+              "href": "https://github.com/xueyu888/architecture-block-studio/tree/main/src/routing"
+            },
+            "code": "src/routing/",
+            "codeLanguage": "text",
+            "attributes": {
+              "architectureRole": "source-module",
+              "architectureModuleId": "routing",
+              "architectureGroupId": "geometry",
+              "hierarchyDepth": "5",
+              "sourcePaths": "src/routing/",
+              "sourceFileCount": "11"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 680,
+              "y": 380
+            },
+            "width": 286,
+            "height": 184,
+            "pinned": true
+          }
+        },
+        {
+          "id": "protocols",
+          "title": "Command & Selection",
+          "kind": "protocol",
+          "tone": "purple",
+          "process": "STUDIO PROTOCOLS",
+          "summary": "Let menus, keyboard, Canvas, Inspector, and Studio speak one interaction protocol.",
+          "owner": "src/studio/commands.ts · selection.ts",
+          "ports": [
+            {
+              "id": "used-by-canvas",
+              "label": "Canvas",
+              "side": "right",
+              "direction": "input",
+              "dataType": "2 import declarations",
+              "required": true,
+              "order": 0
+            },
+            {
+              "id": "used-by-studio",
+              "label": "Studio",
+              "side": "right",
+              "direction": "input",
+              "dataType": "3 import declarations",
+              "required": true,
+              "order": 1
+            },
+            {
+              "id": "used-by-workbench",
+              "label": "Workbench",
+              "side": "right",
+              "direction": "input",
+              "dataType": "9 import declarations",
+              "required": true,
+              "order": 2
+            },
+            {
+              "id": "depends-model",
+              "label": "Model",
+              "side": "left",
+              "direction": "output",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 0
+            }
+          ],
+          "inspector": {
+            "principle": "Own the leaf contracts for command availability and canonical workspace selection.",
+            "purpose": "Let menus, keyboard, Canvas, Inspector, and Studio speak one interaction protocol.",
+            "boundary": "Does not render UI, execute editor mutations, or own viewport navigation.",
+            "failure": "Unavailable commands carry one visible reason; invalid selections resolve without hidden cursors.",
+            "sourceRef": {
+              "label": "src/studio/commands.ts · selection.ts",
+              "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/studio/commands.ts"
+            },
+            "code": "src/studio/commands.ts\nsrc/studio/selection.ts",
+            "codeLanguage": "text",
+            "attributes": {
+              "architectureRole": "source-module",
+              "architectureModuleId": "protocols",
+              "architectureGroupId": "protocols",
+              "hierarchyDepth": "5",
+              "sourcePaths": "src/studio/commands.ts\nsrc/studio/selection.ts",
+              "sourceFileCount": "2"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 340,
+              "y": 680
+            },
+            "width": 286,
+            "height": 197,
+            "pinned": true
+          }
+        },
+        {
+          "id": "workbench",
+          "title": "Workbench Components",
+          "kind": "view",
+          "tone": "blue",
+          "process": "INTERACTION SURFACE",
+          "summary": "Project current commands, selection, document, and issues into discoverable controls.",
+          "owner": "src/components · workbench surfaces",
+          "ports": [
+            {
+              "id": "used-by-canvas",
+              "label": "Canvas",
+              "side": "right",
+              "direction": "input",
+              "dataType": "2 import declarations",
+              "required": true,
+              "order": 0
+            },
+            {
+              "id": "used-by-studio",
+              "label": "Studio",
+              "side": "right",
+              "direction": "input",
+              "dataType": "11 import declarations",
+              "required": true,
+              "order": 1
+            },
+            {
+              "id": "depends-editor",
+              "label": "Editor",
+              "side": "left",
+              "direction": "output",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 0
+            },
+            {
+              "id": "depends-model",
+              "label": "Model",
+              "side": "left",
+              "direction": "output",
+              "dataType": "8 import declarations",
+              "required": true,
+              "order": 1
+            },
+            {
+              "id": "depends-protocols",
+              "label": "Protocols",
+              "side": "left",
+              "direction": "output",
+              "dataType": "9 import declarations",
+              "required": true,
+              "order": 2
+            }
+          ],
+          "inspector": {
+            "principle": "Own accessible menus, dialogs, docks, navigation trees, Inspector, and review surfaces.",
+            "purpose": "Project current commands, selection, document, and issues into discoverable controls.",
+            "boundary": "Does not duplicate eligibility, selection, schema, editing, or route-solving rules.",
+            "failure": "Preserve focus and drafts, expose disabled reasons, and send rejected actions back visibly.",
+            "sourceRef": {
+              "label": "src/components · workbench surfaces",
+              "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/components/CanvasContextMenu.tsx"
+            },
+            "code": "src/components/CanvasContextMenu.tsx\nsrc/components/CommandPalette.tsx\nsrc/components/DockWorkspace.tsx\nsrc/components/EditorDialogs.tsx\nsrc/components/HierarchyTree.tsx\nsrc/components/Inspector.tsx\nsrc/components/LoadDesignDialog.tsx\nsrc/components/MenuBar.tsx\nsrc/components/MessagesPanel.tsx\nsrc/components/StudioToolbar.tsx\nsrc/components/Tooltip.tsx\nsrc/components/contextMenuModel.ts\nsrc/components/hierarchyRows.ts\nsrc/components/useDialogFocus.ts",
+            "codeLanguage": "text",
+            "attributes": {
+              "architectureRole": "source-module",
+              "architectureModuleId": "workbench",
+              "architectureGroupId": "interaction",
+              "hierarchyDepth": "5",
+              "sourcePaths": "src/components/CanvasContextMenu.tsx\nsrc/components/CommandPalette.tsx\nsrc/components/DockWorkspace.tsx\nsrc/components/EditorDialogs.tsx\nsrc/components/HierarchyTree.tsx\nsrc/components/Inspector.tsx\nsrc/components/LoadDesignDialog.tsx\nsrc/components/MenuBar.tsx\nsrc/components/MessagesPanel.tsx\nsrc/components/StudioToolbar.tsx\nsrc/components/Tooltip.tsx\nsrc/components/contextMenuModel.ts\nsrc/components/hierarchyRows.ts\nsrc/components/useDialogFocus.ts",
+              "sourceFileCount": "14"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 680,
+              "y": 720
+            },
+            "width": 286,
+            "height": 197,
+            "pinned": true
+          }
+        },
+        {
+          "id": "canvas",
+          "title": "Canvas Interaction",
+          "kind": "view",
+          "tone": "blue",
+          "process": "INTERACTION SURFACE",
+          "summary": "Make module and interface design directly operable while preserving canonical intent boundaries.",
+          "owner": "src/components · canvas surface",
+          "ports": [
+            {
+              "id": "used-by-studio",
+              "label": "Studio",
+              "side": "right",
+              "direction": "input",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 0
+            },
+            {
+              "id": "depends-editor",
+              "label": "Editor",
+              "side": "left",
+              "direction": "output",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 0
+            },
+            {
+              "id": "depends-layout",
+              "label": "Layout",
+              "side": "left",
+              "direction": "output",
+              "dataType": "5 import declarations",
+              "required": true,
+              "order": 1
+            },
+            {
+              "id": "depends-model",
+              "label": "Model",
+              "side": "left",
+              "direction": "output",
+              "dataType": "5 import declarations",
+              "required": true,
+              "order": 2
+            },
+            {
+              "id": "depends-protocols",
+              "label": "Protocols",
+              "side": "left",
+              "direction": "output",
+              "dataType": "2 import declarations",
+              "required": true,
+              "order": 3
+            },
+            {
+              "id": "depends-routing",
+              "label": "Routing",
+              "side": "left",
+              "direction": "output",
+              "dataType": "4 import declarations",
+              "required": true,
+              "order": 4
+            },
+            {
+              "id": "depends-workbench",
+              "label": "Workbench",
+              "side": "left",
+              "direction": "output",
+              "dataType": "2 import declarations",
+              "required": true,
+              "order": 5
+            }
+          ],
+          "inspector": {
+            "principle": "Own React Flow projection, direct gestures, viewport transforms, and disposable previews.",
+            "purpose": "Make module and interface design directly operable while preserving canonical intent boundaries.",
+            "boundary": "Cannot become a document, command, routing, or Inspector draft fact source.",
+            "failure": "Cancel transient gestures cleanly and restore the last accepted document projection.",
+            "sourceRef": {
+              "label": "src/components · canvas surface",
+              "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/components/AlignmentGuideLayer.tsx"
+            },
+            "code": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/viewportAutoPan.ts",
+            "codeLanguage": "text",
+            "attributes": {
+              "architectureRole": "source-module",
+              "architectureModuleId": "canvas",
+              "architectureGroupId": "interaction",
+              "hierarchyDepth": "5",
+              "sourcePaths": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/viewportAutoPan.ts",
+              "sourceFileCount": "10"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 1030,
+              "y": 380
+            },
+            "width": 286,
+            "height": 278,
+            "pinned": true
+          }
+        },
+        {
+          "id": "studio",
+          "title": "Studio Orchestrator",
+          "kind": "orchestrator",
+          "tone": "red",
+          "process": "STUDIO COMPOSITION",
+          "summary": "Coordinate selection, draft protection, commands, layout, routing, dialogs, and feedback.",
+          "owner": "src/studio · composition",
+          "ports": [
+            {
+              "id": "used-by-app",
+              "label": "App",
+              "side": "right",
+              "direction": "input",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 0
+            },
+            {
+              "id": "depends-canvas",
+              "label": "Canvas",
+              "side": "left",
+              "direction": "output",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 0
+            },
+            {
+              "id": "depends-editor",
+              "label": "Editor",
+              "side": "left",
+              "direction": "output",
+              "dataType": "2 import declarations",
+              "required": true,
+              "order": 1
+            },
+            {
+              "id": "depends-io",
+              "label": "I/O",
+              "side": "left",
+              "direction": "output",
+              "dataType": "2 import declarations",
+              "required": true,
+              "order": 2
+            },
+            {
+              "id": "depends-layout",
+              "label": "Layout",
+              "side": "left",
+              "direction": "output",
+              "dataType": "2 import declarations",
+              "required": true,
+              "order": 3
+            },
+            {
+              "id": "depends-model",
+              "label": "Model",
+              "side": "left",
+              "direction": "output",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 4
+            },
+            {
+              "id": "depends-protocols",
+              "label": "Protocols",
+              "side": "left",
+              "direction": "output",
+              "dataType": "3 import declarations",
+              "required": true,
+              "order": 5
+            },
+            {
+              "id": "depends-workbench",
+              "label": "Workbench",
+              "side": "left",
+              "direction": "output",
+              "dataType": "11 import declarations",
+              "required": true,
+              "order": 6
+            }
+          ],
+          "inspector": {
+            "principle": "Compose public module contracts into the complete editing, review, and file workflow.",
+            "purpose": "Coordinate selection, draft protection, commands, layout, routing, dialogs, and feedback.",
+            "boundary": "Does not redefine any owned model, editor, file, geometry, protocol, or component rule.",
+            "failure": "Reject unsafe transitions visibly and keep document, history, selection, and focus recoverable.",
+            "sourceRef": {
+              "label": "src/studio · composition",
+              "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/studio/BlockDesignStudio.tsx"
+            },
+            "code": "src/studio/BlockDesignStudio.tsx\nsrc/studio/fragmentPlacement.ts\nsrc/studio/index.ts",
+            "codeLanguage": "text",
+            "attributes": {
+              "architectureRole": "source-module",
+              "architectureModuleId": "studio",
+              "architectureGroupId": "composition",
+              "hierarchyDepth": "5",
+              "sourcePaths": "src/studio/BlockDesignStudio.tsx\nsrc/studio/fragmentPlacement.ts\nsrc/studio/index.ts",
+              "sourceFileCount": "3"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 1380,
+              "y": 380
+            },
+            "width": 286,
+            "height": 305,
+            "pinned": true
+          }
+        },
+        {
+          "id": "styles",
+          "title": "Visual Tokens",
+          "kind": "style",
+          "tone": "neutral",
+          "process": "APPLICATION DELIVERY",
+          "summary": "Keep surfaces, typography, spacing, z-order, focus, and motion visually coherent.",
+          "owner": "src/styles.css",
+          "ports": [
+            {
+              "id": "used-by-bootstrap",
+              "label": "Bootstrap",
+              "side": "right",
+              "direction": "input",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 0
+            }
+          ],
+          "inspector": {
+            "principle": "Own shared visual constants and semantic component presentation.",
+            "purpose": "Keep surfaces, typography, spacing, z-order, focus, and motion visually coherent.",
+            "boundary": "Contains no document, command, selection, layout, or routing semantics.",
+            "failure": "Unsupported states remain visible through semantic classes instead of hidden inline overrides.",
+            "sourceRef": {
+              "label": "src/styles.css",
+              "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/styles.css"
+            },
+            "code": "src/styles.css",
+            "codeLanguage": "text",
+            "attributes": {
+              "architectureRole": "source-module",
+              "architectureModuleId": "styles",
+              "architectureGroupId": "application",
+              "hierarchyDepth": "5",
+              "sourcePaths": "src/styles.css",
+              "sourceFileCount": "1"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 1730,
+              "y": 740
+            },
+            "width": 286,
+            "height": 184,
+            "pinned": true
+          }
+        },
+        {
+          "id": "app",
+          "title": "Application Assembly",
+          "kind": "assembly",
+          "tone": "neutral",
+          "process": "APPLICATION DELIVERY",
+          "summary": "Provide the browser application's minimal product entry contract.",
+          "owner": "src/App.tsx",
+          "ports": [
+            {
+              "id": "used-by-bootstrap",
+              "label": "Bootstrap",
+              "side": "right",
+              "direction": "input",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 0
+            },
+            {
+              "id": "depends-io",
+              "label": "I/O",
+              "side": "left",
+              "direction": "output",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 0
+            },
+            {
+              "id": "depends-studio",
+              "label": "Studio",
+              "side": "left",
+              "direction": "output",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 1
+            }
+          ],
+          "inspector": {
+            "principle": "Choose the initial design source and assemble the standalone Studio.",
+            "purpose": "Provide the browser application's minimal product entry contract.",
+            "boundary": "Does not own design content, commands, loading rules, or editor state.",
+            "failure": "Delegates load failures to the Studio while retaining the current installed document.",
+            "sourceRef": {
+              "label": "src/App.tsx",
+              "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/App.tsx"
+            },
+            "code": "src/App.tsx",
+            "codeLanguage": "text",
+            "attributes": {
+              "architectureRole": "source-module",
+              "architectureModuleId": "app",
+              "architectureGroupId": "application",
+              "hierarchyDepth": "5",
+              "sourcePaths": "src/App.tsx",
+              "sourceFileCount": "1"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 1730,
+              "y": 380
+            },
+            "width": 286,
+            "height": 184,
+            "pinned": true
+          }
+        },
+        {
+          "id": "bootstrap",
+          "title": "Browser Bootstrap",
+          "kind": "entrypoint",
+          "tone": "neutral",
+          "process": "APPLICATION DELIVERY",
+          "summary": "Bridge the HTML host to the typed application assembly.",
+          "owner": "src/main.tsx",
+          "ports": [
+            {
+              "id": "depends-app",
+              "label": "App",
+              "side": "left",
+              "direction": "output",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 0
+            },
+            {
+              "id": "depends-styles",
+              "label": "Tokens",
+              "side": "left",
+              "direction": "output",
+              "dataType": "1 import declarations",
+              "required": true,
+              "order": 1
+            }
+          ],
+          "inspector": {
+            "principle": "Mount one React root and install the application-wide visual stylesheet.",
+            "purpose": "Bridge the HTML host to the typed application assembly.",
+            "boundary": "Contains no product workflow, document, or geometry decisions.",
+            "failure": "A missing host root fails immediately instead of mounting a partial Studio.",
+            "sourceRef": {
+              "label": "src/main.tsx",
+              "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/main.tsx"
+            },
+            "code": "src/main.tsx",
+            "codeLanguage": "text",
+            "attributes": {
+              "architectureRole": "source-module",
+              "architectureModuleId": "bootstrap",
+              "architectureGroupId": "application",
+              "hierarchyDepth": "5",
+              "sourcePaths": "src/main.tsx",
+              "sourceFileCount": "1"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 2080,
+              "y": 380
+            },
+            "width": 286,
+            "height": 184,
+            "pinned": true
+          }
+        }
+      ],
+      "connections": [
+        {
+          "id": "import-app-to-io",
+          "interfaceId": "source-import.io",
+          "label": "Application Assembly → Canonical File I/O · 1 import declaration",
+          "source": {
+            "nodeId": "app",
+            "portId": "depends-io"
+          },
+          "target": {
+            "nodeId": "io",
+            "portId": "used-by-app"
+          }
+        },
+        {
+          "id": "import-app-to-studio",
+          "interfaceId": "source-import.studio",
+          "label": "Application Assembly → Studio Orchestrator · 1 import declaration",
+          "source": {
+            "nodeId": "app",
+            "portId": "depends-studio"
+          },
+          "target": {
+            "nodeId": "studio",
+            "portId": "used-by-app"
+          }
+        },
+        {
+          "id": "import-bootstrap-to-app",
+          "interfaceId": "source-import.app",
+          "label": "Browser Bootstrap → Application Assembly · 1 import declaration",
+          "source": {
+            "nodeId": "bootstrap",
+            "portId": "depends-app"
+          },
+          "target": {
+            "nodeId": "app",
+            "portId": "used-by-bootstrap"
+          }
+        },
+        {
+          "id": "import-bootstrap-to-styles",
+          "interfaceId": "source-import.styles",
+          "label": "Browser Bootstrap → Visual Tokens · 1 import declaration",
+          "source": {
+            "nodeId": "bootstrap",
+            "portId": "depends-styles"
+          },
+          "target": {
+            "nodeId": "styles",
+            "portId": "used-by-bootstrap"
+          }
+        },
+        {
+          "id": "import-canvas-to-editor",
+          "interfaceId": "source-import.editor",
+          "label": "Canvas Interaction → Atomic Editor · 1 import declaration",
+          "source": {
+            "nodeId": "canvas",
+            "portId": "depends-editor"
+          },
+          "target": {
+            "nodeId": "editor",
+            "portId": "used-by-canvas"
+          }
+        },
+        {
+          "id": "import-canvas-to-layout",
+          "interfaceId": "source-import.layout",
+          "label": "Canvas Interaction → Layout Projection · 5 import declarations",
+          "source": {
+            "nodeId": "canvas",
+            "portId": "depends-layout"
+          },
+          "target": {
+            "nodeId": "layout",
+            "portId": "used-by-canvas"
+          }
+        },
+        {
+          "id": "import-canvas-to-model",
+          "interfaceId": "source-import.model",
+          "label": "Canvas Interaction → Model Contract · 5 import declarations",
+          "source": {
+            "nodeId": "canvas",
+            "portId": "depends-model"
+          },
+          "target": {
+            "nodeId": "model",
+            "portId": "used-by-canvas"
+          }
+        },
+        {
+          "id": "import-canvas-to-protocols",
+          "interfaceId": "source-import.protocols",
+          "label": "Canvas Interaction → Command & Selection · 2 import declarations",
+          "source": {
+            "nodeId": "canvas",
+            "portId": "depends-protocols"
+          },
+          "target": {
+            "nodeId": "protocols",
+            "portId": "used-by-canvas"
+          }
+        },
+        {
+          "id": "import-canvas-to-routing",
+          "interfaceId": "source-import.routing",
+          "label": "Canvas Interaction → Routing Engine · 4 import declarations",
+          "source": {
+            "nodeId": "canvas",
+            "portId": "depends-routing"
+          },
+          "target": {
+            "nodeId": "routing",
+            "portId": "used-by-canvas"
+          }
+        },
+        {
+          "id": "import-canvas-to-workbench",
+          "interfaceId": "source-import.workbench",
+          "label": "Canvas Interaction → Workbench Components · 2 import declarations",
+          "source": {
+            "nodeId": "canvas",
+            "portId": "depends-workbench"
+          },
+          "target": {
+            "nodeId": "workbench",
+            "portId": "used-by-canvas"
+          }
+        },
+        {
+          "id": "import-editor-to-io",
+          "interfaceId": "source-import.io",
+          "label": "Atomic Editor → Canonical File I/O · 1 import declaration",
+          "source": {
+            "nodeId": "editor",
+            "portId": "depends-io"
+          },
+          "target": {
+            "nodeId": "io",
+            "portId": "used-by-editor"
+          }
+        },
+        {
+          "id": "import-editor-to-model",
+          "interfaceId": "source-import.model",
+          "label": "Atomic Editor → Model Contract · 4 import declarations",
+          "source": {
+            "nodeId": "editor",
+            "portId": "depends-model"
+          },
+          "target": {
+            "nodeId": "model",
+            "portId": "used-by-editor"
+          }
+        },
+        {
+          "id": "import-io-to-model",
+          "interfaceId": "source-import.model",
+          "label": "Canonical File I/O → Model Contract · 2 import declarations",
+          "source": {
+            "nodeId": "io",
+            "portId": "depends-model"
+          },
+          "target": {
+            "nodeId": "model",
+            "portId": "used-by-io"
+          }
+        },
+        {
+          "id": "import-layout-to-model",
+          "interfaceId": "source-import.model",
+          "label": "Layout Projection → Model Contract · 4 import declarations",
+          "source": {
+            "nodeId": "layout",
+            "portId": "depends-model"
+          },
+          "target": {
+            "nodeId": "model",
+            "portId": "used-by-layout"
+          }
+        },
+        {
+          "id": "import-protocols-to-model",
+          "interfaceId": "source-import.model",
+          "label": "Command & Selection → Model Contract · 1 import declaration",
+          "source": {
+            "nodeId": "protocols",
+            "portId": "depends-model"
+          },
+          "target": {
+            "nodeId": "model",
+            "portId": "used-by-protocols"
+          }
+        },
+        {
+          "id": "import-routing-to-layout",
+          "interfaceId": "source-import.layout",
+          "label": "Routing Engine → Layout Projection · 1 import declaration",
+          "source": {
+            "nodeId": "routing",
+            "portId": "depends-layout"
+          },
+          "target": {
+            "nodeId": "layout",
+            "portId": "used-by-routing"
+          }
+        },
+        {
+          "id": "import-routing-to-model",
+          "interfaceId": "source-import.model",
+          "label": "Routing Engine → Model Contract · 1 import declaration",
+          "source": {
+            "nodeId": "routing",
+            "portId": "depends-model"
+          },
+          "target": {
+            "nodeId": "model",
+            "portId": "used-by-routing"
+          }
+        },
+        {
+          "id": "import-studio-to-canvas",
+          "interfaceId": "source-import.canvas",
+          "label": "Studio Orchestrator → Canvas Interaction · 1 import declaration",
+          "source": {
+            "nodeId": "studio",
+            "portId": "depends-canvas"
+          },
+          "target": {
+            "nodeId": "canvas",
+            "portId": "used-by-studio"
+          }
+        },
+        {
+          "id": "import-studio-to-editor",
+          "interfaceId": "source-import.editor",
+          "label": "Studio Orchestrator → Atomic Editor · 2 import declarations",
+          "source": {
+            "nodeId": "studio",
+            "portId": "depends-editor"
+          },
+          "target": {
+            "nodeId": "editor",
+            "portId": "used-by-studio"
+          }
+        },
+        {
+          "id": "import-studio-to-io",
+          "interfaceId": "source-import.io",
+          "label": "Studio Orchestrator → Canonical File I/O · 2 import declarations",
+          "source": {
+            "nodeId": "studio",
+            "portId": "depends-io"
+          },
+          "target": {
+            "nodeId": "io",
+            "portId": "used-by-studio"
+          }
+        },
+        {
+          "id": "import-studio-to-layout",
+          "interfaceId": "source-import.layout",
+          "label": "Studio Orchestrator → Layout Projection · 2 import declarations",
+          "source": {
+            "nodeId": "studio",
+            "portId": "depends-layout"
+          },
+          "target": {
+            "nodeId": "layout",
+            "portId": "used-by-studio"
+          }
+        },
+        {
+          "id": "import-studio-to-model",
+          "interfaceId": "source-import.model",
+          "label": "Studio Orchestrator → Model Contract · 1 import declaration",
+          "source": {
+            "nodeId": "studio",
+            "portId": "depends-model"
+          },
+          "target": {
+            "nodeId": "model",
+            "portId": "used-by-studio"
+          }
+        },
+        {
+          "id": "import-studio-to-protocols",
+          "interfaceId": "source-import.protocols",
+          "label": "Studio Orchestrator → Command & Selection · 3 import declarations",
+          "source": {
+            "nodeId": "studio",
+            "portId": "depends-protocols"
+          },
+          "target": {
+            "nodeId": "protocols",
+            "portId": "used-by-studio"
+          }
+        },
+        {
+          "id": "import-studio-to-workbench",
+          "interfaceId": "source-import.workbench",
+          "label": "Studio Orchestrator → Workbench Components · 11 import declarations",
+          "source": {
+            "nodeId": "studio",
+            "portId": "depends-workbench"
+          },
+          "target": {
+            "nodeId": "workbench",
+            "portId": "used-by-studio"
+          }
+        },
+        {
+          "id": "import-workbench-to-editor",
+          "interfaceId": "source-import.editor",
+          "label": "Workbench Components → Atomic Editor · 1 import declaration",
+          "source": {
+            "nodeId": "workbench",
+            "portId": "depends-editor"
+          },
+          "target": {
+            "nodeId": "editor",
+            "portId": "used-by-workbench"
+          }
+        },
+        {
+          "id": "import-workbench-to-model",
+          "interfaceId": "source-import.model",
+          "label": "Workbench Components → Model Contract · 8 import declarations",
+          "source": {
+            "nodeId": "workbench",
+            "portId": "depends-model"
+          },
+          "target": {
+            "nodeId": "model",
+            "portId": "used-by-workbench"
+          }
+        },
+        {
+          "id": "import-workbench-to-protocols",
+          "interfaceId": "source-import.protocols",
+          "label": "Workbench Components → Command & Selection · 9 import declarations",
+          "source": {
+            "nodeId": "workbench",
+            "portId": "depends-protocols"
+          },
+          "target": {
+            "nodeId": "protocols",
+            "portId": "used-by-workbench"
+          }
+        }
+      ],
+      "layout": {
+        "direction": "LEFT",
+        "spacing": 84,
+        "layerSpacing": 144
+      }
+    }
+  ]
+}

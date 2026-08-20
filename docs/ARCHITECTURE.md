@@ -46,6 +46,53 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 
 当前依赖核查中，`model` 不依赖任何上层模块，`layout` 与 `io` 只消费模型合同，`routing` 只消费几何库类型；`editor` 只额外复用 `io` 的纯 canonical snapshot 序列化，避免 dirty、历史和文件输出出现第二套规则。组件对 `studio` 的引用仅指向无 UI 依赖的 `commands` / `selection` 叶子协议，这两个协议不反向导入组件；`BlockDesignStudio` 才负责组合具体组件。文件行数本身不是拆分依据，只有独立状态、规则或变化原因出现时才建立新 Owner。
 
+## 源码架构示例与一致性门禁
+
+`scripts/generate-self-architecture.mjs` 是“源码事实如何投影成示例设计”的单一适配器。`src` 中真实存在的 TypeScript / TSX / CSS 文件与可解析相对 import 是源事实；脚本中的 `MODULES` 只拥有稳定责任边界、源码归属、说明和展示位置；生成的 `public/examples/architecture-block-studio.block-design.json` 是可重建投影，不得反向定义源码依赖。浏览器运行时仍只消费公开 JSON，不读取仓库文件系统。
+
+```mermaid
+flowchart LR
+  bootstrap[Browser Bootstrap] --> app[Application Assembly]
+  bootstrap --> styles[Visual Tokens]
+  app --> studio[Studio Orchestrator]
+  app --> io[Canonical File I/O]
+  studio --> canvas[Canvas Interaction]
+  studio --> workbench[Workbench Components]
+  studio --> protocols[Command & Selection]
+  studio --> editor[Atomic Editor]
+  studio --> layout[Layout Projection]
+  studio --> io
+  studio --> model[Model Contract]
+  canvas --> workbench
+  canvas --> protocols
+  canvas --> editor
+  canvas --> routing[Routing Engine]
+  canvas --> layout
+  canvas --> model
+  workbench --> protocols
+  workbench --> editor
+  workbench --> model
+  routing --> layout
+  routing --> model
+  editor --> io
+  editor --> model
+  protocols --> model
+  layout --> model
+  io --> model
+```
+
+图中箭头严格表达“左侧源码模块 import 右侧模块”，不是运行时数据流，也不按卡片相对位置猜方向。`Studio Orchestrator` 与叶子 `Command & Selection` 分开，是因为前者拥有产品组合，后者只拥有无 UI 依赖的命令和选择协议；Canvas 与 Workbench 也按直接画布手势和外围审查界面分开。这个划分恰好覆盖当前 65 个受管源码文件，不能漏文件或让一个文件同时属于多个模块。
+
+生成和验证必须保持以下不变量：
+
+- 每个受管源码文件恰好映射到一个责任模块。
+- 每条生成连接都由至少一条已解析相对 import 支撑；每条跨模块 import 也必须进入生成图。
+- 依赖图必须无环；否则脚本报告完整环路径并失败。
+- 示例固定表达 product → browser runtime → workbench composition → verified source architecture → runtime modules 五层上下文；层级只是审查范围，不隐藏第 5 层真实依赖。
+- `pnpm verify:self-architecture` 按字节比较当前投影与已提交示例；production build 先执行该门禁，漂移时不得继续构建陈旧架构图。
+
+失败只阻止生成或构建，不自动移动源码、不改 import，也不猜测新的业务边界。若源码出现无法唯一归属的新职责，必须先明确 Owner，再更新适配器；不能用通配 fallback 把它塞进大一统模块。
+
 ## 工作台与视觉系统
 
 工作台采用稳定的专业画布骨架：文档标题和校验摘要位于顶层，菜单负责完整命令发现，分组工具栏承载高频动作；Sources、Canvas、Inspector 构成主要横向工作区，Messages / DRC 与状态栏提供按需反馈。Canvas 始终是视觉主面，左右面板是上下文，只有选择、错误、dirty 和主操作使用强调色。改变面板显隐、Dock 布局或视觉样式不会改变设计事实。

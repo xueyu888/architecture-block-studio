@@ -18,7 +18,9 @@
   "packageManager": "pnpm@10.7.0",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "pnpm verify:self-architecture && tsc -b && vite build",
+    "generate:self-architecture": "node scripts/generate-self-architecture.mjs",
+    "verify:self-architecture": "node scripts/generate-self-architecture.mjs --check",
     "test": "pnpm test:unit && pnpm test:e2e",
     "test:unit": "vitest run",
     "test:performance": "vitest run --config vitest.performance.config.ts",

@@ -3123,6 +3123,171 @@ test("expands five hierarchy layers and audits every visible route and pair", as
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("Layer 4 Boundary");
 });
 
+test("loads the repository-derived five-depth module architecture and reviews every dependency", async ({ page, browserName }) => {
+  test.setTimeout(120_000);
+  await page.goto("/?design=/examples/architecture-block-studio.block-design.json");
+  await expect(page.locator(".bd-document-title span")).toHaveText(
+    "Architecture Block Studio — Source Architecture",
+    { timeout: 30_000 },
+  );
+  await expect(page.locator(".bd-validation-summary")).toContainText("0 errors");
+  await expect(page.locator(".bd-validation-summary")).toContainText("0 warnings");
+  await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 30_000 });
+
+  for (const title of [
+    "Architecture Block Studio",
+    "React Browser Application",
+    "Module Architecture",
+    "Verified Source Graph",
+  ]) {
+    const expandedBefore = Number.parseInt(await page.locator(".bd-level-chip").innerText(), 10);
+    await page.getByRole("button", { name: `展开 ${title}`, exact: true }).click({ force: true });
+    await expect(page.locator(".bd-level-chip")).toHaveText(`${expandedBefore + 1} expanded`);
+    await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.getByRole("button", { name: `折叠 ${title}`, exact: true })).toBeVisible();
+    await page.waitForTimeout(350);
+  }
+
+  await expect(page.locator(".bd-level-chip")).toHaveText("4 expanded");
+  await expect(page.locator(".react-flow__node")).toHaveCount(16, { timeout: 60_000 });
+  await expect(page.locator(".react-flow__edge")).toHaveCount(27, { timeout: 60_000 });
+  await expect(page.locator('[data-routing-status="Feasible"]')).toHaveCount(27);
+  await expect(page.locator(".react-flow__edge-text")).toHaveCount(0);
+  await expect(page.locator(".bd-statusbar")).toContainText("16 diagram blocks");
+  await expect(page.locator(".bd-statusbar")).toContainText("27 diagram interfaces");
+
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    microSegments: [],
+    sharedRoutes: [],
+  });
+  const overviewAudit = await exhaustiveRouteAudit(page);
+  expect(overviewAudit).toMatchObject({
+    auditedRouteCount: 27,
+    auditedPairCount: 351,
+    expectedPairCount: 351,
+    duplicateRouteIds: [],
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  expect(overviewAudit.routeIds).toHaveLength(27);
+
+  if (process.env.CAPTURE_SELF_ARCHITECTURE === "1" && browserName === "chromium") {
+    await runMenuCommand(page, "View", "Maximize Diagram");
+    await toolbarButton(page, "适应窗口").click({ force: true });
+    await page.waitForTimeout(500);
+    await captureStudioScreenshot(page, "docs/screenshots/source-architecture-overview.png");
+    await runMenuCommand(page, "View", "Restore Diagram");
+    await page.waitForTimeout(350);
+  }
+
+  await page.locator(
+    '.bd-tree-select[data-level-id="runtime-modules"][data-node-id="studio"]',
+  ).click({ force: true });
+  await page.waitForTimeout(500);
+  const studioNode = diagramNode(page, "runtime-modules", "studio");
+  await expect(studioNode).toHaveClass(/selected/);
+  await rightClickLocator(page, studioNode);
+  const moduleMenu = page.getByRole("menu", { name: "Module actions" });
+  await expect(moduleMenu).toBeVisible();
+  await moduleMenu.getByRole("menuitem", { name: /^Select Direct Neighborhood/ }).click();
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("17 objects selected");
+  await expect(page.locator(".bd-multi-metrics dd")).toHaveText(["9", "8", "1"]);
+  await rightClickLocator(page, studioNode);
+  const selectionMenu = page.getByRole("menu", { name: "Selected diagram objects actions" });
+  await selectionMenu.getByRole("menuitem", { name: /^Fit Selection/ }).click();
+  await page.waitForTimeout(500);
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 27,
+    auditedPairCount: 351,
+    expectedPairCount: 351,
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+
+  if (process.env.CAPTURE_SELF_ARCHITECTURE === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/source-architecture-review.png");
+  }
+
+  await page.locator(
+    '.bd-tree-select[data-level-id="runtime-modules"][data-node-id="studio"]',
+  ).click({ force: true });
+  await studioNode.focus();
+  await expect(studioNode).toBeFocused();
+  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong"))
+    .toHaveText("286 × 305");
+  await page.keyboard.press("ControlOrMeta+Shift+ArrowRight");
+  await waitForEditorIdle(page);
+  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong"))
+    .toHaveText("302 × 305");
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong"))
+    .toHaveText("286 × 305");
+
+  const sourceEdge = page.locator(
+    '.react-flow__edge[data-id$="::import-studio-to-model"]',
+  );
+  const sources = page.getByRole("region", { name: "Sources" });
+  await sources.getByRole("tab", { name: "Interfaces" }).click({ force: true });
+  await sources.getByLabel("Filter interfaces").fill("import-studio-to-model");
+  const sourceInterface = sources
+    .getByRole("list", { name: "Declared interfaces" })
+    .getByRole("button");
+  await expect(sourceInterface).toHaveCount(1);
+  await sourceInterface.click({ force: true });
+  await page.waitForTimeout(500);
+  await expect(sourceEdge).toHaveClass(/selected/);
+  const sourceEdgePoint = await reachableEdgePoint(sourceEdge);
+  await page.keyboard.press("ControlOrMeta+Shift+A");
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
+  await page.mouse.click(sourceEdgePoint.x, sourceEdgePoint.y);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText(
+    "Studio Orchestrator → Model Contract · 1 import declaration",
+  );
+  await expect(page.locator(".bd-inspector-title code")).toContainText(
+    "studio.depends-model → model.used-by-studio",
+  );
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(1);
+
+  if (process.env.CAPTURE_SELF_ARCHITECTURE === "1" && browserName === "chromium") {
+    await page.keyboard.press("ControlOrMeta+Shift+H");
+    await page.waitForTimeout(500);
+    await captureStudioScreenshot(page, "docs/screenshots/source-architecture-interface-review.png");
+  }
+
+  const finalAudit = await exhaustiveRouteAudit(page);
+  expect(finalAudit).toMatchObject({
+    auditedRouteCount: 27,
+    auditedPairCount: 351,
+    expectedPairCount: 351,
+    duplicateRouteIds: [],
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await downloadPromise).path();
+  expect(savedPath).not.toBeNull();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  expect(saved.levels).toHaveLength(5);
+  expect(saved.levels.find((level: { id: string }) => level.id === "runtime-modules").nodes)
+    .toHaveLength(12);
+  expect(saved.levels.flatMap((level: { connections: unknown[] }) => level.connections))
+    .toHaveLength(27);
+});
+
 test("resizes, collapses, maximizes, floats and resets dock panels", async ({ page }) => {
   const sources = page.getByRole("region", { name: "Sources" });
   const initialSources = await sources.boundingBox();

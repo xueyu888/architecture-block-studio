@@ -231,7 +231,28 @@ pnpm dev --host 127.0.0.1 --port 4317
 
 内置示例位于 [`public/examples/aio-agent-runtime.block-design.json`](public/examples/aio-agent-runtime.block-design.json)，可以复制、修改或换成自己的文档。加载是事务性的：新文件只有在解析成功后才会替换当前设计；无效文件不会破坏正在编辑的内容。
 
-当前版本不会自动扫描或逆向解析源码。要把真实代码可视化，可由人、脚本或 AI 将源码中的模块、公开端口和依赖事实同步成 `BlockDesignDocument`，再用 Studio 理解和审查结构。
+仓库还提供一份由当前源码生成的五层架构示例：[`public/examples/architecture-block-studio.block-design.json`](public/examples/architecture-block-studio.block-design.json)。启动开发服务器后，可以直接打开：
+
+```text
+http://127.0.0.1:4317/?design=%2Fexamples%2Farchitecture-block-studio.block-design.json
+```
+
+这份示例不是手绘宣传图。生成器会遍历 `src` 中的 TypeScript、TSX 与 CSS 文件，要求每个文件恰好属于一个责任模块，并把所有可解析的跨模块相对 import 投影为接口；当前示例覆盖 65 个源码文件、12 个责任模块、27 条跨模块依赖和 5 层上下文。缺失归属、虚构依赖、无法解析的引用或模块环都会使验证失败。
+
+```bash
+pnpm generate:self-architecture  # 源码结构变化后重新生成示例
+pnpm verify:self-architecture    # 检查示例与当前源码是否一致
+```
+
+浏览器运行时不会自行扫描仓库，源码仍是依赖事实源，JSON 只是可加载、可替换、可版本化的生成投影。其他语言或仓库可以由人、脚本或 AI 输出同一个 `BlockDesignDocument` 公开契约，再用 Studio 理解、编辑和审查结构。
+
+![Architecture Block Studio 五层源码架构总览](docs/screenshots/source-architecture-overview.png)
+
+选择 `Studio Orchestrator` 后执行 **Select Direct Neighborhood**，可以一次审查真实的一跳依赖；再选择任意线路，即可在 Inspector 查看依赖名称、方向、接口合同和源码归属，画布中央不放置遮挡路线的标签。
+
+![真实源码依赖邻域审查](docs/screenshots/source-architecture-review.png)
+
+![单条源码依赖与接口合同审查](docs/screenshots/source-architecture-interface-review.png)
 
 ## 文档
 
@@ -246,6 +267,7 @@ pnpm dev --host 127.0.0.1 --port 4317
 
 ```bash
 pnpm exec playwright install chromium firefox
+pnpm verify:self-architecture
 pnpm typecheck
 pnpm build
 pnpm test
