@@ -689,6 +689,7 @@ async function dragSelectionResizeHandle(
   handle: Locator,
   delta: { x: number; y: number },
   modifiers: { alt?: boolean; shift?: boolean } = {},
+  whileHeld?: () => Promise<void>,
 ): Promise<void> {
   const box = await handle.boundingBox();
   expect(box).not.toBeNull();
@@ -702,6 +703,7 @@ async function dragSelectionResizeHandle(
   await page.mouse.down();
   await expect(page.locator(".react-flow")).toHaveAttribute("data-selection-resize-active", "true");
   await page.mouse.move(start.x + delta.x, start.y + delta.y, { steps: 12 });
+  await whileHeld?.();
   await page.mouse.up();
   if (modifiers.shift) await page.keyboard.up("Shift");
   if (modifiers.alt) await page.keyboard.up("Alt");
@@ -2863,6 +2865,20 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
     sparseGroupResizer.locator(".bd-selection-resize-handle.middle.right"),
     { x: 24, y: 0 },
     { alt: true },
+    async () => {
+      const canvas = page.locator(".bd-react-flow");
+      await expect(canvas).toHaveAttribute("data-routing-frame-gesture", "selection-resize");
+      await expect(canvas).toHaveAttribute("data-routing-frame-phase", "active");
+      await expect(canvas).toHaveAttribute("data-routing-frame-mode", "incremental");
+      expect(Number(await canvas.getAttribute("data-routing-frame-affected"))).toBe(2);
+      const neighborhood = Number(await canvas.getAttribute("data-routing-frame-neighborhood"));
+      expect(neighborhood).toBeGreaterThanOrEqual(2);
+      expect(neighborhood).toBeLessThan(100);
+      await assertCompleteAudit();
+      if (process.env.CAPTURE_LIVE_ROUTING === "1" && browserName === "chromium") {
+        await captureStudioScreenshot(page, "docs/screenshots/routing-stress-live-preview.png");
+      }
+    },
   );
   const sparseLeafAfter = await Promise.all([
     flowNode(page, "system::satellite-left-00").boundingBox(),
@@ -3434,6 +3450,129 @@ test("expands five hierarchy layers and audits every visible route and pair", as
   await expect(layerFourBoundary).toHaveClass(/selected/);
   await expect(layerFourBoundary).toBeFocused();
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("Layer 4 Boundary");
+});
+
+test("live-routes every affected line while one deepest module grows all five parent frames", async ({ page, browserName }) => {
+  test.setTimeout(120_000);
+  const document = fiveLevelRoutingDesignDocument();
+  await openDesignDialog(page);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "five-level-live-routing.block-design.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(document)),
+  });
+  await expect(page.locator(".bd-document-title span")).toHaveText("Five-Level Routing Stress");
+  for (let levelNumber = 1; levelNumber <= 5; levelNumber += 1) {
+    await expandHierarchy(page, `Layer ${levelNumber} Boundary`);
+  }
+  await page.locator(
+    '.bd-tree-select[data-level-id="level-5"][data-node-id="target-01"]',
+  ).click({ force: true });
+  await page.waitForTimeout(500);
+
+  const canvas = page.locator(".bd-react-flow");
+  const target = diagramNode(page, "level-5", "target-01");
+  const owners = [
+    diagramNode(page, "system", "layer-1"),
+    diagramNode(page, "level-1", "layer-2"),
+    diagramNode(page, "level-2", "layer-3"),
+    diagramNode(page, "level-3", "layer-4"),
+    diagramNode(page, "level-4", "layer-5"),
+  ];
+  const routePoints = () => page.evaluate(() => Object.fromEntries(
+    [...document.querySelectorAll<SVGGElement>("[data-route-points]")].map((group) => [
+      group.closest<SVGGElement>(".react-flow__edge")?.dataset.id ?? "unknown",
+      JSON.parse(group.dataset.routePoints ?? "[]"),
+    ]),
+  ));
+  const ownerBoundsBefore = await Promise.all(owners.map((owner) => owner.boundingBox()));
+  expect(ownerBoundsBefore.every(Boolean)).toBe(true);
+  const routesBefore = await routePoints();
+  const viewportBefore = await page.locator(".react-flow__viewport").getAttribute("style");
+  const targetHeader = target.locator(".bd-block-header");
+  const targetHeaderBounds = await targetHeader.boundingBox();
+  expect(targetHeaderBounds).not.toBeNull();
+  const zoom = await canvasZoom(page);
+  const start = {
+    x: targetHeaderBounds!.x + targetHeaderBounds!.width / 2,
+    y: targetHeaderBounds!.y + targetHeaderBounds!.height / 2,
+  };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 240 * zoom, start.y + 180 * zoom, { steps: 12 });
+  await expect(canvas).toHaveAttribute("data-routing-frame-gesture", "node-drag");
+  await expect(canvas).toHaveAttribute("data-routing-frame-phase", "active");
+  await expect(canvas).toHaveAttribute("data-routing-frame-mode", "exact");
+  expect(Number(await canvas.getAttribute("data-routing-frame-affected"))).toBeGreaterThan(0);
+  expect(Number(await canvas.getAttribute("data-routing-frame-neighborhood"))).toBe(20);
+  await expect(page.locator(".react-flow__viewport")).toHaveAttribute("style", viewportBefore ?? "");
+
+  const ownerBoundsPreview = await Promise.all(owners.map((owner) => owner.boundingBox()));
+  ownerBoundsPreview.forEach((bounds, index) => {
+    expect(bounds, `owner ${index + 1}`).not.toBeNull();
+    expect(bounds!.width, `owner ${index + 1} width`).toBeGreaterThan(ownerBoundsBefore[index]!.width + 20);
+    expect(bounds!.height, `owner ${index + 1} height`).toBeGreaterThan(ownerBoundsBefore[index]!.height + 10);
+    expect(bounds!.x, `owner ${index + 1} x`).toBeCloseTo(ownerBoundsBefore[index]!.x, 0);
+    expect(bounds!.y, `owner ${index + 1} y`).toBeCloseTo(ownerBoundsBefore[index]!.y, 0);
+  });
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    microSegments: [],
+    sharedRoutes: [],
+  });
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 20,
+    auditedPairCount: 190,
+    expectedPairCount: 190,
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  const routesPreview = await routePoints();
+  const changedRouteIds = Object.keys(routesPreview).filter((id) =>
+    JSON.stringify(routesPreview[id]) !== JSON.stringify(routesBefore[id]));
+  expect(changedRouteIds.length).toBeGreaterThan(0);
+  if (process.env.CAPTURE_LIVE_ROUTING === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/five-level-live-routing-growth.png");
+  }
+
+  await page.mouse.up();
+  await waitForEditorIdle(page);
+  await expect(canvas).toHaveAttribute("data-routing-frame-phase", "idle");
+  await expect(canvas).toHaveAttribute("data-routing-frame-mode", "committed");
+  await expect(page.locator(".react-flow__viewport")).toHaveAttribute("style", viewportBefore ?? "");
+  const routesCommitted = await routePoints();
+  changedRouteIds.forEach((id) => expect(routesCommitted[id], `${id} preview/commit`).toEqual(routesPreview[id]));
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 20,
+    auditedPairCount: 190,
+    expectedPairCount: 190,
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  const downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await downloadPromise).path();
+  expect(savedPath).not.toBeNull();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  const savedTarget = saved.levels.find((level: { id: string }) => level.id === "level-5")
+    .nodes.find((node: { id: string }) => node.id === "target-01");
+  expect(savedTarget.layout.position.x).toBeGreaterThan(100);
+  expect(savedTarget.layout.position.y).toBeGreaterThan(270);
+  for (let levelNumber = 1; levelNumber <= 5; levelNumber += 1) {
+    const levelId = levelNumber === 1 ? "system" : `level-${levelNumber - 1}`;
+    const owner = saved.levels.find((level: { id: string }) => level.id === levelId)
+      .nodes.find((node: { id: string }) => node.id === `layer-${levelNumber}`);
+    expect(owner.layout).toEqual(document.levels.find((level) => level.id === levelId)!
+      .nodes.find((node) => node.id === `layer-${levelNumber}`)!.layout);
+  }
 });
 
 test("keeps toolbar drop preview, JSON, and rendered geometry identical at every expanded depth", async ({ page, browserName }) => {
@@ -4098,14 +4237,52 @@ test("loads and operates a deterministic large or stress design", async ({ brows
     secondSelectedFlowNode.boundingBox(),
   ]);
   expect(performanceResizeBefore.every(Boolean)).toBe(true);
+  const performanceRouteAuditBefore = stress ? undefined : await exhaustiveRouteAudit(page);
+  let performanceLiveResizeAuditMs = 0;
   const performanceGroupResizeStarted = performance.now();
   await dragSelectionResizeHandle(
     page,
     performanceGroupResizer.locator(".bd-selection-resize-handle.middle.right"),
     { x: 18, y: 0 },
     { alt: true },
+    async () => {
+      const canvas = page.locator(".bd-react-flow");
+      await expect(canvas).toHaveAttribute("data-routing-frame-mode", "incremental");
+      const affected = Number(await canvas.getAttribute("data-routing-frame-affected"));
+      const neighborhood = Number(await canvas.getAttribute("data-routing-frame-neighborhood"));
+      expect(affected).toBeGreaterThan(0);
+      expect(neighborhood).toBeGreaterThanOrEqual(affected);
+      expect(neighborhood).toBeLessThan(connectionCount);
+      metrics.liveResizeAffectedRoutes = affected;
+      metrics.liveResizeNeighborhoodRoutes = neighborhood;
+      metrics.liveResizeWorkerDurationMs = Number(
+        await canvas.getAttribute("data-routing-frame-duration-ms"),
+      );
+      expect(metrics.liveResizeWorkerDurationMs).toBeLessThan(500);
+      if (!stress) {
+        const auditStarted = performance.now();
+        const previewAudit = await exhaustiveRouteAudit(page);
+        expect(previewAudit).toMatchObject({
+          auditedRouteCount: connectionCount,
+          auditedPairCount: connectionCount * (connectionCount - 1) / 2,
+          expectedPairCount: connectionCount * (connectionCount - 1) / 2,
+          perRouteIssues: [],
+          unbridgedCrossings: [],
+          orphanJumps: [],
+        });
+        expect(previewAudit.parallelConflicts.length)
+          .toBeLessThanOrEqual(performanceRouteAuditBefore!.parallelConflicts.length);
+        performanceLiveResizeAuditMs = performance.now() - auditStarted;
+      } else {
+        await expect(page.locator(".bd-interface-route")).toHaveCount(await renderedEdges.count());
+        expect(await routeNodeCollisions(page)).toEqual([]);
+      }
+    },
   );
-  metrics.groupResizeTwoModulesMs = Math.round(performance.now() - performanceGroupResizeStarted);
+  metrics.groupResizeTwoModulesMs = Math.round(
+    performance.now() - performanceGroupResizeStarted - performanceLiveResizeAuditMs,
+  );
+  metrics.liveResizeFullAuditMs = Math.round(performanceLiveResizeAuditMs);
   const performanceResizeAfter = await Promise.all([
     selectedFlowNode.boundingBox(),
     secondSelectedFlowNode.boundingBox(),

@@ -49,6 +49,18 @@ export const BLOCK_NODE_GEOMETRY = {
   placementGap: 24,
 } as const;
 
+/**
+ * Insets of an expanded child Level inside its owning module.
+ *
+ * These values belong to layout geometry rather than CSS: committed layout
+ * and disposable direct-manipulation previews must grow the same parent frame.
+ */
+export const BLOCK_CONTAINER_GEOMETRY = {
+  horizontalPadding: 72,
+  topPadding: 68,
+  bottomPadding: 54,
+} as const;
+
 export function preserveNodeAspectRatio(
   original: NodeResizeRect,
   requested: NodeResizeRect,

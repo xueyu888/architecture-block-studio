@@ -162,6 +162,7 @@ const MODULES = [
       "src/components/canvasSelection.ts",
       "src/components/canvasTypes.ts",
       "src/components/moduleDropTarget.ts",
+      "src/components/useLiveRoutingPreviewWorker.ts",
       "src/components/viewportAutoPan.ts",
     ],
     position: { x: 1030, y: 380 },

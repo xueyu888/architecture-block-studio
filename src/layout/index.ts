@@ -1,5 +1,6 @@
 export * from "./layoutBlockDesign";
 export * from "./alignmentGuides";
+export * from "./compoundNodeGeometry";
 export * from "./layoutSignatures";
 export * from "./levelGeometry";
 export * from "./nodeGeometry";

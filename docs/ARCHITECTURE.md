@@ -94,7 +94,7 @@ flowchart LR
   io --> model
 ```
 
-图中箭头严格表达“左侧源码模块 import 右侧模块”，不是运行时数据流，也不按卡片相对位置猜方向。`Studio Orchestrator` 与叶子 `Command & Selection` 分开，是因为前者拥有产品组合，后者只拥有无 UI 依赖的命令和选择协议；Canvas 与 Workbench 也按直接画布手势和外围审查界面分开。这个划分恰好覆盖当前 68 个受管源码文件，不能漏文件或让一个文件同时属于多个模块。桌面主进程是 OS 适配边界，不反向进入这张 renderer 源码依赖图。
+图中箭头严格表达“左侧源码模块 import 右侧模块”，不是运行时数据流，也不按卡片相对位置猜方向。`Studio Orchestrator` 与叶子 `Command & Selection` 分开，是因为前者拥有产品组合，后者只拥有无 UI 依赖的命令和选择协议；Canvas 与 Workbench 也按直接画布手势和外围审查界面分开。这个划分恰好覆盖当前 74 个受管源码文件，不能漏文件或让一个文件同时属于多个模块。桌面主进程是 OS 适配边界，不反向进入这张 renderer 源码依赖图。
 
 生成和验证必须保持以下不变量：
 
@@ -327,6 +327,9 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 - 视口导航同样与设计事实正交：默认和 200 / 400 图使用 280 ms 平滑定位；启用视口裁剪的压力图使用单次直接定位，避免插值途中持续换挂载。React Flow MiniMap 会保留首次 `onNodeClick` 闭包，因此 Canvas 暴露稳定回调并从 ref 读取最新规模策略；不能让第三方回调生命周期冻结空布局时期的配置。
 - 用户拖动期间的 position 只是 React Flow 预览；松手时 Canvas 按选中模块数量请求一次 `node/move` 或 `nodes/move`。成组移动保留各模块相对位置并共同接受参考线修正；多选对齐 / 分布同样只生成一次 `nodes/move`，不能按节点拆成多次提交。只有 Editor 接受后，各自的 `node.layout.position` 才成为新位置。若草稿保护、对象存在性或可编辑性规则拒绝操作，Canvas 一次恢复全部 base node 文档投影，不创建补偿操作、不覆盖错误提示或未应用草稿。ELK 自动位置不写回文档。
 - 用户拖动单模块或多模块选择框的四边 / 四角期间，position 与 dimensions 只是 React Flow 预览；松手分别只提交一次 `node/resize` 或 `nodes/resize`。被接受后，布局、端口和线路都从新的文档几何重算；被拒绝后，整组选区恢复原投影。组 handle 通过逆 viewport scale 保持 18 CSS px 命中区，低缩放不会变成不可操作的微点。选中单模块上的 Ctrl/Cmd + Shift + Arrow 按 16 设计像素调整宽或高；Shift + Arrow 单独按下由 Canvas 拦截且不得产生第三方临时位移或尺寸副本。成功提交后通过一次性 `NodeFocusRequest` 恢复焦点，公告只从被接受的新尺寸派生。
+- 直接 move / resize 期间只有一个可丢弃的 scene frame：实时节点几何先由 `projectCompoundNodeGrowth` 从最深 owner 向外投影，父框只向右 / 下增长且不移动原点；节点、端口、障碍物、Gate、MiniMap 与线路都消费这同一帧。容器 padding 只来自 `BLOCK_CONTAINER_GEOMETRY`，不能在布局和预览中各写一套数值。
+- live routing 只重算端点、域、locked geometry 或障碍相交真正变化的线路，并通过 Gate 与实际容量相交关系闭包；不受影响的已验证路线直接保留。至多 32 条受影响线路在主线程精确求解，更大的场景交给 Worker；Worker 始终只处理一个在途请求，指针新状态覆盖等待槽，过期几何结果不得上屏，失败时保留 committed route 而不是画未经验证的 fallback。
+- pointerup 后 gesture 进入短暂 settling，直到新的文档投影与 live frame 的几何签名一致才丢弃预览，禁止出现松手瞬间回到旧线路再跳向新线路。临时父框、affected set、Worker telemetry 和 settling phase 都不得进入 JSON 或 History。
 - 展开子设计时，子节点使用 compound parent 与相对位置，父模块继续提供上下文和边界。
 - 路径从具名源端口开始，在具名目标端口结束。
 - 每条可见逻辑连接只在真实 target 显示一个语义箭头；内部 hierarchy continuation 不重复显示箭头，Port Handle 不承担方向表达。

@@ -46,6 +46,13 @@ export {
 } from "./obstacleCatalog";
 export { solveRoutingScene } from "./sceneRouter";
 export {
+  LIVE_ROUTING_EXACT_LEG_LIMIT,
+  solveLiveRoutingPreview,
+  type LiveRoutingPreview,
+  type LiveRoutingPreviewMode,
+  type LiveRoutingPreviewOptions,
+} from "./liveRoutingPreview";
+export {
   DEFAULT_ROUTING_POLICY,
   routingPolicyForScene,
   type PlannedRoute,

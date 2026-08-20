@@ -8,7 +8,12 @@ import type {
   PortSide,
 } from "../model";
 import { DESIGN_GRID_SIZE } from "./alignmentGuides";
-import { BLOCK_NODE_GEOMETRY, baseNodeDimensions, type NodeDimensions } from "./nodeGeometry";
+import {
+  BLOCK_CONTAINER_GEOMETRY,
+  BLOCK_NODE_GEOMETRY,
+  baseNodeDimensions,
+  type NodeDimensions,
+} from "./nodeGeometry";
 import type { LayoutFlowEdge, LayoutFlowNode, LayoutResult } from "./types";
 
 let elkPromise: Promise<ELK> | undefined;
@@ -19,10 +24,6 @@ function getElk(): Promise<ELK> {
   );
   return elkPromise;
 }
-
-const CONTAINER_PADDING_X = 72;
-const CONTAINER_PADDING_TOP = 68;
-const CONTAINER_PADDING_BOTTOM = 54;
 
 type Dimensions = NodeDimensions;
 
@@ -449,8 +450,8 @@ async function composeLevel(
       node.id,
       child
         ? {
-            width: child.bounds.width + CONTAINER_PADDING_X * 2,
-            height: child.bounds.height + CONTAINER_PADDING_TOP + CONTAINER_PADDING_BOTTOM,
+            width: child.bounds.width + BLOCK_CONTAINER_GEOMETRY.horizontalPadding * 2,
+            height: child.bounds.height + BLOCK_CONTAINER_GEOMETRY.topPadding + BLOCK_CONTAINER_GEOMETRY.bottomPadding,
           }
         : baseNodeDimensions(node),
     );
@@ -516,8 +517,8 @@ async function composeLevel(
           title: childLevel.title,
           hierarchyDepth: hierarchyDepth + 1,
           designOrigin: {
-            x: CONTAINER_PADDING_X - item.child.bounds.minX,
-            y: CONTAINER_PADDING_TOP - item.child.bounds.minY,
+            x: BLOCK_CONTAINER_GEOMETRY.horizontalPadding - item.child.bounds.minX,
+            y: BLOCK_CONTAINER_GEOMETRY.topPadding - item.child.bounds.minY,
           },
           coordinateOrigin: {
             x: item.child.bounds.minX,
@@ -560,8 +561,8 @@ async function composeLevel(
     item.child.nodes.forEach((childNode) => {
       if (childNode.parentId === id) {
         childNode.position = {
-          x: childNode.position.x - item.child!.bounds.minX + CONTAINER_PADDING_X,
-          y: childNode.position.y - item.child!.bounds.minY + CONTAINER_PADDING_TOP,
+          x: childNode.position.x - item.child!.bounds.minX + BLOCK_CONTAINER_GEOMETRY.horizontalPadding,
+          y: childNode.position.y - item.child!.bounds.minY + BLOCK_CONTAINER_GEOMETRY.topPadding,
         };
       }
       nodes.push(childNode);
