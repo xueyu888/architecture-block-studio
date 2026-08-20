@@ -115,6 +115,12 @@ import type { CanvasContextMenuIntent, CanvasContextMenuTarget } from "./context
 import type { CanvasFlowEdge, CanvasFlowNode, RouteHandleFocusTarget } from "./canvasTypes";
 import { InterfaceEdgeComponent } from "./InterfaceEdge";
 import { containsModuleCreationDrag } from "./moduleCreationGesture";
+import {
+  selectModuleDropTarget,
+  type ModuleDropPoint,
+  type ModuleDropRect,
+  type ModuleDropTargetCandidate,
+} from "./moduleDropTarget";
 import { Tooltip } from "./Tooltip";
 import { ViewportAutoPanProvider } from "./ViewportAutoPanContext";
 import {
@@ -285,6 +291,7 @@ export interface CanvasViewportActionRequest {
 
 interface CanvasInnerProps {
   rootLevelId: string;
+  rootLevelTitle: string;
   layout: LayoutResult;
   selection: SelectionRef;
   fitRequest: number;
@@ -293,6 +300,7 @@ interface CanvasInnerProps {
   revealSelectionRequest: number;
   routeRevision: number;
   onSelect: (selection: SelectionRef) => boolean;
+  onPreviewAddModuleAt: (levelId: string, point: ModuleDropPoint) => ModuleDropRect | undefined;
   onRequestAddModuleAt: (levelId: string, point: { x: number; y: number }) => boolean;
   onOpenContextMenu: (intent: CanvasContextMenuIntent) => boolean;
   onDismissContextMenu: () => void;
@@ -336,6 +344,14 @@ interface NodeFocusRequest {
 interface SelectionFocusRequest {
   revision: number;
   item: DiagramSelectionRef;
+}
+
+interface ActiveModuleDropProjection {
+  target: ModuleDropTargetCandidate;
+  insertionPoint: ModuleDropPoint;
+  designPlacement: ModuleDropRect;
+  targetBounds: ModuleDropRect;
+  previewBounds: ModuleDropRect;
 }
 
 interface AlignmentGesture {
@@ -521,7 +537,7 @@ function focusRestorationWasSuperseded(previousElement: Element | undefined): bo
   );
 }
 
-export interface BlockDesignCanvasProps extends Omit<CanvasInnerProps, "rootLevelId"> {
+export interface BlockDesignCanvasProps extends Omit<CanvasInnerProps, "rootLevelId" | "rootLevelTitle"> {
   document: BlockDesignDocument;
   viewRootLevelId: string;
   onAddModule: () => void;
@@ -529,6 +545,7 @@ export interface BlockDesignCanvasProps extends Omit<CanvasInnerProps, "rootLeve
 
 const CanvasInner = memo(function CanvasInner({
   rootLevelId,
+  rootLevelTitle,
   layout,
   selection,
   fitRequest,
@@ -537,6 +554,7 @@ const CanvasInner = memo(function CanvasInner({
   revealSelectionRequest,
   routeRevision,
   onSelect,
+  onPreviewAddModuleAt,
   onRequestAddModuleAt,
   onOpenContextMenu,
   onDismissContextMenu,
@@ -593,13 +611,13 @@ const CanvasInner = memo(function CanvasInner({
   const selectionFocusRevision = useRef(0);
   const [routeHandleFocusRequest, setRouteHandleFocusRequest] = useState<RouteHandleFocusRequest>();
   const [canvasAnnouncement, setCanvasAnnouncement] = useState("");
-  const [moduleDropPreview, setModuleDropPreview] = useState<{ x: number; y: number }>();
+  const [moduleDropProjection, setModuleDropProjection] = useState<ActiveModuleDropProjection>();
   const [connectionGesture, setConnectionGesture] = useState<ActiveConnectionGesture>();
   const [connectionFeedback, setConnectionFeedback] = useState<ConnectionGestureFeedback>();
   const [spacePanActive, setSpacePanActive] = useState(false);
 
   useEffect(() => {
-    const clearCancelledModuleDrop = () => setModuleDropPreview(undefined);
+    const clearCancelledModuleDrop = () => setModuleDropProjection(undefined);
     window.addEventListener("dragend", clearCancelledModuleDrop);
     window.addEventListener("blur", clearCancelledModuleDrop);
     return () => {
@@ -1926,30 +1944,72 @@ const CanvasInner = memo(function CanvasInner({
       return item ? [{ target, item }] : [];
     });
   }, [baseNodes, routedEdges, store]);
+  const visibleModuleDropTargets = useCallback((): ModuleDropTargetCandidate[] => {
+    const state = store.getState();
+    const root = state.domNode;
+    if (!root) return [];
+    const rootBounds = root.getBoundingClientRect();
+    const [translateX, translateY, zoom] = state.transform;
+    const targets: ModuleDropTargetCandidate[] = [{
+      levelId: rootLevelId,
+      title: rootLevelTitle,
+      hierarchyDepth: 0,
+      bounds: {
+        x: rootBounds.left,
+        y: rootBounds.top,
+        width: rootBounds.width,
+        height: rootBounds.height,
+      },
+      designOrigin: { x: 0, y: 0 },
+    }];
+    baseNodes.forEach((node) => {
+      const projection = node.data.childLevelProjection;
+      if (!projection || !root.querySelector(`.react-flow__node[data-id="${CSS.escape(node.id)}"]`)) return;
+      const rendered = state.nodeLookup.get(node.id);
+      if (!rendered || rendered.hidden) return;
+      const owner = rendered.internals.positionAbsolute;
+      targets.push({
+        levelId: projection.levelId,
+        title: projection.title,
+        hierarchyDepth: projection.hierarchyDepth,
+        ownerFlowNodeId: node.id,
+        designOrigin: {
+          x: owner.x + projection.designOrigin.x,
+          y: owner.y + projection.designOrigin.y,
+        },
+        bounds: {
+          x: rootBounds.left + translateX + (owner.x + projection.dropBounds.x) * zoom,
+          y: rootBounds.top + translateY + (owner.y + projection.dropBounds.y) * zoom,
+          width: projection.dropBounds.width * zoom,
+          height: projection.dropBounds.height * zoom,
+        },
+      });
+    });
+    return targets;
+  }, [baseNodes, rootLevelId, rootLevelTitle, store]);
+  const visibleProjectionForLevel = useCallback((
+    levelId: string,
+  ): ModuleDropTargetCandidate | undefined => visibleModuleDropTargets()
+    .find((candidate) => candidate.levelId === levelId), [visibleModuleDropTargets]);
   const designPointForLevel = useCallback((
     levelId: string,
-    anchor: { x: number; y: number },
-  ): { x: number; y: number } | undefined => {
-    const flowPoint = screenToFlowPosition(anchor);
-    const levelNode = baseNodes.find((node) => node.data.levelId === levelId);
-    const renderedLevelNode = levelNode ? store.getState().nodeLookup.get(levelNode.id) : undefined;
-    const levelOrigin = renderedLevelNode
-      ? {
-          x: renderedLevelNode.internals.positionAbsolute.x - levelNode!.data.designPosition.x,
-          y: renderedLevelNode.internals.positionAbsolute.y - levelNode!.data.designPosition.y,
-        }
-      : levelId === rootLevelId
-        ? { x: 0, y: 0 }
-        : undefined;
-    if (!levelOrigin) {
+    anchor: ModuleDropPoint,
+  ): ModuleDropPoint | undefined => {
+    // Context-menu targets already identify their Level. Mapping that known
+    // target must remain valid on a port or route just outside the visual drop
+    // surface; point containment is only a rule for choosing an unknown drag
+    // target.
+    const target = visibleProjectionForLevel(levelId);
+    if (!target) {
       setCanvasAnnouncement(`Could not map the context point into design level ${levelId}.`);
       return undefined;
     }
+    const flowPoint = screenToFlowPosition(anchor);
     return {
-      x: flowPoint.x - levelOrigin.x,
-      y: flowPoint.y - levelOrigin.y,
+      x: flowPoint.x - target.designOrigin.x,
+      y: flowPoint.y - target.designOrigin.y,
     };
-  }, [baseNodes, rootLevelId, screenToFlowPosition, store]);
+  }, [screenToFlowPosition, visibleProjectionForLevel]);
   const requestCanvasContextMenu = useCallback((
     target: CanvasContextMenuTarget,
     anchor: { x: number; y: number },
@@ -1981,32 +2041,66 @@ const CanvasInner = memo(function CanvasInner({
     }
     return accepted;
   }, [designPointForLevel, onOpenContextMenu]);
+  const resolveModuleDropProjection = useCallback((
+    anchor: ModuleDropPoint,
+  ): ActiveModuleDropProjection | undefined => {
+    const state = store.getState();
+    const root = state.domNode;
+    if (!root) return undefined;
+    const target = selectModuleDropTarget(anchor, visibleModuleDropTargets());
+    if (!target) return undefined;
+    const flowPoint = screenToFlowPosition(anchor);
+    const insertionPoint = {
+      x: flowPoint.x - target.designOrigin.x,
+      y: flowPoint.y - target.designOrigin.y,
+    };
+    const placement = onPreviewAddModuleAt(target.levelId, insertionPoint);
+    if (!placement) return undefined;
+    const rootBounds = root.getBoundingClientRect();
+    const [translateX, translateY, zoom] = state.transform;
+    return {
+      target,
+      insertionPoint,
+      designPlacement: placement,
+      targetBounds: {
+        x: target.bounds.x - rootBounds.left,
+        y: target.bounds.y - rootBounds.top,
+        width: target.bounds.width,
+        height: target.bounds.height,
+      },
+      previewBounds: {
+        x: translateX + (target.designOrigin.x + placement.x) * zoom,
+        y: translateY + (target.designOrigin.y + placement.y) * zoom,
+        width: placement.width * zoom,
+        height: placement.height * zoom,
+      },
+    };
+  }, [onPreviewAddModuleAt, screenToFlowPosition, store, visibleModuleDropTargets]);
   const onModuleDragOver = useCallback((event: ReactDragEvent) => {
     if (!containsModuleCreationDrag(event.dataTransfer.types)) return;
     event.preventDefault();
     event.stopPropagation();
-    event.dataTransfer.dropEffect = "copy";
-    const bounds = store.getState().domNode?.getBoundingClientRect();
-    if (!bounds) return;
-    setModuleDropPreview({ x: event.clientX - bounds.left, y: event.clientY - bounds.top });
-  }, [store]);
+    const projection = resolveModuleDropProjection({ x: event.clientX, y: event.clientY });
+    event.dataTransfer.dropEffect = projection ? "copy" : "none";
+    setModuleDropProjection(projection);
+  }, [resolveModuleDropProjection]);
   const onModuleDragLeave = useCallback((event: ReactDragEvent) => {
     if (!containsModuleCreationDrag(event.dataTransfer.types)) return;
     const root = store.getState().domNode;
     if (event.relatedTarget instanceof Node && root?.contains(event.relatedTarget)) return;
-    setModuleDropPreview(undefined);
+    setModuleDropProjection(undefined);
   }, [store]);
   const onModuleDrop = useCallback((event: ReactDragEvent) => {
     if (!containsModuleCreationDrag(event.dataTransfer.types)) return;
     event.preventDefault();
     event.stopPropagation();
-    setModuleDropPreview(undefined);
-    const point = designPointForLevel(rootLevelId, { x: event.clientX, y: event.clientY });
-    if (!point) return;
-    if (onRequestAddModuleAt(rootLevelId, point)) {
-      setCanvasAnnouncement("Opened a new module draft at the dropped canvas position.");
+    const projection = resolveModuleDropProjection({ x: event.clientX, y: event.clientY });
+    setModuleDropProjection(undefined);
+    if (!projection) return;
+    if (onRequestAddModuleAt(projection.target.levelId, projection.insertionPoint)) {
+      setCanvasAnnouncement(`Opened a new module draft in ${projection.target.title}.`);
     }
-  }, [designPointForLevel, onRequestAddModuleAt, rootLevelId]);
+  }, [onRequestAddModuleAt, resolveModuleDropProjection]);
   const onCanvasPointerUpCapture = useCallback((event: ReactPointerEvent) => {
     const contextGesture = contextClickGestureRef.current;
     if (contextGesture?.pointerId === event.pointerId) {
@@ -2875,16 +2969,39 @@ const CanvasInner = memo(function CanvasInner({
             maskColor="var(--minimap-mask)"
             onNodeClick={onMiniMapNodeClick}
           />
-          {moduleDropPreview ? (
-            <div
-              className="bd-module-drop-preview nokey"
-              data-module-drop-preview="true"
-              style={{ left: moduleDropPreview.x, top: moduleDropPreview.y }}
-              aria-hidden="true"
-            >
-              <Box size={17} />
-              <span>New module</span>
-            </div>
+          {moduleDropProjection ? (
+            <>
+              <div
+                className={`bd-module-drop-target nokey${moduleDropProjection.target.ownerFlowNodeId ? "" : " is-root"}`}
+                data-module-drop-target="true"
+                data-level-id={moduleDropProjection.target.levelId}
+                data-level-title={moduleDropProjection.target.title}
+                style={{
+                  left: moduleDropProjection.targetBounds.x,
+                  top: moduleDropProjection.targetBounds.y,
+                  width: moduleDropProjection.targetBounds.width,
+                  height: moduleDropProjection.targetBounds.height,
+                }}
+                aria-hidden="true"
+              />
+              <div
+                className="bd-module-drop-preview nokey"
+                data-module-drop-preview="true"
+                data-level-id={moduleDropProjection.target.levelId}
+                data-design-x={moduleDropProjection.designPlacement.x}
+                data-design-y={moduleDropProjection.designPlacement.y}
+                style={{
+                  left: moduleDropProjection.previewBounds.x,
+                  top: moduleDropProjection.previewBounds.y,
+                  width: moduleDropProjection.previewBounds.width,
+                  height: moduleDropProjection.previewBounds.height,
+                }}
+                aria-hidden="true"
+              >
+                <Box size={17} />
+                <span>New module</span>
+              </div>
+            </>
           ) : null}
           </ReactFlow>
         </ConnectionGesturePreviewProvider>
@@ -2904,6 +3021,7 @@ export function BlockDesignCanvas(props: BlockDesignCanvasProps) {
     <>
       <CanvasInner
         rootLevelId={viewRootLevel.id}
+        rootLevelTitle={viewRootLevel.title}
         layout={props.layout}
         selection={props.selection}
         fitRequest={props.fitRequest}
@@ -2912,6 +3030,7 @@ export function BlockDesignCanvas(props: BlockDesignCanvasProps) {
         revealSelectionRequest={props.revealSelectionRequest}
         routeRevision={props.routeRevision}
         onSelect={props.onSelect}
+        onPreviewAddModuleAt={props.onPreviewAddModuleAt}
         onRequestAddModuleAt={props.onRequestAddModuleAt}
         onOpenContextMenu={props.onOpenContextMenu}
         onDismissContextMenu={props.onDismissContextMenu}

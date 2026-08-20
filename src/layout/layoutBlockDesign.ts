@@ -7,7 +7,7 @@ import type {
   DesignLevel,
   PortSide,
 } from "../model";
-import { baseNodeDimensions, type NodeDimensions } from "./nodeGeometry";
+import { BLOCK_NODE_GEOMETRY, baseNodeDimensions, type NodeDimensions } from "./nodeGeometry";
 import type { LayoutFlowEdge, LayoutFlowNode, LayoutResult } from "./types";
 
 let elkPromise: Promise<ELK> | undefined;
@@ -103,7 +103,14 @@ function validConnection(level: DesignLevel, connection: BlockConnection): boole
 }
 
 function boundsOf(nodes: PositionedNode[]): Bounds {
-  if (nodes.length === 0) return { minX: 0, minY: 0, width: 1, height: 1 };
+  if (nodes.length === 0) {
+    return {
+      minX: 0,
+      minY: 0,
+      width: BLOCK_NODE_GEOMETRY.defaultWidth,
+      height: BLOCK_NODE_GEOMETRY.defaultHeight,
+    };
+  }
   const minX = Math.min(...nodes.map((node) => node.x));
   const minY = Math.min(...nodes.map((node) => node.y));
   const maxX = Math.max(...nodes.map((node) => node.x + node.width));
@@ -393,6 +400,27 @@ async function composeLevel(
   const edges: LayoutFlowEdge[] = [];
   positioned.forEach((item) => {
     const id = directNodeIds.get(item.node.id)!;
+    const childLevelId = item.node.hierarchy?.childLevelId;
+    const childLevel = childLevelId
+      ? document.levels.find((candidate) => candidate.id === childLevelId)
+      : undefined;
+    const childLevelProjection = item.child && childLevel
+      ? {
+          levelId: childLevel.id,
+          title: childLevel.title,
+          hierarchyDepth: hierarchyDepth + 1,
+          designOrigin: {
+            x: CONTAINER_PADDING_X - item.child.bounds.minX,
+            y: CONTAINER_PADDING_TOP - item.child.bounds.minY,
+          },
+          dropBounds: {
+            x: BLOCK_NODE_GEOMETRY.expandedBorderWidth,
+            y: BLOCK_NODE_GEOMETRY.headerHeight,
+            width: item.width - BLOCK_NODE_GEOMETRY.expandedBorderWidth * 2,
+            height: item.height - BLOCK_NODE_GEOMETRY.headerHeight - BLOCK_NODE_GEOMETRY.expandedBorderWidth,
+          },
+        }
+      : undefined;
     nodes.push({
       id,
       type: "block",
@@ -411,6 +439,7 @@ async function composeLevel(
         hierarchyDepth,
         designPosition: { x: item.x, y: item.y },
         positionEditable: !useAutomaticPlacement,
+        childLevelProjection,
       },
       selectable: true,
       draggable: !useAutomaticPlacement,

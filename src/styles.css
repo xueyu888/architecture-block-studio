@@ -1173,16 +1173,32 @@ button { color: inherit; }
 .bd-react-flow .react-flow__pane:active { cursor: grabbing; }
 .bd-react-flow .react-flow__node { cursor: move; }
 
+.bd-module-drop-target {
+  position: absolute;
+  z-index: 11;
+  box-sizing: border-box;
+  border: 2px solid color-mix(in srgb, var(--blue) 82%, white);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--blue-soft) 16%, transparent);
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--blue-soft) 46%, transparent),
+    0 0 0 1px rgba(255, 255, 255, 0.9);
+  pointer-events: none;
+}
+
+.bd-module-drop-target.is-root {
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 4px color-mix(in srgb, var(--blue-soft) 38%, transparent);
+}
+
 .bd-module-drop-preview {
   position: absolute;
   z-index: 12;
-  width: 168px;
-  height: 96px;
+  box-sizing: border-box;
   display: grid;
   place-content: center;
   justify-items: center;
   gap: 7px;
-  transform: translate(-50%, -50%);
+  overflow: hidden;
   border: 2px dashed color-mix(in srgb, var(--blue) 72%, white);
   border-radius: 8px;
   color: #174c91;
@@ -1193,6 +1209,19 @@ button { color: inherit; }
   letter-spacing: 0.02em;
   pointer-events: none;
 }
+
+.bd-module-drop-preview::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 24%;
+  min-height: 9px;
+  border-bottom: 1px solid color-mix(in srgb, var(--blue) 42%, white);
+  background: color-mix(in srgb, var(--blue-soft) 76%, white);
+}
+
+.bd-module-drop-preview > svg,
+.bd-module-drop-preview > span { position: relative; }
 
 .bd-canvas-pan-mode {
   z-index: 10;

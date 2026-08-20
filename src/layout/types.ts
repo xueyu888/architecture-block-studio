@@ -13,6 +13,17 @@ export interface LayoutBlockNodeData extends Record<string, unknown> {
   hierarchyDepth: number;
   designPosition: { x: number; y: number };
   positionEditable: boolean;
+  childLevelProjection?: LayoutChildLevelProjection;
+}
+
+export interface LayoutChildLevelProjection {
+  levelId: string;
+  title: string;
+  hierarchyDepth: number;
+  /** Child design origin in the expanded owner node's local flow coordinates. */
+  designOrigin: { x: number; y: number };
+  /** Visible child-design drop surface in the owner node's local flow coordinates. */
+  dropBounds: { x: number; y: number; width: number; height: number };
 }
 
 export interface LayoutInterfaceEdgeData extends Record<string, unknown> {

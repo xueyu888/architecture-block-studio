@@ -13,8 +13,12 @@ import {
   groupDistanceGuideDesignDocument,
 } from "./fixtures/distanceGuideDesign";
 import { createPerformanceSample, emitPerformanceSample } from "./performance/performanceSample";
-import { createBlock } from "../src/editor";
-import { findBlockPlacementAtPoint } from "../src/studio/fragmentPlacement";
+import {
+  applyDesignOperation,
+  createBlankDesign,
+  createBlock,
+  createDesignLevel,
+} from "../src/editor";
 
 const examplePath = fileURLToPath(
   new URL("../public/examples/aio-agent-runtime.block-design.json", import.meta.url),
@@ -660,6 +664,24 @@ async function dragConnection(page: Page, source: Locator, target: Locator): Pro
   await page.mouse.down();
   await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2, { steps: 8 });
   await page.mouse.up();
+}
+
+async function beginToolbarModuleDrag(
+  page: Page,
+  target: { x: number; y: number },
+): Promise<void> {
+  const toolBounds = await toolbarButton(page, "添加模块").boundingBox();
+  expect(toolBounds).not.toBeNull();
+  await page.mouse.move(
+    toolBounds!.x + toolBounds!.width / 2,
+    toolBounds!.y + toolBounds!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(target.x, target.y, { steps: 12 });
+  // Chromium can coalesce the final native dragover at the end of a stepped
+  // move. A one-pixel continuation makes the terminal target observable in
+  // both supported test browsers without changing the intended Level hit.
+  await page.mouse.move(target.x + 1, target.y);
 }
 
 async function dragSelectionResizeHandle(
@@ -3144,50 +3166,49 @@ test("expands five hierarchy layers and audits every visible route and pair", as
   await expect(page.locator(".react-flow__node")).toHaveCount(17);
   await expect(diagramNode(page, "level-5", "target-00-2")).toHaveCount(0);
 
-  const levelFiveRow = page.locator(".bd-tree-level-row").filter({ hasText: /^Layer 5/ });
-  await levelFiveRow.dblclick({ force: true });
-  await waitForEditorIdle(page);
-  await expect(page.locator(".bd-canvas-caption strong")).toHaveText("Layer 5");
-  await expect(page.locator(".react-flow__node")).toHaveCount(2);
-  const nestedCanvas = page.locator(".bd-react-flow");
-  const nestedCanvasBounds = await nestedCanvas.boundingBox();
-  const nestedDropTarget = flowNode(page, "level-5::target-00");
+  const nestedDropTarget = diagramNode(page, "level-5", "target-00");
   const nestedTargetBounds = await nestedDropTarget.boundingBox();
-  expect(nestedCanvasBounds).not.toBeNull();
   expect(nestedTargetBounds).not.toBeNull();
-  await toolbarButton(page, "添加模块").dragTo(nestedCanvas, {
-    targetPosition: {
-      x: nestedTargetBounds!.x + nestedTargetBounds!.width / 2 - nestedCanvasBounds!.x,
-      y: nestedTargetBounds!.y + nestedTargetBounds!.height / 2 - nestedCanvasBounds!.y,
-    },
+  await beginToolbarModuleDrag(page, {
+    x: nestedTargetBounds!.x + nestedTargetBounds!.width / 2,
+    y: nestedTargetBounds!.y + nestedTargetBounds!.height / 2,
   });
+  const levelFiveDropTarget = page.locator(
+    '[data-module-drop-target="true"][data-level-id="level-5"]',
+  );
+  await expect(levelFiveDropTarget).toBeVisible();
+  await expect(levelFiveDropTarget).toHaveAttribute("data-level-title", "Layer 5");
+  await expect(page.locator(
+    '[data-module-drop-preview="true"][data-level-id="level-5"]',
+  )).toBeVisible();
+  const levelFivePreview = page.locator(
+    '[data-module-drop-preview="true"][data-level-id="level-5"]',
+  );
+  const expectedNestedPosition = {
+    x: Number(await levelFivePreview.getAttribute("data-design-x")),
+    y: Number(await levelFivePreview.getAttribute("data-design-y")),
+  };
+  expect(Number.isFinite(expectedNestedPosition.x)).toBe(true);
+  expect(Number.isFinite(expectedNestedPosition.y)).toBe(true);
+  if (process.env.CAPTURE_ADD_MODULE_HERE === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/add-module-inline-drop-target.png");
+  }
+  await page.mouse.up();
   const nestedAddDialog = page.getByRole("dialog", { name: /Add Module/ });
   await nestedAddDialog.getByLabel("Module title").fill("Nested Review");
   await nestedAddDialog.getByLabel("Module id").fill("nested-review");
   await nestedAddDialog.getByRole("button", { name: "Add Module", exact: true }).click();
   await waitForEditorIdle(page);
-  await expect(flowNode(page, "level-5::nested-review")).toHaveClass(/selected/);
+  await expect(diagramNode(page, "level-5", "nested-review")).toHaveClass(/selected/);
   const nestedAddDownload = page.waitForEvent("download");
   await page.keyboard.press("ControlOrMeta+S");
   const nestedAddSavedPath = await (await nestedAddDownload).path();
   expect(nestedAddSavedPath).not.toBeNull();
   const nestedAddSaved = JSON.parse(await readFile(nestedAddSavedPath!, "utf8"));
   const nestedAddLevel = nestedAddSaved.levels.find((level: { id: string }) => level.id === "level-5");
-  const expectedNestedPosition = findBlockPlacementAtPoint(
-    createBlock({ id: "nested-review", title: "Nested Review" }),
-    document.levels.find((level) => level.id === "level-5")!.nodes.map((node) => ({
-      x: node.layout.position!.x,
-      y: node.layout.position!.y,
-      width: node.layout.width!,
-      height: node.layout.height!,
-    })),
-    { x: 200, y: 138 },
-  );
   expect(nestedAddLevel.nodes.find((node: { id: string }) => node.id === "nested-review").layout)
     .toEqual({ position: expectedNestedPosition, pinned: true });
 
-  await page.keyboard.press("Shift+Home");
-  await waitForEditorIdle(page);
   await expect(page.locator(".bd-canvas-caption strong")).toHaveText("Five-Level Routing System");
   await expect(page.locator(".react-flow__node")).toHaveCount(18);
   await expect(page.locator(".react-flow__edge")).toHaveCount(20);
@@ -7206,6 +7227,89 @@ test("creates one module at a canvas point from context menu or toolbar drag", a
   await waitForEditorIdle(page);
   await expect(flowNode(page, "system::dragged-review")).toHaveCount(0);
   await expect(page.locator(".react-flow__node")).toHaveCount(7);
+});
+
+test("drops a module into an expanded empty child Level without a special-case target", async ({ page, browserName }) => {
+  let document = createBlankDesign("empty-child-drop", "Empty Child Drop");
+  document = applyDesignOperation(document, {
+    type: "node/add",
+    levelId: "system",
+    node: createBlock({ id: "empty-boundary", title: "Empty Boundary" }),
+  });
+  document = applyDesignOperation(document, {
+    type: "hierarchy/add",
+    levelId: "system",
+    nodeId: "empty-boundary",
+    childLevel: createDesignLevel("empty-level", "Empty Level", "system"),
+  });
+
+  await openDesignDialog(page);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "empty-child-drop.block-design.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(document)),
+  });
+  await expect(page.locator(".bd-document-title span")).toHaveText("Empty Child Drop");
+  await page.getByRole("button", { name: "展开 Empty Boundary", exact: true }).click({ force: true });
+  await expect(page.locator(".bd-level-chip")).toHaveText("1 expanded");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(1);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(0);
+
+  const ownerBounds = await diagramNode(page, "system", "empty-boundary").boundingBox();
+  expect(ownerBounds).not.toBeNull();
+  await beginToolbarModuleDrag(page, {
+    x: ownerBounds!.x + ownerBounds!.width / 2,
+    y: ownerBounds!.y + 32 + (ownerBounds!.height - 32) / 2,
+  });
+
+  const dropTarget = page.locator(
+    '[data-module-drop-target="true"][data-level-id="empty-level"]',
+  );
+  const preview = page.locator(
+    '[data-module-drop-preview="true"][data-level-id="empty-level"]',
+  );
+  await expect(dropTarget).toBeVisible();
+  await expect(dropTarget).toHaveAttribute("data-level-title", "Empty Level");
+  await expect(preview).toBeVisible();
+  const dropTargetBounds = await dropTarget.boundingBox();
+  const previewBounds = await preview.boundingBox();
+  expect(dropTargetBounds && previewBounds).not.toBeNull();
+  expect(previewBounds!.x).toBeGreaterThan(dropTargetBounds!.x);
+  expect(previewBounds!.y).toBeGreaterThan(dropTargetBounds!.y);
+  expect(previewBounds!.x + previewBounds!.width).toBeLessThan(dropTargetBounds!.x + dropTargetBounds!.width);
+  expect(previewBounds!.y + previewBounds!.height).toBeLessThan(dropTargetBounds!.y + dropTargetBounds!.height);
+  if (process.env.CAPTURE_ADD_MODULE_HERE === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/add-module-empty-level-drop-target.png");
+  }
+
+  await page.mouse.up();
+  const dialog = page.getByRole("dialog", { name: /Add Module/ });
+  await dialog.getByLabel("Module title").fill("First Internal");
+  await dialog.getByLabel("Module id").fill("first-internal");
+  await dialog.getByRole("button", { name: "Add Module", exact: true }).click();
+  await waitForEditorIdle(page);
+  await expect(diagramNode(page, "empty-level", "first-internal")).toHaveClass(/selected/);
+  await expect(page.locator(".bd-command-notice")).toContainText(
+    "Added First Internal at the requested canvas position in Empty Level",
+  );
+
+  const download = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await download).path();
+  expect(savedPath).not.toBeNull();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  const emptyLevel = saved.levels.find((level: { id: string }) => level.id === "empty-level");
+  expect(emptyLevel.nodes).toHaveLength(1);
+  expect(emptyLevel.nodes[0]).toMatchObject({
+    id: "first-internal",
+    layout: { position: { x: 0, y: 0 }, pinned: true },
+  });
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(diagramNode(page, "empty-level", "first-internal")).toHaveCount(0);
+  await expect(page.locator(".react-flow__node")).toHaveCount(1);
 });
 
 test("keeps object context actions and right-button canvas pan mutually exclusive", async ({ page, browserName }) => {

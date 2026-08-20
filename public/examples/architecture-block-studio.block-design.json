@@ -2,7 +2,7 @@
   "schemaVersion": "2.1",
   "id": "architecture-block-studio.source-architecture.v1",
   "title": "Architecture Block Studio — Source Architecture",
-  "summary": "Generated from 67 managed source files and 27 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
+  "summary": "Generated from 68 managed source files and 27 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
   "entryLevelId": "product-boundary",
   "sourceRef": {
     "label": "architecture-block-studio",
@@ -42,7 +42,7 @@
         "label": "src/components · canvas surface",
         "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/components/AlignmentGuideLayer.tsx"
       },
-      "code": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/viewportAutoPan.ts",
+      "code": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/moduleDropTarget.ts\nsrc/components/viewportAutoPan.ts",
       "codeLanguage": "text",
       "attributes": {
         "architectureModuleId": "canvas",
@@ -1107,15 +1107,15 @@
               "label": "src/components · canvas surface",
               "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/components/AlignmentGuideLayer.tsx"
             },
-            "code": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/viewportAutoPan.ts",
+            "code": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/moduleDropTarget.ts\nsrc/components/viewportAutoPan.ts",
             "codeLanguage": "text",
             "attributes": {
               "architectureRole": "source-module",
               "architectureModuleId": "canvas",
               "architectureGroupId": "interaction",
               "hierarchyDepth": "5",
-              "sourcePaths": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/viewportAutoPan.ts",
-              "sourceFileCount": "10"
+              "sourcePaths": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/moduleDropTarget.ts\nsrc/components/viewportAutoPan.ts",
+              "sourceFileCount": "11"
             }
           },
           "layout": {
