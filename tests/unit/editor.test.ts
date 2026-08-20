@@ -144,6 +144,40 @@ describe("public design operations", () => {
     expect(document.levels[0].nodes[0].layout).toEqual({ pinned: false });
   });
 
+  test("resizes multiple modules atomically after validating the complete batch", () => {
+    const document = connectedDesign();
+    const resized = applyDesignOperation(document, {
+      type: "nodes/resize",
+      resizes: [
+        { levelId: "system", nodeId: "source", position: { x: 32.2, y: 64.1 }, size: { width: 280.4, height: 160.2 } },
+        { levelId: "system", nodeId: "target", position: { x: 512.2, y: 96.4 }, size: { width: 360.1, height: 208.3 } },
+      ],
+    });
+
+    expect(resized.levels[0].nodes.map((node) => node.layout)).toEqual([
+      { pinned: true, position: { x: 32, y: 64 }, width: 280, height: 160 },
+      { pinned: true, position: { x: 512, y: 96 }, width: 360, height: 208 },
+    ]);
+    expect(document.levels[0].nodes.every((node) => node.layout.width === undefined)).toBe(true);
+
+    const before = serializeDesign(document);
+    expect(() => applyDesignOperation(document, {
+      type: "nodes/resize",
+      resizes: [
+        { levelId: "system", nodeId: "source", position: { x: 0, y: 0 }, size: { width: 280, height: 160 } },
+        { levelId: "system", nodeId: "missing", position: { x: 0, y: 0 }, size: { width: 360, height: 208 } },
+      ],
+    })).toThrow("does not exist");
+    expect(serializeDesign(document)).toBe(before);
+    expect(() => applyDesignOperation(document, {
+      type: "nodes/resize",
+      resizes: [
+        { levelId: "system", nodeId: "source", position: { x: 0, y: 0 }, size: { width: 280, height: 160 } },
+        { levelId: "system", nodeId: "source", position: { x: 10, y: 10 }, size: { width: 300, height: 180 } },
+      ],
+    })).toThrow("can only be resized once");
+  });
+
   test("rejects invalid resize dimensions without mutating the source", () => {
     let document = createBlankDesign("resize-failure", "Resize Failure");
     document = applyDesignOperation(document, {

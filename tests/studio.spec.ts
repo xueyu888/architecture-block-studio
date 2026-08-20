@@ -572,6 +572,30 @@ async function dragConnection(page: Page, source: Locator, target: Locator): Pro
   await page.mouse.up();
 }
 
+async function dragSelectionResizeHandle(
+  page: Page,
+  handle: Locator,
+  delta: { x: number; y: number },
+  modifiers: { alt?: boolean; shift?: boolean } = {},
+): Promise<void> {
+  const box = await handle.boundingBox();
+  expect(box).not.toBeNull();
+  const start = { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
+  if (modifiers.alt) await page.keyboard.down("Alt");
+  if (modifiers.shift) await page.keyboard.down("Shift");
+  await page.mouse.move(start.x, start.y);
+  expect(await page.evaluate(({ x, y }) => Boolean(
+    document.elementFromPoint(x, y)?.closest(".bd-selection-resize-handle"),
+  ), start)).toBe(true);
+  await page.mouse.down();
+  await expect(page.locator(".react-flow")).toHaveAttribute("data-selection-resize-active", "true");
+  await page.mouse.move(start.x + delta.x, start.y + delta.y, { steps: 12 });
+  await page.mouse.up();
+  if (modifiers.shift) await page.keyboard.up("Shift");
+  if (modifiers.alt) await page.keyboard.up("Alt");
+  await waitForEditorIdle(page);
+}
+
 async function expandHierarchy(page: Page, title: string): Promise<void> {
   const expandedBefore = Number.parseInt(await page.locator(".bd-level-chip").innerText(), 10);
   await page.getByRole("button", { name: `展开 ${title}`, exact: true }).click({ force: true });
@@ -2627,6 +2651,42 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
   };
   await assertCompleteAudit();
 
+  const firstSparseLeafButton = page.locator(
+    '.bd-tree-select[data-level-id="system"][data-node-id="satellite-left-00"]',
+  );
+  const secondSparseLeafButton = page.locator(
+    '.bd-tree-select[data-level-id="system"][data-node-id="satellite-left-01"]',
+  );
+  await firstSparseLeafButton.click({ force: true });
+  await secondSparseLeafButton.click({ force: true, modifiers: ["ControlOrMeta"] });
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
+  const sparseGroupResizer = page.locator(".bd-selection-resizer");
+  await expect(sparseGroupResizer).toBeVisible();
+  await page.waitForTimeout(400);
+  const sparseLeafBefore = await Promise.all([
+    flowNode(page, "system::satellite-left-00").boundingBox(),
+    flowNode(page, "system::satellite-left-01").boundingBox(),
+  ]);
+  expect(sparseLeafBefore.every(Boolean)).toBe(true);
+  await dragSelectionResizeHandle(
+    page,
+    sparseGroupResizer.locator(".bd-selection-resize-handle.middle.right"),
+    { x: 24, y: 0 },
+    { alt: true },
+  );
+  const sparseLeafAfter = await Promise.all([
+    flowNode(page, "system::satellite-left-00").boundingBox(),
+    flowNode(page, "system::satellite-left-01").boundingBox(),
+  ]);
+  expect(sparseLeafAfter[0]!.width).toBeGreaterThan(sparseLeafBefore[0]!.width + 12);
+  expect(sparseLeafAfter[1]!.width).toBeGreaterThan(sparseLeafBefore[1]!.width + 12);
+  expect(sparseLeafAfter[0]!.height).toBeCloseTo(sparseLeafBefore[0]!.height, 0);
+  expect(sparseLeafAfter[1]!.height).toBeCloseTo(sparseLeafBefore[1]!.height, 0);
+  await assertCompleteAudit();
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await assertCompleteAudit();
+
   await page.locator(
     '.bd-tree-select[data-level-id="system"][data-node-id="satellite-left-00"]',
   ).click({ force: true });
@@ -2843,6 +2903,57 @@ test("expands five hierarchy layers and audits every visible route and pair", as
     orphanJumps: [],
   });
   expect(audit.routeIds).toHaveLength(20);
+
+  await page.locator(
+    '.bd-tree-select[data-level-id="level-5"][data-node-id="target-00"]',
+  ).click({ force: true });
+  await page.locator(
+    '.bd-tree-select[data-level-id="level-5"][data-node-id="target-01"]',
+  ).click({ force: true, modifiers: ["ControlOrMeta"] });
+  const nestedGroupResizer = page.locator(".bd-selection-resizer");
+  await expect(nestedGroupResizer).toBeVisible();
+  await page.waitForTimeout(400);
+  const nestedTargets = [
+    diagramNode(page, "level-5", "target-00"),
+    diagramNode(page, "level-5", "target-01"),
+  ];
+  const nestedBefore = await Promise.all(nestedTargets.map((node) => node.boundingBox()));
+  expect(nestedBefore.every(Boolean)).toBe(true);
+  await dragSelectionResizeHandle(
+    page,
+    nestedGroupResizer.locator(".bd-selection-resize-handle.middle.right"),
+    { x: 20, y: 0 },
+    { alt: true },
+  );
+  const nestedAfter = await Promise.all(nestedTargets.map((node) => node.boundingBox()));
+  expect(nestedAfter.every(Boolean)).toBe(true);
+  nestedAfter.forEach((box, index) => {
+    expect(box!.width).toBeGreaterThan(nestedBefore[index]!.width + 10);
+    expect(box!.height).toBeCloseTo(nestedBefore[index]!.height, 0);
+  });
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 20,
+    auditedPairCount: 190,
+    expectedPairCount: 190,
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(nestedGroupResizer).toBeVisible();
+  await page.locator(
+    '.bd-tree-select[data-level-id="level-4"][data-node-id="layer-5"]',
+  ).click({ force: true });
+  await page.locator(
+    '.bd-tree-select[data-level-id="level-3"][data-node-id="layer-4"]',
+  ).click({ force: true, modifiers: ["ControlOrMeta"] });
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
+  await expect(nestedGroupResizer).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+Shift+A");
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
+  await page.waitForTimeout(400);
 
   const nestedPreviewSource = diagramNode(page, "level-4", "relay-4-00")
     .locator('.bd-port-handle-outer[data-handleid="out"]');
@@ -3192,9 +3303,38 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   await secondModuleButton.click({ force: true, modifiers: ["Shift"] });
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("2 objects selected");
   await expect(flowNode(page, "system::module-000")).toHaveClass(/selected/, { timeout: 30_000 });
-  await expect(flowNode(page, "system::module-001")).toHaveClass(/selected/, { timeout: 30_000 });
+  const secondSelectedFlowNode = flowNode(page, "system::module-001");
+  await expect(secondSelectedFlowNode).toHaveClass(/selected/, { timeout: 30_000 });
   await expect(page.locator(".bd-node-resize-handle")).toHaveCount(0);
   metrics.multiSelectTwoModulesMs = Math.round(performance.now() - multiSelectionStarted);
+  const performanceGroupResizer = page.locator(".bd-selection-resizer");
+  await expect(performanceGroupResizer).toBeVisible();
+  await page.waitForTimeout(400);
+  const performanceResizeBefore = await Promise.all([
+    selectedFlowNode.boundingBox(),
+    secondSelectedFlowNode.boundingBox(),
+  ]);
+  expect(performanceResizeBefore.every(Boolean)).toBe(true);
+  const performanceGroupResizeStarted = performance.now();
+  await dragSelectionResizeHandle(
+    page,
+    performanceGroupResizer.locator(".bd-selection-resize-handle.middle.right"),
+    { x: 18, y: 0 },
+    { alt: true },
+  );
+  metrics.groupResizeTwoModulesMs = Math.round(performance.now() - performanceGroupResizeStarted);
+  const performanceResizeAfter = await Promise.all([
+    selectedFlowNode.boundingBox(),
+    secondSelectedFlowNode.boundingBox(),
+  ]);
+  expect(performanceResizeAfter[0]!.width).toBeGreaterThan(performanceResizeBefore[0]!.width + 8);
+  expect(performanceResizeAfter[1]!.width).toBeGreaterThan(performanceResizeBefore[1]!.width + 8);
+  expect(performanceResizeAfter[0]!.height).toBeCloseTo(performanceResizeBefore[0]!.height, 0);
+  expect(performanceResizeAfter[1]!.height).toBeCloseTo(performanceResizeBefore[1]!.height, 0);
+  const performanceGroupUndoStarted = performance.now();
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  metrics.groupResizeUndoMs = Math.round(performance.now() - performanceGroupUndoStarted);
   await secondModuleButton.click({ force: true, modifiers: ["ControlOrMeta"] });
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("Module 000");
   await altSelectIntersectingNode(page, selectedFlowNode);
@@ -4682,6 +4822,123 @@ test("snaps a selected group by its full boundary regardless of the grabbed memb
   await expect(page.locator(".react-flow__node")).toHaveCount(3);
   await expect(page.locator(".react-flow__edge")).toHaveCount(2);
   await expect(page.locator(".bd-statusbar")).toContainText("Saved");
+});
+
+test("resizes a differently sized module selection as one atomic group", async ({ page, browserName }) => {
+  await openDesignDialog(page);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "group-resize-proof.block-design.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(groupAlignmentDesignDocument())),
+  });
+  await expect(page.locator(".bd-document-title span")).toHaveText("Group Alignment Proof");
+  await expect(page.locator(".bd-canvas-busy")).toHaveCount(0);
+  await page.waitForTimeout(350);
+
+  const compact = flowNode(page, "system::group-a");
+  const expanded = flowNode(page, "system::group-b");
+  await compact.click({ force: true });
+  await expanded.click({ force: true, modifiers: ["ControlOrMeta"] });
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
+  const resizer = page.locator(".bd-selection-resizer");
+  await expect(resizer).toBeVisible();
+  await expect(resizer.locator(".bd-selection-resize-handle")).toHaveCount(8);
+  await expect(page.locator(".bd-node-resize-handle")).toHaveCount(0);
+
+  const before = await Promise.all([resizer.boundingBox(), compact.boundingBox(), expanded.boundingBox()]);
+  expect(before.every(Boolean)).toBe(true);
+  const originalRatio = before[0]!.width / before[0]!.height;
+  const corner = resizer.locator(".bd-selection-resize-handle.bottom.right");
+  const cornerBox = await corner.boundingBox();
+  expect(cornerBox).not.toBeNull();
+  const start = {
+    x: cornerBox!.x + cornerBox!.width / 2,
+    y: cornerBox!.y + cornerBox!.height / 2,
+  };
+  expect(await page.evaluate(({ x, y }) => Boolean(
+    document.elementFromPoint(x, y)?.closest(".bd-selection-resize-handle.bottom.right"),
+  ), start)).toBe(true);
+  await dragSelectionResizeHandle(page, corner, { x: 160, y: 56 }, { shift: true });
+  await expect(page.locator(canvasGuideSelector)).toHaveCount(0);
+
+  const enlarged = await Promise.all([resizer.boundingBox(), compact.boundingBox(), expanded.boundingBox()]);
+  expect(enlarged.every(Boolean)).toBe(true);
+  expect(enlarged[0]!.width).toBeGreaterThan(before[0]!.width + 120);
+  expect(enlarged[0]!.width / enlarged[0]!.height).toBeCloseTo(originalRatio, 2);
+  expect(enlarged[1]!.width).toBeGreaterThan(before[1]!.width);
+  expect(enlarged[1]!.height).toBeGreaterThan(before[1]!.height);
+  expect(enlarged[2]!.width).toBeGreaterThan(before[2]!.width);
+  expect(enlarged[2]!.height).toBeGreaterThan(before[2]!.height);
+  expect(await routeNodeCollisions(page)).toEqual([]);
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 2,
+    auditedPairCount: 1,
+    expectedPairCount: 1,
+    duplicateRouteIds: [],
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  await expect(page.locator(".react-flow__edge-text")).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  const restored = await Promise.all([resizer.boundingBox(), compact.boundingBox(), expanded.boundingBox()]);
+  expect(restored.every(Boolean)).toBe(true);
+  restored.forEach((box, index) => {
+    expect(box!.x).toBeCloseTo(before[index]!.x, 0);
+    expect(box!.y).toBeCloseTo(before[index]!.y, 0);
+    expect(box!.width).toBeCloseTo(before[index]!.width, 0);
+    expect(box!.height).toBeCloseTo(before[index]!.height, 0);
+  });
+  await page.keyboard.press("ControlOrMeta+Shift+Z");
+  await waitForEditorIdle(page);
+  const redone = await Promise.all([compact.boundingBox(), expanded.boundingBox()]);
+  expect(redone[0]!.width).toBeCloseTo(enlarged[1]!.width, 0);
+  expect(redone[1]!.width).toBeCloseTo(enlarged[2]!.width, 0);
+  if (process.env.CAPTURE_GROUP_RESIZE === "1" && browserName === "chromium") {
+    await toolbarButton(page, "适应窗口").click({ force: true });
+    await page.waitForTimeout(450);
+    await captureStudioScreenshot(page, "docs/screenshots/group-resize.png");
+  }
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await downloadPromise).path();
+  expect(savedPath).not.toBeNull();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  const savedLevel = saved.levels.find((level: { id: string }) => level.id === "system");
+  const savedNodes = Object.fromEntries(savedLevel.nodes
+    .filter((node: { id: string }) => ["group-a", "group-b"].includes(node.id))
+    .map((node: { id: string; layout: unknown }) => [node.id, node.layout]));
+  expect(savedNodes).toMatchObject({
+    "group-a": { pinned: true },
+    "group-b": { pinned: true },
+  });
+  const savedCompact = savedLevel.nodes.find((node: { id: string }) => node.id === "group-a");
+  const savedExpanded = savedLevel.nodes.find((node: { id: string }) => node.id === "group-b");
+  expect(savedCompact.layout.width).toBeGreaterThan(192);
+  expect(savedExpanded.layout.width).toBeGreaterThan(256);
+
+  await openDesignDialog(page);
+  await page.locator('input[type="file"]').setInputFiles(savedPath!);
+  await expect(page.locator(".bd-document-title span")).toHaveText("Group Alignment Proof");
+  await waitForEditorIdle(page);
+  expect(await flowNode(page, "system::group-a").evaluate((element) =>
+    Number.parseFloat((element as HTMLElement).style.width),
+  )).toBe(savedCompact.layout.width);
+  expect(await flowNode(page, "system::group-b").evaluate((element) =>
+    Number.parseFloat((element as HTMLElement).style.width),
+  )).toBe(savedExpanded.layout.width);
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 2,
+    auditedPairCount: 1,
+    expectedPairCount: 1,
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
 });
 
 test("aligns and distributes same-level modules as atomic arrangement commands", async ({ page, browserName }) => {

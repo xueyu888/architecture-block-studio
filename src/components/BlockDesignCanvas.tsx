@@ -21,6 +21,7 @@ import {
   MiniMap,
   Panel,
   ReactFlow,
+  ViewportPortal,
   useNodesState,
   useReactFlow,
   useStore,
@@ -37,7 +38,7 @@ import {
   type NodeMouseHandler,
 } from "@xyflow/react";
 import { normalizeConnectionEndpoints } from "../model";
-import type { NodeMove } from "../editor";
+import type { NodeMove, NodeResize } from "../editor";
 import type {
   BlockDesignDocument,
   BlockPort,
@@ -50,6 +51,10 @@ import {
   DESIGN_GRID_SIZE,
   alignmentRectBounds,
   minimumNodeDimensions,
+  requestedSelectionResizeRect,
+  resizeSelectionGroup,
+  selectionResizeBounds,
+  selectionResizeLimits,
   snapMovingRect,
   snapResizingRect,
   type AlignmentGuide,
@@ -57,7 +62,10 @@ import {
   type LayoutFlowNode,
   type LayoutResult,
   type ResizeLimits,
+  type ResizedSelectionItem,
+  type SelectionResizeItem,
 } from "../layout";
+import type { NodeResizeDirection, NodeResizeRect } from "../layout";
 import {
   createRoutingLayoutProjectionFromLayout,
   planRouteJumps,
@@ -282,6 +290,7 @@ interface CanvasInnerProps {
     position: { x: number; y: number },
     size: { width: number; height: number },
   ) => boolean;
+  onResizeNodes: (resizes: readonly NodeResize[]) => boolean;
   onCreateConnection: (connection: {
     levelId: string;
     source: { nodeId: string; portId: string; label: string };
@@ -327,6 +336,103 @@ interface ResizePreview {
   nodeId: string;
   position: { x: number; y: number };
   size: { width: number; height: number };
+}
+
+interface SelectionResizeContext {
+  levelId: string;
+  parentId?: string;
+  parentOffset: { x: number; y: number };
+  items: readonly (SelectionResizeItem & { levelId: string; nodeId: string })[];
+  group: NodeResizeRect;
+  limits: ResizeLimits;
+  candidates: readonly AlignmentRect[];
+  tolerance: number;
+}
+
+interface SelectionResizePreview {
+  group: NodeResizeRect;
+  items: readonly ResizedSelectionItem[];
+}
+
+interface SelectionResizeGesture {
+  pointerId: number;
+  direction: NodeResizeDirection;
+  start: { x: number; y: number };
+  context: SelectionResizeContext;
+  preview: SelectionResizePreview;
+  modifiers: { altKey: boolean; shiftKey: boolean };
+  autoPan?: ViewportAutoPanGesture;
+}
+
+const SELECTION_RESIZE_HANDLES: readonly {
+  direction: NodeResizeDirection;
+  label: string;
+  className: string;
+}[] = [
+  { direction: { x: -1, y: -1 }, label: "Resize selected modules from top left", className: "top left" },
+  { direction: { x: 0, y: -1 }, label: "Resize selected modules from top", className: "top center" },
+  { direction: { x: 1, y: -1 }, label: "Resize selected modules from top right", className: "top right" },
+  { direction: { x: -1, y: 0 }, label: "Resize selected modules from left", className: "middle left" },
+  { direction: { x: 1, y: 0 }, label: "Resize selected modules from right", className: "middle right" },
+  { direction: { x: -1, y: 1 }, label: "Resize selected modules from bottom left", className: "bottom left" },
+  { direction: { x: 0, y: 1 }, label: "Resize selected modules from bottom", className: "bottom center" },
+  { direction: { x: 1, y: 1 }, label: "Resize selected modules from bottom right", className: "bottom right" },
+];
+
+function SelectionResizeOverlay({
+  bounds,
+  onPointerDown,
+}: {
+  bounds: NodeResizeRect;
+  onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, direction: NodeResizeDirection) => void;
+}) {
+  return (
+    <div
+      className="bd-selection-resizer nodrag nopan nokey"
+      data-selection-resize="true"
+      style={{
+        transform: `translate(${bounds.x}px, ${bounds.y}px)`,
+        width: bounds.width,
+        height: bounds.height,
+      }}
+    >
+      {SELECTION_RESIZE_HANDLES.map((handle) => (
+        <button
+          key={`${handle.direction.x}:${handle.direction.y}`}
+          type="button"
+          tabIndex={-1}
+          className={`bd-selection-resize-handle ${handle.className}`}
+          aria-label={handle.label}
+          data-resize-x={handle.direction.x}
+          data-resize-y={handle.direction.y}
+          onPointerDown={(event) => onPointerDown(event, handle.direction)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function offsetAlignmentGuides(
+  guides: readonly AlignmentGuide[],
+  offset: { x: number; y: number },
+): AlignmentGuide[] {
+  return guides.map((guide) => {
+    if (guide.kind === "line") {
+      return guide.axis === "x"
+        ? { ...guide, coordinate: guide.coordinate + offset.x, from: guide.from + offset.y, to: guide.to + offset.y }
+        : { ...guide, coordinate: guide.coordinate + offset.y, from: guide.from + offset.x, to: guide.to + offset.x };
+    }
+    if (guide.kind === "size") {
+      return {
+        ...guide,
+        subject: { ...guide.subject, x: guide.subject.x + offset.x, y: guide.subject.y + offset.y },
+        target: { ...guide.target, x: guide.target.x + offset.x, y: guide.target.y + offset.y },
+      };
+    }
+    return guide.axis === "x"
+      ? { ...guide, from: guide.from + offset.x, to: guide.to + offset.x, cross: guide.cross + offset.y }
+      : { ...guide, from: guide.from + offset.y, to: guide.to + offset.y, cross: guide.cross + offset.x };
+  });
 }
 
 interface BoxSelectionGesture {
@@ -397,11 +503,12 @@ const CanvasInner = memo(function CanvasInner({
   onMoveNodes,
   onCloneNodes,
   onResizeNode,
+  onResizeNodes,
   onCreateConnection,
   onRouteConnection,
   onReconnectConnection,
 }: CanvasInnerProps) {
-  const { fitBounds, fitView, getViewport, setViewport, zoomIn, zoomOut, zoomTo } = useReactFlow();
+  const { fitBounds, fitView, getViewport, screenToFlowPosition, setViewport, zoomIn, zoomOut, zoomTo } = useReactFlow();
   const store = useStoreApi();
   const viewportAutoPan = useMemo(() => createViewportAutoPanController({
     bounds: () => store.getState().domNode?.getBoundingClientRect(),
@@ -447,10 +554,12 @@ const CanvasInner = memo(function CanvasInner({
   const [spacePanActive, setSpacePanActive] = useState(false);
   const [compactOverviewMapOpen, setCompactOverviewMapOpen] = useState(false);
   const [resizeRestoreRevision, setResizeRestoreRevision] = useState(0);
+  const [selectionResizePreview, setSelectionResizePreview] = useState<SelectionResizePreview>();
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
   const alignmentGestureRef = useRef<AlignmentGesture | undefined>(undefined);
   const nodeDragAutoPanRef = useRef<ViewportAutoPanGesture | undefined>(undefined);
   const nodeDragModifiersRef = useRef({ altKey: false, ctrlKey: false, metaKey: false, shiftKey: false });
+  const selectionResizeGestureRef = useRef<SelectionResizeGesture | undefined>(undefined);
   const boxSelectionStartRef = useRef<{
     x: number;
     y: number;
@@ -931,6 +1040,69 @@ const CanvasInner = memo(function CanvasInner({
   const selectedEdgeIdsKey = selectedEdgeIds.join("\u0000");
   const selectedEdgeIdsRef = useRef<ReadonlySet<string>>(new Set(selectedEdgeIds));
   selectedEdgeIdsRef.current = new Set(selectedEdgeIds);
+  const selectionResizeContext = useMemo<SelectionResizeContext | undefined>(() => {
+    if (
+      selectedDiagramItems.length < 2 ||
+      selectedDiagramItems.some((item) => item.kind !== "node") ||
+      selectedNodeIds.length !== selectedDiagramItems.length
+    ) return undefined;
+    const selected = selectedNodeIds.map((id) => baseNodeById.get(id));
+    if (selected.some((node) => !node || !node.data.positionEditable || node.data.expanded)) return undefined;
+    const concrete = selected as CanvasFlowNode[];
+    const parentIds = new Set(concrete.map((node) => node.parentId));
+    const levelIds = new Set(concrete.map((node) => node.data.levelId));
+    if (parentIds.size !== 1 || levelIds.size !== 1) return undefined;
+    const parentId = concrete[0].parentId;
+    const items = concrete.map((node) => {
+      const width = (node.width ?? Number(node.style?.width)) || 0;
+      const height = (node.height ?? Number(node.style?.height)) || 0;
+      const minimum = minimumNodeDimensions(node.data.block);
+      return {
+        id: node.id,
+        levelId: node.data.levelId,
+        nodeId: node.data.block.id,
+        x: node.position.x,
+        y: node.position.y,
+        width,
+        height,
+        minWidth: minimum.width,
+        minHeight: minimum.height,
+        maxWidth: BLOCK_NODE_GEOMETRY.maximumWidth,
+        maxHeight: BLOCK_NODE_GEOMETRY.maximumHeight,
+      };
+    });
+    if (items.some((item) => item.width <= 0 || item.height <= 0)) return undefined;
+    const parentOffset = { x: 0, y: 0 };
+    let ancestorId = parentId;
+    const visited = new Set<string>();
+    while (ancestorId && !visited.has(ancestorId)) {
+      visited.add(ancestorId);
+      const ancestor = baseNodeById.get(ancestorId);
+      if (!ancestor) return undefined;
+      parentOffset.x += ancestor.position.x;
+      parentOffset.y += ancestor.position.y;
+      ancestorId = ancestor.parentId;
+    }
+    const group = selectionResizeBounds(items);
+    const candidates = baseNodes.flatMap((node): AlignmentRect[] => {
+      if (selectedNodeIdsRef.current.has(node.id) || node.parentId !== parentId || node.hidden) return [];
+      const width = (node.width ?? Number(node.style?.width)) || 0;
+      const height = (node.height ?? Number(node.style?.height)) || 0;
+      return width > 0 && height > 0
+        ? [{ id: node.id, x: node.position.x, y: node.position.y, width, height }]
+        : [];
+    });
+    return {
+      levelId: concrete[0].data.levelId,
+      parentId,
+      parentOffset,
+      items,
+      group,
+      limits: selectionResizeLimits(items, group),
+      candidates,
+      tolerance: ALIGNMENT_TOLERANCE_PX / store.getState().transform[2],
+    };
+  }, [baseNodeById, baseNodes, selectedDiagramItems, selectedNodeIds, store]);
   const [selectionRestoreRevision, setSelectionRestoreRevision] = useState(0);
   const handledRevealSelectionRequest = useRef(0);
   const handledFitSelectionRequest = useRef(0);
@@ -938,6 +1110,185 @@ const CanvasInner = memo(function CanvasInner({
   const [edges, setEdges] = useState<CanvasFlowEdge[]>(() =>
     reconcileCanvasSelection(routedEdges, selectedEdgeIdsRef.current),
   );
+  const updateSelectionResizePointerRef = useRef<((
+    pointer: { clientX: number; clientY: number },
+    modifiers?: { altKey: boolean; shiftKey: boolean },
+  ) => void) | undefined>(undefined);
+
+  const applySelectionResizePreview = useCallback((
+    context: SelectionResizeContext,
+    preview: SelectionResizePreview,
+  ) => {
+    const resizedById = new Map(preview.items.map((item) => [item.id, item]));
+    setSelectionResizePreview(preview);
+    setNodes((current) => current.map((node) => {
+      const resized = resizedById.get(node.id);
+      if (!resized) return node;
+      return {
+        ...node,
+        position: { ...resized.position },
+        width: resized.size.width,
+        height: resized.size.height,
+        style: { ...node.style, width: resized.size.width, height: resized.size.height },
+      };
+    }));
+    const root = store.getState().domNode;
+    if (root) {
+      root.dataset.selectionResizeActive = "true";
+      root.dataset.selectionResizeCount = String(context.items.length);
+    }
+  }, [setNodes, store]);
+
+  const updateSelectionResizePointer = useCallback((
+    pointer: { clientX: number; clientY: number },
+    modifiers?: { altKey: boolean; shiftKey: boolean },
+  ) => {
+    const gesture = selectionResizeGestureRef.current;
+    if (!gesture) return;
+    if (modifiers) gesture.modifiers = modifiers;
+    const current = screenToFlowPosition({ x: pointer.clientX, y: pointer.clientY });
+    const requested = requestedSelectionResizeRect(
+      gesture.context.group,
+      { x: current.x - gesture.start.x, y: current.y - gesture.start.y },
+      gesture.direction,
+    );
+    let resolved = resizeSelectionGroup(
+      gesture.context.items,
+      requested,
+      gesture.direction,
+      gesture.modifiers.shiftKey,
+    );
+    if (!gesture.modifiers.altKey && !gesture.modifiers.shiftKey) {
+      const snapped = snapResizingRect(
+        { id: "selection-resize", ...gesture.context.group },
+        { id: "selection-resize", ...resolved.group },
+        gesture.context.candidates,
+        gesture.context.tolerance,
+        gesture.context.limits,
+        DESIGN_GRID_SIZE,
+      );
+      resolved = resizeSelectionGroup(gesture.context.items, snapped.rect, gesture.direction);
+      setAlignmentGuides(offsetAlignmentGuides(snapped.guides, gesture.context.parentOffset));
+    } else {
+      setAlignmentGuides([]);
+    }
+    gesture.preview = resolved;
+    applySelectionResizePreview(gesture.context, resolved);
+  }, [applySelectionResizePreview, screenToFlowPosition]);
+  updateSelectionResizePointerRef.current = updateSelectionResizePointer;
+
+  const finishSelectionResize = useCallback((commit: boolean) => {
+    const gesture = selectionResizeGestureRef.current;
+    if (!gesture) return;
+    gesture.autoPan?.stop();
+    selectionResizeGestureRef.current = undefined;
+    setSelectionResizePreview(undefined);
+    setAlignmentGuides([]);
+    const root = store.getState().domNode;
+    if (root) {
+      delete root.dataset.selectionResizeActive;
+      delete root.dataset.selectionResizeCount;
+    }
+    const contextById = new Map(gesture.context.items.map((item) => [item.id, item]));
+    const resizes = gesture.preview.items.flatMap((item): NodeResize[] => {
+      const source = contextById.get(item.id);
+      return source ? [{
+        levelId: source.levelId,
+        nodeId: source.nodeId,
+        position: item.position,
+        size: item.size,
+      }] : [];
+    });
+    const accepted = commit && resizes.length === gesture.context.items.length && onResizeNodes(resizes);
+    if (accepted) {
+      setCanvasAnnouncement(`Resized ${resizes.length} selected modules.`);
+      return;
+    }
+    setNodes(reconcileCanvasSelection(baseNodes, selectedNodeIdsRef.current));
+    if (commit) setResizeRestoreRevision((revision) => revision + 1);
+  }, [baseNodes, onResizeNodes, setNodes, store]);
+
+  const onSelectionResizePointerDown = useCallback((
+    event: ReactPointerEvent<HTMLButtonElement>,
+    direction: NodeResizeDirection,
+  ) => {
+    if (!selectionResizeContext || event.button !== 0 || !event.isPrimary) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const start = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    const preview = resizeSelectionGroup(
+      selectionResizeContext.items,
+      selectionResizeContext.group,
+      direction,
+    );
+    const gesture: SelectionResizeGesture = {
+      pointerId: event.pointerId,
+      direction,
+      start,
+      context: {
+        ...selectionResizeContext,
+        tolerance: ALIGNMENT_TOLERANCE_PX / store.getState().transform[2],
+      },
+      preview,
+      modifiers: { altKey: event.altKey, shiftKey: event.shiftKey },
+    };
+    selectionResizeGestureRef.current?.autoPan?.stop();
+    selectionResizeGestureRef.current = gesture;
+    applySelectionResizePreview(gesture.context, preview);
+    gesture.autoPan = viewportAutoPan.start(
+      { clientX: event.clientX, clientY: event.clientY },
+      (pointer) => updateSelectionResizePointerRef.current?.(pointer),
+    );
+  }, [applySelectionResizePreview, screenToFlowPosition, selectionResizeContext, store, viewportAutoPan]);
+
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      const gesture = selectionResizeGestureRef.current;
+      if (!gesture || event.pointerId !== gesture.pointerId) return;
+      gesture.autoPan?.update({ clientX: event.clientX, clientY: event.clientY });
+      updateSelectionResizePointer({ clientX: event.clientX, clientY: event.clientY }, {
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+      });
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      const gesture = selectionResizeGestureRef.current;
+      if (!gesture || event.pointerId !== gesture.pointerId) return;
+      updateSelectionResizePointer({ clientX: event.clientX, clientY: event.clientY }, {
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+      });
+      finishSelectionResize(true);
+    };
+    const onPointerCancel = (event: PointerEvent) => {
+      if (selectionResizeGestureRef.current?.pointerId === event.pointerId) finishSelectionResize(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && selectionResizeGestureRef.current) {
+        event.preventDefault();
+        finishSelectionResize(false);
+      }
+    };
+    const onBlur = () => finishSelectionResize(false);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerCancel);
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      selectionResizeGestureRef.current?.autoPan?.stop();
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerCancel);
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [finishSelectionResize, updateSelectionResizePointer]);
+
+  useEffect(() => {
+    if (selectionResizeGestureRef.current || selectionResizeContext) return;
+    setSelectionResizePreview(undefined);
+  }, [selectionResizeContext]);
 
   useEffect(() => {
     if (!connectionFeedback) return;
@@ -2186,6 +2537,18 @@ const CanvasInner = memo(function CanvasInner({
           ) : connectionFeedback ? (
             <ConnectionGestureFeedbackPanel feedback={connectionFeedback} />
           ) : null}
+          {selectionResizeContext ? (
+            <ViewportPortal>
+              <SelectionResizeOverlay
+                bounds={{
+                  ...(selectionResizePreview?.group ?? selectionResizeContext.group),
+                  x: (selectionResizePreview?.group.x ?? selectionResizeContext.group.x) + selectionResizeContext.parentOffset.x,
+                  y: (selectionResizePreview?.group.y ?? selectionResizeContext.group.y) + selectionResizeContext.parentOffset.y,
+                }}
+                onPointerDown={onSelectionResizePointerDown}
+              />
+            </ViewportPortal>
+          ) : null}
           <AlignmentGuideLayer guides={alignmentGuides} />
           {routingFailure ? (
             <div
@@ -2242,6 +2605,7 @@ export function BlockDesignCanvas(props: BlockDesignCanvasProps) {
         onMoveNodes={props.onMoveNodes}
         onCloneNodes={props.onCloneNodes}
         onResizeNode={props.onResizeNode}
+        onResizeNodes={props.onResizeNodes}
         onCreateConnection={props.onCreateConnection}
         onRouteConnection={props.onRouteConnection}
         onReconnectConnection={props.onReconnectConnection}

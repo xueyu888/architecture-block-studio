@@ -54,6 +54,10 @@ export interface NodeMove {
   position: { x: number; y: number };
 }
 
+export interface NodeResize extends NodeMove {
+  size: { width: number; height: number };
+}
+
 export type DiagramDeleteTarget =
   | { kind: "node"; levelId: string; nodeId: string }
   | { kind: "connection"; levelId: string; connectionId: string };
@@ -78,13 +82,8 @@ export type DesignOperation =
   | { type: "node/move"; levelId: string; nodeId: string; position: { x: number; y: number } }
   | { type: "nodes/move"; moves: readonly NodeMove[] }
   | { type: "fragment/insert"; levelId: string; fragment: DesignFragment; offset: { x: number; y: number } }
-  | {
-      type: "node/resize";
-      levelId: string;
-      nodeId: string;
-      position: { x: number; y: number };
-      size: { width: number; height: number };
-    }
+  | ({ type: "node/resize" } & NodeResize)
+  | { type: "nodes/resize"; resizes: readonly NodeResize[] }
   | { type: "node/delete"; levelId: string; nodeId: string }
   | { type: "objects/delete"; targets: readonly DiagramDeleteTarget[] }
   | { type: "port/add"; levelId: string; nodeId: string; port: BlockPort }
@@ -168,6 +167,33 @@ function moveNodes(document: BlockDesignDocument, moves: readonly NodeMove[]): v
         x: Math.round(move.position.x),
         y: Math.round(move.position.y),
       },
+      pinned: true,
+    };
+  });
+}
+
+function resizeNodes(document: BlockDesignDocument, resizes: readonly NodeResize[]): void {
+  if (resizes.length === 0) editError("At least one module is required for a resize operation.");
+  const identities = new Set<string>();
+  const targets = resizes.map((resize) => {
+    const identity = `${resize.levelId}\u0000${resize.nodeId}`;
+    if (identities.has(identity)) editError(`Module ${resize.nodeId} can only be resized once per operation.`);
+    identities.add(identity);
+    if (![resize.position.x, resize.position.y, resize.size.width, resize.size.height].every(Number.isFinite) ||
+      resize.size.width <= 0 || resize.size.height <= 0) {
+      editError(`Module ${resize.nodeId} resize geometry must be finite with positive dimensions.`);
+    }
+    return { node: requireNode(requireLevel(document, resize.levelId), resize.nodeId), resize };
+  });
+  targets.forEach(({ node, resize }) => {
+    node.layout = {
+      ...node.layout,
+      position: {
+        x: Math.round(resize.position.x),
+        y: Math.round(resize.position.y),
+      },
+      width: Math.round(resize.size.width),
+      height: Math.round(resize.size.height),
       pinned: true,
     };
   });
@@ -388,17 +414,11 @@ export function applyDesignOperation(
       break;
     }
     case "node/resize": {
-      const node = requireNode(requireLevel(next, operation.levelId), operation.nodeId);
-      node.layout = {
-        ...node.layout,
-        position: {
-          x: Math.round(operation.position.x),
-          y: Math.round(operation.position.y),
-        },
-        width: Math.round(operation.size.width),
-        height: Math.round(operation.size.height),
-        pinned: true,
-      };
+      resizeNodes(next, [operation]);
+      break;
+    }
+    case "nodes/resize": {
+      resizeNodes(next, operation.resizes);
       break;
     }
     case "node/delete": {

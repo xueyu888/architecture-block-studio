@@ -87,6 +87,7 @@ import {
   type DesignOperation,
   type DesignFragment,
   type NodeMove,
+  type NodeResize,
 } from "../editor";
 import {
   loadDesignFromFile,
@@ -1045,6 +1046,11 @@ export function BlockDesignStudio({
     return Boolean(runOperation({ type: "node/resize", levelId, nodeId, position, size }));
   }, [requireAppliedInspectorDraft, runOperation]);
 
+  const resizeNodes = useCallback((resizes: readonly NodeResize[]) => {
+    if (!requireAppliedInspectorDraft("resizing the selected modules")) return false;
+    return Boolean(runOperation({ type: "nodes/resize", resizes }));
+  }, [requireAppliedInspectorDraft, runOperation]);
+
   const createConnection = useCallback((connection: {
     levelId: string;
     source: { nodeId: string; portId: string; label: string };
@@ -1718,6 +1724,7 @@ export function BlockDesignStudio({
             onMoveNodes={moveNodes}
             onCloneNodes={cloneDraggedModules}
             onResizeNode={resizeNode}
+            onResizeNodes={resizeNodes}
             onCreateConnection={createConnection}
             onRouteConnection={routeConnection}
             onReconnectConnection={applyConnectionReconnect}
