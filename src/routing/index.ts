@@ -24,6 +24,11 @@ export {
 } from "./connectionPreview";
 export { planRouteJumps, reconcileRouteJumpReferences } from "./routeJumps";
 export {
+  applyCommittedRoutingFrameMapPatch,
+  createCommittedRoutingFrameMapPatch,
+  type CommittedRoutingFrameMapPatch,
+} from "./committedRoutingFramePatch";
+export {
   editableOrthogonalRoute,
   editableRouteBends,
   moveRouteBend,

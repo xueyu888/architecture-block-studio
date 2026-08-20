@@ -1,5 +1,6 @@
 export * from "./layoutBlockDesign";
 export * from "./reconcileLayoutResult";
+export * from "./projectAuthoredNodeGeometry";
 export * from "./alignmentGuides";
 export * from "./compoundNodeGeometry";
 export * from "./layoutSignatures";

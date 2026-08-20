@@ -77,6 +77,7 @@ import {
 } from "../layout";
 import type { NodeResizeDirection, NodeResizeRect } from "../layout";
 import {
+  applyCommittedRoutingFrameMapPatch,
   committedRoutingFrameKey,
   computeCommittedRoutingFrame,
   computeCommittedRoutingProjectionFrame,
@@ -85,7 +86,6 @@ import {
   planRouteJumps,
   reconcileRouteJumpReferences,
   reconcileRoutingRouteReferences,
-  reconcileRoutingResultReferences,
   routingPolicyForScene,
   solveLiveRoutingPreview,
   type CommittedRoutingComputationMode,
@@ -187,6 +187,8 @@ interface RoutingCanvasProjection {
   neighborhoodLegIds: readonly string[];
   durationMs: number;
   routeJumps: ReadonlyMap<string, readonly RouteJump[]>;
+  transportedRouteCount: number;
+  transportedRouteJumpCount: number;
 }
 
 type DirectManipulationKind = "node-drag" | "node-resize" | "selection-resize";
@@ -204,6 +206,8 @@ const EMPTY_ROUTING_PROJECTION: RoutingCanvasProjection = {
   layout: EMPTY_LAYOUT,
   durationMs: 0,
   routeJumps: planRouteJumps(EMPTY_ROUTING_COMPUTATION.result.routes),
+  transportedRouteCount: 0,
+  transportedRouteJumpCount: 0,
   ...EMPTY_ROUTING_COMPUTATION,
 };
 
@@ -763,6 +767,8 @@ const CanvasInner = memo(function CanvasInner({
       layout: requestedLayout,
       durationMs: performance.now() - startedAt,
       routeJumps: planRouteJumps(computation.result.routes),
+      transportedRouteCount: computation.result.routes.size,
+      transportedRouteJumpCount: computation.result.routes.size,
       ...computation,
     };
   }, [
@@ -775,16 +781,12 @@ const CanvasInner = memo(function CanvasInner({
   const committedRoutingWorkerInput = useMemo(() => {
     if (requestedLayout.edges.length <= LIVE_ROUTING_EXACT_LEG_LIMIT ||
       acceptedCommittedFrame?.frameKey === desiredCommittedFrameKey) return undefined;
-    const previous = acceptedCommittedFrame ? {
-      scene: acceptedCommittedFrame.layoutProjection.scene,
-      policy: acceptedCommittedFrame.policy,
-      result: acceptedCommittedFrame.result,
-    } : undefined;
+    const previousFrameKey = acceptedCommittedFrame?.frameKey;
     return {
       frameKey: desiredCommittedFrameKey,
-      layoutProjection: requestedRoutingProjection,
-      previous,
-      forceFull: !previous ||
+      scene: requestedRoutingProjection.scene,
+      previousFrameKey,
+      forceFull: !previousFrameKey ||
         acceptedCommittedFrame?.routeRevision !== routeRevision ||
         (acceptedCommittedFrame.layout.edges.length === 0 && requestedLayout.edges.length > 0),
     };
@@ -801,21 +803,31 @@ const CanvasInner = memo(function CanvasInner({
     if (synchronousCommittedFrame) return synchronousCommittedFrame;
     const response = committedRoutingWorker.response;
     if (!response || response.frameKey !== desiredCommittedFrameKey) return undefined;
+    const routes = applyCommittedRoutingFrameMapPatch(
+      response.routePatch,
+      acceptedCommittedFrame?.frameKey,
+      acceptedCommittedFrame?.result.routes,
+    );
+    const routeJumps = applyCommittedRoutingFrameMapPatch(
+      response.routeJumpPatch,
+      acceptedCommittedFrame?.frameKey,
+      acceptedCommittedFrame?.routeJumps,
+    );
+    if (!routes || !routeJumps) return undefined;
     return {
       frameKey: response.frameKey,
       routeRevision,
       layout: requestedLayout,
       layoutProjection: requestedRoutingProjection,
       policy: response.policy,
-      result: reconcileRoutingResultReferences(acceptedCommittedFrame?.result, response.result),
-      routeJumps: reconcileRouteJumpReferences(
-        acceptedCommittedFrame?.routeJumps ?? new Map(),
-        response.routeJumps,
-      ),
+      result: { ...response.result, routes },
+      routeJumps,
       mode: response.mode,
       affectedLegIds: response.affectedLegIds,
       neighborhoodLegIds: response.neighborhoodLegIds,
       durationMs: response.durationMs,
+      transportedRouteCount: response.routePatch.upserted.size,
+      transportedRouteJumpCount: response.routeJumpPatch.upserted.size,
     };
   }, [
     acceptedCommittedFrame,
@@ -3401,6 +3413,8 @@ const CanvasInner = memo(function CanvasInner({
           data-committed-routing-affected={acceptedOrEmptyCommittedFrame.affectedLegIds.length}
           data-committed-routing-neighborhood={acceptedOrEmptyCommittedFrame.neighborhoodLegIds.length}
           data-committed-routing-duration-ms={acceptedOrEmptyCommittedFrame.durationMs.toFixed(2)}
+          data-committed-routing-route-upserts={acceptedOrEmptyCommittedFrame.transportedRouteCount}
+          data-committed-routing-jump-upserts={acceptedOrEmptyCommittedFrame.transportedRouteJumpCount}
           data-projected-node-changes={projectedNodeChangeCountRef.current.count}
           data-projected-edge-changes={projectedEdgeChangeCountRef.current.count}
           >

@@ -10,6 +10,7 @@ import {
 } from "../../src/editor/designHistory";
 import { createBlankDesign } from "../../src/editor/designEditor";
 import { connectedDesign } from "./designFixture";
+import { serializeDesignSnapshot } from "../../src/io/saveDesign";
 
 function rename(title: string) {
   return {
@@ -86,7 +87,11 @@ describe("design history state machine", () => {
     const reordered = structuredClone(document);
     reordered.interfaceDefinitions["source.output"].attributes = { alpha: "first", zebra: "last" };
 
-    expect(isDesignHistoryDirty({ ...saved, document: reordered })).toBe(false);
+    expect(isDesignHistoryDirty({
+      ...saved,
+      document: reordered,
+      currentSnapshot: serializeDesignSnapshot(reordered),
+    })).toBe(false);
   });
 
   test("replacement installs a new baseline and clears both history directions", () => {

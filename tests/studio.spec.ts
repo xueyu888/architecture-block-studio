@@ -516,13 +516,17 @@ async function waitForLayout(page: Page): Promise<void> {
 }
 
 async function waitForEditorIdle(page: Page): Promise<void> {
+  await waitForCertifiedEditorFrame(page);
+  await page.waitForTimeout(250);
+}
+
+async function waitForCertifiedEditorFrame(page: Page): Promise<void> {
   await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 30_000 });
   const canvas = page.locator(".bd-react-flow");
   if (await canvas.count()) {
     await expect(canvas).toHaveAttribute("data-committed-routing-status", "ready", { timeout: 30_000 });
     await expect(canvas).toHaveAttribute("data-routing-frame-phase", "idle", { timeout: 30_000 });
   }
-  await page.waitForTimeout(250);
 }
 
 interface ChromiumHeapUsage {
@@ -715,10 +719,12 @@ async function dragSelectionResizeHandle(
   const pointerReleaseMs = performance.now() - releaseStartedAt;
   if (modifiers.shift) await page.keyboard.up("Shift");
   if (modifiers.alt) await page.keyboard.up("Alt");
-  await waitForEditorIdle(page);
+  await waitForCertifiedEditorFrame(page);
+  const committedReadyMs = performance.now() - releaseStartedAt;
+  await page.waitForTimeout(250);
   return {
     pointerReleaseMs,
-    committedReadyMs: performance.now() - releaseStartedAt,
+    committedReadyMs,
   };
 }
 
@@ -4309,6 +4315,12 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   metrics.committedResizeWorkerDurationMs = Number(
     await committedCanvas.getAttribute("data-committed-routing-duration-ms"),
   );
+  metrics.committedResizeTransportedRoutes = Number(
+    await committedCanvas.getAttribute("data-committed-routing-route-upserts"),
+  );
+  metrics.committedResizeTransportedRouteJumps = Number(
+    await committedCanvas.getAttribute("data-committed-routing-jump-upserts"),
+  );
   metrics.committedResizeProjectedNodeChanges = Number(
     await committedCanvas.getAttribute("data-projected-node-changes"),
   );
@@ -4321,6 +4333,9 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   );
   expect(metrics.committedResizeNeighborhoodRoutes).toBeLessThan(connectionCount);
   expect(metrics.committedResizeWorkerDurationMs).toBeLessThan(1_000);
+  expect(metrics.committedResizeTransportedRoutes)
+    .toBeLessThanOrEqual(metrics.committedResizeNeighborhoodRoutes);
+  expect(metrics.committedResizeTransportedRouteJumps).toBeLessThan(connectionCount);
   expect(metrics.committedResizeProjectedNodeChanges).toBeLessThanOrEqual(2);
   expect(metrics.committedResizeProjectedEdgeChanges).toBeLessThan(connectionCount);
   metrics.liveResizeFullAuditMs = Math.round(performanceLiveResizeAuditMs);

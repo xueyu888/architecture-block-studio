@@ -1,4 +1,7 @@
-import { computeCommittedRoutingProjectionFrame } from "./committedRoutingFrame";
+import {
+  CommittedRoutingFrameStore,
+} from "./committedRoutingFrameStore";
+import { createCommittedRoutingFrameMapPatch } from "./committedRoutingFramePatch";
 import { solveLiveRoutingPreview } from "./liveRoutingPreview";
 import { planRouteJumps } from "./routeJumps";
 import type {
@@ -10,6 +13,8 @@ const workerScope = self as unknown as {
   onmessage: ((event: MessageEvent<RoutingFrameWorkerRequest>) => void) | null;
   postMessage(message: RoutingFrameWorkerResponse): void;
 };
+
+const committedFrames = new CommittedRoutingFrameStore();
 
 workerScope.onmessage = (event) => {
   const request = event.data;
@@ -33,19 +38,35 @@ workerScope.onmessage = (event) => {
     return;
   }
 
-  const computation = computeCommittedRoutingProjectionFrame(
-    request.layoutProjection,
-    request.previous,
-    request.forceFull,
-  );
-  const routeJumps = planRouteJumps(computation.result.routes);
-  const { layoutProjection: _layoutProjection, ...responseComputation } = computation;
+  const computation = committedFrames.compute(request);
+  const {
+    baseFrameKey,
+    previousRoutes,
+    previousRouteJumps,
+    routeJumps,
+    result,
+    ...responseComputation
+  } = computation;
   workerScope.postMessage({
     kind: "committed",
     requestId: request.requestId,
     frameKey: request.frameKey,
     durationMs: performance.now() - startedAt,
-    routeJumps,
     ...responseComputation,
+    result: {
+      status: result.status,
+      diagnostics: result.diagnostics,
+      certificate: result.certificate,
+    },
+    routePatch: createCommittedRoutingFrameMapPatch(
+      baseFrameKey,
+      previousRoutes,
+      result.routes,
+    ),
+    routeJumpPatch: createCommittedRoutingFrameMapPatch(
+      baseFrameKey,
+      previousRouteJumps,
+      routeJumps,
+    ),
   });
 };

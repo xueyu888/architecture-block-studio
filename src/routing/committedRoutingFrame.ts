@@ -27,6 +27,11 @@ export interface CommittedRoutingComputation {
   neighborhoodLegIds: readonly string[];
 }
 
+export type CommittedRoutingSceneComputation = Omit<
+  CommittedRoutingComputation,
+  "layoutProjection"
+>;
+
 let nextLayoutIdentity = 1;
 const layoutIdentities = new WeakMap<LayoutResult, number>();
 
@@ -112,22 +117,32 @@ export function computeCommittedRoutingProjectionFrame(
   previous?: PreviousCommittedRoutingFrame,
   forceFull = false,
 ): CommittedRoutingComputation {
-  const policy = routingPolicyForScene(layoutProjection.scene);
+  return {
+    layoutProjection,
+    ...computeCommittedRoutingSceneFrame(layoutProjection.scene, previous, forceFull),
+  };
+}
+
+/** Computes the certifiable routing facts without transporting Canvas-only projection data. */
+export function computeCommittedRoutingSceneFrame(
+  scene: RoutingScene,
+  previous?: PreviousCommittedRoutingFrame,
+  forceFull = false,
+): CommittedRoutingSceneComputation {
+  const policy = routingPolicyForScene(scene);
   if (!previous || forceFull || !samePolicy(previous.policy, policy)) {
     return {
       mode: "full",
-      layoutProjection,
       policy,
-      result: solveRoutingScene(layoutProjection.scene, policy),
-      affectedLegIds: layoutProjection.scene.legs.map((leg) => leg.id).sort(),
-      neighborhoodLegIds: layoutProjection.scene.legs.map((leg) => leg.id).sort(),
+      result: solveRoutingScene(scene, policy),
+      affectedLegIds: scene.legs.map((leg) => leg.id).sort(),
+      neighborhoodLegIds: scene.legs.map((leg) => leg.id).sort(),
     };
   }
 
-  if (sameScene(previous.scene, layoutProjection.scene)) {
+  if (sameScene(previous.scene, scene)) {
     return {
       mode: "retained",
-      layoutProjection,
       policy,
       result: previous.result,
       affectedLegIds: [],
@@ -137,15 +152,14 @@ export function computeCommittedRoutingProjectionFrame(
 
   const preview = solveLiveRoutingPreview(
     previous.scene,
-    layoutProjection.scene,
+    scene,
     previous.result,
     policy,
   );
   return {
     mode: "rebased",
-    layoutProjection,
     policy,
-    result: certifyRoutingSceneRoutes(layoutProjection.scene, preview.routes, policy),
+    result: certifyRoutingSceneRoutes(scene, preview.routes, policy),
     affectedLegIds: preview.affectedLegIds,
     neighborhoodLegIds: preview.neighborhoodLegIds,
   };

@@ -1,21 +1,32 @@
 import type {
-  CommittedRoutingComputation,
-  PreviousCommittedRoutingFrame,
+  CommittedRoutingComputationMode,
 } from "./committedRoutingFrame";
-import type { RoutingLayoutProjection } from "./layoutSceneAdapter";
+import type { CommittedRoutingFrameMapPatch } from "./committedRoutingFramePatch";
 import type { RouteJump } from "./routeInterface";
+import type {
+  PlannedRoute,
+  RoutingPolicy,
+  RoutingResult,
+  RoutingScene,
+} from "./routingScene";
 
 export interface CommittedRoutingWorkerRequest {
   requestId: number;
   frameKey: string;
-  layoutProjection: RoutingLayoutProjection;
-  previous?: PreviousCommittedRoutingFrame;
+  scene: RoutingScene;
+  previousFrameKey?: string;
   forceFull: boolean;
 }
 
-export interface CommittedRoutingWorkerResponse extends Omit<CommittedRoutingComputation, "layoutProjection"> {
+export interface CommittedRoutingWorkerResponse {
   requestId: number;
   frameKey: string;
   durationMs: number;
-  routeJumps: ReadonlyMap<string, readonly RouteJump[]>;
+  mode: CommittedRoutingComputationMode;
+  policy: RoutingPolicy;
+  result: Omit<RoutingResult, "routes">;
+  routePatch: CommittedRoutingFrameMapPatch<PlannedRoute>;
+  routeJumpPatch: CommittedRoutingFrameMapPatch<readonly RouteJump[]>;
+  affectedLegIds: readonly string[];
+  neighborhoodLegIds: readonly string[];
 }

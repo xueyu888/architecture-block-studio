@@ -2,7 +2,7 @@
   "schemaVersion": "2.1",
   "id": "architecture-block-studio.source-architecture.v1",
   "title": "Architecture Block Studio — Source Architecture",
-  "summary": "Generated from 81 managed source files and 27 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
+  "summary": "Generated from 84 managed source files and 27 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
   "entryLevelId": "product-boundary",
   "sourceRef": {
     "label": "architecture-block-studio",
@@ -489,7 +489,7 @@
               "label": "Layout",
               "side": "right",
               "direction": "input",
-              "dataType": "4 import declarations",
+              "dataType": "5 import declarations",
               "required": true,
               "order": 3
             },
@@ -762,7 +762,7 @@
               "label": "Model",
               "side": "left",
               "direction": "output",
-              "dataType": "4 import declarations",
+              "dataType": "5 import declarations",
               "required": true,
               "order": 0
             }
@@ -784,7 +784,7 @@
               "architectureGroupId": "geometry",
               "hierarchyDepth": "5",
               "sourcePaths": "src/layout/",
-              "sourceFileCount": "11"
+              "sourceFileCount": "12"
             }
           },
           "layout": {
@@ -851,7 +851,7 @@
               "architectureGroupId": "geometry",
               "hierarchyDepth": "5",
               "sourcePaths": "src/routing/",
-              "sourceFileCount": "17"
+              "sourceFileCount": "19"
             }
           },
           "layout": {
@@ -1588,7 +1588,7 @@
         {
           "id": "import-layout-to-model",
           "interfaceId": "source-import.model",
-          "label": "Layout Projection → Model Contract · 4 import declarations",
+          "label": "Layout Projection → Model Contract · 5 import declarations",
           "source": {
             "nodeId": "layout",
             "portId": "depends-model"

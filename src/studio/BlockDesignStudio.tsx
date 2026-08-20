@@ -114,6 +114,7 @@ import {
   baseNodeDimensions,
   distributeSelection,
   layoutBlockDesign,
+  projectAuthoredNodeGeometry,
   reconcileLayoutResult,
   layoutFrameSignature,
   layoutProjectionSignature,
@@ -238,6 +239,15 @@ interface RunOperationOptions {
   viewport?: "fit-frame-change" | "preserve";
 }
 
+function operationNodeGeometryChanges(
+  operation: DesignOperation,
+): readonly { levelId: string; nodeId: string }[] | undefined {
+  if (operation.type === "node/move" || operation.type === "node/resize") return [operation];
+  if (operation.type === "nodes/move") return operation.moves;
+  if (operation.type === "nodes/resize") return operation.resizes;
+  return undefined;
+}
+
 type ConnectionEndpointDialogRequest =
   | { kind: "create"; levelId: string }
   | { kind: "reconnect"; levelId: string; connectionId: string };
@@ -325,6 +335,14 @@ export function BlockDesignStudio({
   const [fileName, setFileName] = useState("design.block-design.json");
   const initialLoadStarted = useRef(false);
   const documentRef = useRef<BlockDesignDocument | undefined>(document);
+  const layoutRef = useRef(layout);
+  const expandedLevelIdsRef = useRef(expandedLevelIds);
+  const placementModeRef = useRef(placementMode);
+  const pendingGeometryLayoutRef = useRef<{
+    document: BlockDesignDocument;
+    base: LayoutResult;
+    projected: LayoutResult;
+  } | undefined>(undefined);
   const editorDocumentRef = useRef(editor.document);
   const editorDirtyRef = useRef(editor.dirty);
   const selectionRef = useRef(selection);
@@ -333,6 +351,9 @@ export function BlockDesignStudio({
   const pasteInsertionIndex = useRef(0);
   const dockApiRef = useRef(dockApi);
   documentRef.current = document;
+  layoutRef.current = layout;
+  expandedLevelIdsRef.current = expandedLevelIds;
+  placementModeRef.current = placementMode;
   editorDocumentRef.current = editor.document;
   editorDirtyRef.current = editor.dirty;
   selectionRef.current = selection;
@@ -346,6 +367,7 @@ export function BlockDesignStudio({
 
   const installDocument = useCallback((next: BlockDesignDocument, source: string, saved = true) => {
     editor.replace(next, saved);
+    pendingGeometryLayoutRef.current = undefined;
     setLayout({ nodes: [], edges: [] });
     fitAfterLayout.current = true;
     setDocumentInstalled(true);
@@ -451,14 +473,24 @@ export function BlockDesignStudio({
     const currentViewRootLevelId = document.levels.some(
       (level) => level.id === viewRootLevelId,
     ) ? viewRootLevelId : document.entryLevelId;
-    layoutBlockDesign(document, {
-      expandedLevelIds,
-      placementMode,
-      rootLevelId: currentViewRootLevelId,
-    })
+    const pending = pendingGeometryLayoutRef.current;
+    const projected = pending?.document === document && pending.base === layoutRef.current
+      ? pending.projected
+      : undefined;
+    if (pending?.document === document) pendingGeometryLayoutRef.current = undefined;
+    const layoutRequest = projected
+      ? Promise.resolve(projected)
+      : layoutBlockDesign(document, {
+          expandedLevelIds,
+          placementMode,
+          rootLevelId: currentViewRootLevelId,
+        });
+    layoutRequest
       .then((result) => {
         if (!active) return;
-        setLayout((current) => reconcileLayoutResult(current, result));
+        setLayout((current) => projected && current === pending?.base
+          ? result
+          : reconcileLayoutResult(current, result));
         if (revealSelectionAfterLayout.current) {
           revealSelectionAfterLayout.current = false;
           window.setTimeout(() => setRevealSelectionRequest((value) => value + 1), 0);
@@ -628,12 +660,36 @@ export function BlockDesignStudio({
     options: RunOperationOptions = {},
   ): BlockDesignDocument | undefined => {
     try {
-      const previousFrame = layoutFrameSignature(editorDocumentRef.current);
+      const geometryChanges = operationNodeGeometryChanges(operation);
+      const previousFrame = geometryChanges
+        ? undefined
+        : layoutFrameSignature(editorDocumentRef.current);
       const next = editor.apply(operation);
-      if (layoutFrameSignature(next) !== previousFrame) {
+      if (previousFrame !== undefined && layoutFrameSignature(next) !== previousFrame) {
         fitAfterLayout.current = options.viewport === "preserve" ? false : true;
       }
-      setIssues(validateBlockDesignDocument(next));
+      if (geometryChanges && next !== editorDocumentRef.current) {
+        const rootLevelId = next.levels.some((level) => level.id === viewRootLevelIdRef.current)
+          ? viewRootLevelIdRef.current
+          : next.entryLevelId;
+        const base = layoutRef.current;
+        const projected = projectAuthoredNodeGeometry(
+          next,
+          base,
+          rootLevelId,
+          expandedLevelIdsRef.current,
+          placementModeRef.current,
+          geometryChanges,
+        );
+        pendingGeometryLayoutRef.current = projected
+          ? { document: next, base, projected }
+          : undefined;
+      } else if (!geometryChanges) {
+        pendingGeometryLayoutRef.current = undefined;
+        setIssues(validateBlockDesignDocument(next));
+      } else {
+        pendingGeometryLayoutRef.current = undefined;
+      }
       setCommandError(undefined);
       setCommandNotice(undefined);
       setPlacementMode("authored");

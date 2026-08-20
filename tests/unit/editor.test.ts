@@ -199,6 +199,8 @@ describe("public design operations", () => {
       { pinned: true, position: { x: 32, y: 64 }, width: 280, height: 160 },
       { pinned: true, position: { x: 512, y: 96 }, width: 360, height: 208 },
     ]);
+    expect(resized.interfaceDefinitions).toBe(document.interfaceDefinitions);
+    expect(resized.levels[0].connections).toBe(document.levels[0].connections);
     expect(document.levels[0].nodes.every((node) => node.layout.width === undefined)).toBe(true);
 
     const before = serializeDesign(document);

@@ -1,6 +1,7 @@
 import {
   BLOCK_DESIGN_SCHEMA_VERSION,
   connectionEndpointsEqual,
+  nodeSchema,
   parseBlockDesignDocument,
   type BlockConnection,
   type BlockDesignDocument,
@@ -155,50 +156,87 @@ function requirePort(node: BlockNode, portId: string): BlockPort {
   return node.ports.find((port) => port.id === portId) ?? editError(`Port ${node.id}.${portId} does not exist.`);
 }
 
-function moveNodes(document: BlockDesignDocument, moves: readonly NodeMove[]): void {
-  if (moves.length === 0) editError("At least one module is required for a move operation.");
-  const identities = new Set<string>();
-  moves.forEach((move) => {
-    const identity = `${move.levelId}\u0000${move.nodeId}`;
-    if (identities.has(identity)) editError(`Module ${move.nodeId} can only be moved once per operation.`);
-    identities.add(identity);
-    const node = requireNode(requireLevel(document, move.levelId), move.nodeId);
-    node.layout = {
-      ...node.layout,
-      position: {
-        x: Math.round(move.position.x),
-        y: Math.round(move.position.y),
-      },
-      pinned: true,
-    };
-  });
+type NodeGeometryOperation = Extract<
+  DesignOperation,
+  { type: "node/move" | "nodes/move" | "node/resize" | "nodes/resize" }
+>;
+
+function isNodeGeometryOperation(operation: DesignOperation): operation is NodeGeometryOperation {
+  return operation.type === "node/move" || operation.type === "nodes/move" ||
+    operation.type === "node/resize" || operation.type === "nodes/resize";
 }
 
-function resizeNodes(document: BlockDesignDocument, resizes: readonly NodeResize[]): void {
-  if (resizes.length === 0) editError("At least one module is required for a resize operation.");
+function geometryChanges(operation: NodeGeometryOperation): {
+  changes: readonly (NodeMove | NodeResize)[];
+  kind: "moved" | "resized";
+} {
+  if (operation.type === "node/move") return { changes: [operation], kind: "moved" };
+  if (operation.type === "nodes/move") return { changes: operation.moves, kind: "moved" };
+  if (operation.type === "node/resize") return { changes: [operation], kind: "resized" };
+  return { changes: operation.resizes, kind: "resized" };
+}
+
+/**
+ * Applies geometry-only edits with structural sharing.
+ *
+ * The input document has already crossed the document schema boundary. These
+ * operations cannot change graph or hierarchy relationships, so validating
+ * the complete batch and each changed node is sufficient to preserve that
+ * contract without cloning and parsing unrelated levels and interfaces.
+ */
+function applyNodeGeometryOperation(
+  document: BlockDesignDocument,
+  operation: NodeGeometryOperation,
+): BlockDesignDocument {
+  const { changes, kind } = geometryChanges(operation);
+  if (changes.length === 0) editError(`At least one module is required for a ${kind.slice(0, -1)} operation.`);
   const identities = new Set<string>();
-  const targets = resizes.map((resize) => {
-    const identity = `${resize.levelId}\u0000${resize.nodeId}`;
-    if (identities.has(identity)) editError(`Module ${resize.nodeId} can only be resized once per operation.`);
+  const changesByLevel = new Map<string, Map<string, NodeMove | NodeResize>>();
+  changes.forEach((change) => {
+    const identity = `${change.levelId}\u0000${change.nodeId}`;
+    if (identities.has(identity)) editError(`Module ${change.nodeId} can only be ${kind} once per operation.`);
     identities.add(identity);
-    if (![resize.position.x, resize.position.y, resize.size.width, resize.size.height].every(Number.isFinite) ||
-      resize.size.width <= 0 || resize.size.height <= 0) {
-      editError(`Module ${resize.nodeId} resize geometry must be finite with positive dimensions.`);
+    requireNode(requireLevel(document, change.levelId), change.nodeId);
+    if (![change.position.x, change.position.y].every(Number.isFinite)) {
+      editError(`Module ${change.nodeId} position must contain finite coordinates.`);
     }
-    return { node: requireNode(requireLevel(document, resize.levelId), resize.nodeId), resize };
+    if ("size" in change &&
+      (![change.size.width, change.size.height].every(Number.isFinite) ||
+        change.size.width <= 0 || change.size.height <= 0)) {
+      editError(`Module ${change.nodeId} resize geometry must be finite with positive dimensions.`);
+    }
+    const levelChanges = changesByLevel.get(change.levelId) ?? new Map<string, NodeMove | NodeResize>();
+    levelChanges.set(change.nodeId, change);
+    changesByLevel.set(change.levelId, levelChanges);
   });
-  targets.forEach(({ node, resize }) => {
-    node.layout = {
-      ...node.layout,
-      position: {
-        x: Math.round(resize.position.x),
-        y: Math.round(resize.position.y),
-      },
-      width: Math.round(resize.size.width),
-      height: Math.round(resize.size.height),
-      pinned: true,
+
+  const levels = document.levels.map((level) => {
+    const levelChanges = changesByLevel.get(level.id);
+    if (!levelChanges) return level;
+    return {
+      ...level,
+      nodes: level.nodes.map((node) => {
+        const change = levelChanges.get(node.id);
+        if (!change) return node;
+        return nodeSchema.parse({
+          ...node,
+          layout: {
+            ...node.layout,
+            position: {
+              x: Math.round(change.position.x),
+              y: Math.round(change.position.y),
+            },
+            ...("size" in change ? {
+              width: Math.round(change.size.width),
+              height: Math.round(change.size.height),
+            } : {}),
+            pinned: true,
+          },
+        });
+      }),
     };
   });
+  return { ...document, levels };
 }
 
 function cleanupUnusedInterfaces(document: BlockDesignDocument, candidates: Iterable<string>): void {
@@ -374,6 +412,9 @@ export function applyDesignOperation(
   document: BlockDesignDocument,
   operation: DesignOperation,
 ): BlockDesignDocument {
+  if (isNodeGeometryOperation(operation)) {
+    return applyNodeGeometryOperation(document, operation);
+  }
   const next = structuredClone(document);
 
   switch (operation.type) {
@@ -408,24 +449,8 @@ export function applyDesignOperation(
       node.title = operation.title.trim();
       break;
     }
-    case "node/move": {
-      moveNodes(next, [operation]);
-      break;
-    }
-    case "nodes/move": {
-      moveNodes(next, operation.moves);
-      break;
-    }
     case "fragment/insert": {
       insertDesignFragment(next, operation);
-      break;
-    }
-    case "node/resize": {
-      resizeNodes(next, [operation]);
-      break;
-    }
-    case "nodes/resize": {
-      resizeNodes(next, operation.resizes);
       break;
     }
     case "node/delete": {

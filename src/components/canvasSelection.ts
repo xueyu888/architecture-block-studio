@@ -186,14 +186,15 @@ export function canvasSelectionTraversal(
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const nodesByParent = new Map<string | undefined, CanvasTraversalTarget[]>();
   nodes.forEach((node) => {
-    nodesByParent.set(node.parentId, [...(nodesByParent.get(node.parentId) ?? []), node]);
+    const siblings = nodesByParent.get(node.parentId);
+    if (siblings) siblings.push(node);
+    else nodesByParent.set(node.parentId, [node]);
   });
   const connectionsByLevel = new Map<string, CanvasTraversalTarget[]>();
   connections.forEach((connection) => {
-    connectionsByLevel.set(
-      connection.levelId,
-      [...(connectionsByLevel.get(connection.levelId) ?? []), connection],
-    );
+    const siblings = connectionsByLevel.get(connection.levelId);
+    if (siblings) siblings.push(connection);
+    else connectionsByLevel.set(connection.levelId, [connection]);
   });
   const parentSelectionKeysByLevelId = new Map<string, Set<string>>();
   nodes.forEach((node) => {
