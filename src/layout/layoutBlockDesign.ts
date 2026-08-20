@@ -50,6 +50,7 @@ export type PlacementMode = "authored" | "automatic";
 export interface LayoutBlockDesignOptions {
   expandedLevelIds: ReadonlySet<string>;
   placementMode: PlacementMode;
+  rootLevelId?: string;
 }
 
 export function innerPortId(portId: string): string {
@@ -448,10 +449,11 @@ export async function layoutBlockDesign(
   document: BlockDesignDocument,
   options: LayoutBlockDesignOptions,
 ): Promise<LayoutResult> {
+  const rootLevelId = options.rootLevelId ?? document.entryLevelId;
   const composed = await composeLevel(
     document,
-    document.entryLevelId,
-    document.entryLevelId,
+    rootLevelId,
+    rootLevelId,
     undefined,
     0,
     options,

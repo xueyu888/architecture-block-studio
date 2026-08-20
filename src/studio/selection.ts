@@ -336,18 +336,48 @@ export function selectionForIssue(issue: DesignIssue): SelectionRef {
   return { kind: "document" };
 }
 
-export function hierarchyLevelPath(document: BlockDesignDocument, levelId: string): string[] {
-  const path: string[] = [];
+export function hierarchyLevelTrail(
+  document: BlockDesignDocument,
+  levelId: string,
+): DesignLevel[] {
+  const path: DesignLevel[] = [];
   const seen = new Set<string>();
   let current = document.levels.find((level) => level.id === levelId);
-  while (current && current.id !== document.entryLevelId && !seen.has(current.id)) {
+  while (current && !seen.has(current.id)) {
     seen.add(current.id);
-    path.unshift(current.id);
+    path.unshift(current);
+    if (current.id === document.entryLevelId) return path;
     current = current.parentLevelId
       ? document.levels.find((level) => level.id === current?.parentLevelId)
       : undefined;
   }
-  return path;
+  return [];
+}
+
+export function hierarchyLevelPath(document: BlockDesignDocument, levelId: string): string[] {
+  return hierarchyLevelTrail(document, levelId).slice(1).map((level) => level.id);
+}
+
+export function hierarchyLevelIsWithin(
+  document: BlockDesignDocument,
+  ancestorLevelId: string,
+  levelId: string,
+): boolean {
+  return hierarchyLevelTrail(document, levelId)
+    .some((level) => level.id === ancestorLevelId);
+}
+
+export function hierarchyParentSelection(
+  document: BlockDesignDocument,
+  levelId: string,
+): SelectionRef | undefined {
+  const trail = hierarchyLevelTrail(document, levelId);
+  const parent = trail.at(-2);
+  if (!parent) return undefined;
+  const owners = parent.nodes.filter((node) => node.hierarchy?.childLevelId === levelId);
+  return owners.length === 1
+    ? { kind: "node", levelId: parent.id, nodeId: owners[0].id }
+    : { kind: "level", levelId: parent.id };
 }
 
 export function selectionExists(document: BlockDesignDocument, selection: SelectionRef): boolean {

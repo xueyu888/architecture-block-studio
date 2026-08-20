@@ -143,15 +143,19 @@ const HierarchyNodeRow = memo(function HierarchyNodeRow({
 export function HierarchyTree({
   document,
   expandedLevelIds,
+  viewRootLevelId,
   selection,
   onToggleLevel,
+  onEnterLevel,
   onRevealLevel,
   onSelect,
 }: {
   document: BlockDesignDocument;
   expandedLevelIds: ReadonlySet<string>;
+  viewRootLevelId: string;
   selection: SelectionRef;
   onToggleLevel: (levelId: string) => void;
+  onEnterLevel: (levelId: string) => void;
   onRevealLevel: (levelId: string) => void;
   onSelect: (selection: SelectionRef) => boolean;
 }) {
@@ -280,11 +284,13 @@ export function HierarchyTree({
                   return (
                     <button
                       type="button"
-                      className={`bd-tree-row bd-tree-level-row${selected ? " is-selected" : ""}`}
+                      className={`bd-tree-row bd-tree-level-row${selected ? " is-selected" : ""}${row.level.id === viewRootLevelId ? " is-view-root" : ""}`}
                       style={{ paddingLeft: 8 + row.depth * 14 }}
+                      aria-current={row.level.id === viewRootLevelId ? "page" : undefined}
                       onClick={() => {
                         if (onSelect({ kind: "level", levelId: row.level.id })) onRevealLevel(row.level.id);
                       }}
+                      onDoubleClick={() => onEnterLevel(row.level.id)}
                     >
                       <CircuitBoard size={13} aria-hidden="true" />
                       <span>{row.level.title}</span>

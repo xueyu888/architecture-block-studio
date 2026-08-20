@@ -11,6 +11,7 @@ describe("canvas context menu model", () => {
 
   test("projects object-relevant command identities without copying command facts", () => {
     expect(contextMenuCommandGroups(node, node)).toEqual([
+      ["enterHierarchy"],
       ["addPort", "addChildDesign"],
       ["copySelection", "cutSelection", "duplicateSelection", "deleteSelection"],
       ["selectDirectInterfaces", "selectDirectNeighborhood"],

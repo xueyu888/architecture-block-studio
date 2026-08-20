@@ -1287,7 +1287,9 @@ test("reveals one unobtrusive tooltip path for toolbar and canvas controls", asy
 
 test("keeps only direct-workflow commands in the persistent toolbar", async ({ page }) => {
   const toolbar = page.getByRole("toolbar", { name: "Architecture design tools" });
-  await expect(toolbar.getByRole("button")).toHaveCount(12);
+  await expect(toolbar.locator(".bd-toolbar-group").getByRole("button")).toHaveCount(12);
+  await expect(toolbar.getByRole("navigation", { name: "Diagram view hierarchy" }).getByRole("button"))
+    .toHaveCount(1);
   await expect(toolbar.getByRole("group", { name: "File" }).getByRole("button")).toHaveCount(3);
   await expect(toolbar.getByRole("group", { name: "History and selection" }).getByRole("button")).toHaveCount(3);
   await expect(toolbar.getByRole("group", { name: "Create" }).getByRole("button")).toHaveCount(4);
@@ -1325,7 +1327,7 @@ test("keeps only direct-workflow commands in the persistent toolbar", async ({ p
   await page.keyboard.press("Escape");
 
   const wide = await page.evaluate(() => {
-    const buttons = [...document.querySelectorAll<HTMLElement>(".bd-toolbar button")];
+    const buttons = [...document.querySelectorAll<HTMLElement>(".bd-toolbar-group button")];
     const breadcrumb = document.querySelector<HTMLElement>(".bd-breadcrumbs");
     if (!buttons.length || !breadcrumb) throw new Error("Toolbar geometry is unavailable.");
     const first = buttons[0].getBoundingClientRect();
@@ -1364,7 +1366,7 @@ test("searches and runs the unified command palette without losing workflow focu
   const search = palette.getByRole("combobox", { name: "Search commands" });
   await expect(palette).toBeVisible();
   await expect(search).toBeFocused();
-  await expect(palette.getByRole("option")).toHaveCount(48);
+  await expect(palette.getByRole("option")).toHaveCount(51);
   await expect(palette.getByRole("option", { name: /^Command Palette/ })).toHaveCount(0);
 
   await search.fill("添加端口");
@@ -2050,8 +2052,10 @@ test("filters design issues and cross-probes the reviewed module", async ({ page
   await viewTrigger.focus();
   await page.keyboard.press("Enter");
   const viewMenu = page.getByRole("menu", { name: "View" });
-  await expect(viewMenu.getByRole("menuitem", { name: /^Fit Selection/ })).toBeFocused();
-  for (let index = 0; index < 7; index += 1) await page.keyboard.press("ArrowDown");
+  await expect(viewMenu.getByRole("menuitem", { name: /^Enter Module/ })).toBeFocused();
+  await expect(viewMenu.getByRole("menuitem", { name: /^Enter Module/ }))
+    .toContainText("Select a module with a child design first.");
+  for (let index = 0; index < 10; index += 1) await page.keyboard.press("ArrowDown");
   await expect(viewMenu.getByRole("menuitem", { name: /^Toggle Messages/ })).toBeFocused();
   await page.keyboard.press("Enter");
   const messages = page.locator(".bd-messages");
@@ -3286,6 +3290,131 @@ test("loads the repository-derived five-depth module architecture and reviews ev
     .toHaveLength(12);
   expect(saved.levels.flatMap((level: { connections: unknown[] }) => level.connections))
     .toHaveLength(27);
+});
+
+test("enters and exits five hierarchy view roots without changing the design", async ({ page, browserName }) => {
+  test.setTimeout(120_000);
+  const original = JSON.parse(await readFile(fileURLToPath(new URL(
+    "../public/examples/architecture-block-studio.block-design.json",
+    import.meta.url,
+  )), "utf8"));
+  await page.goto("/?design=/examples/architecture-block-studio.block-design.json");
+  await expect(page.locator(".bd-document-title span")).toHaveText(
+    "Architecture Block Studio — Source Architecture",
+    { timeout: 30_000 },
+  );
+  await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 30_000 });
+  const browserHistoryLength = await page.evaluate(() => history.length);
+  const breadcrumbs = page.getByRole("navigation", { name: "Diagram view hierarchy" });
+  const caption = page.locator(".bd-canvas-caption strong");
+
+  const enterSelectedModule = async (
+    flowId: string,
+    expectedLevelTitle: string,
+    expectedDepth: number,
+  ) => {
+    await flowNode(page, flowId).click({ force: true });
+    await page.keyboard.press("ControlOrMeta+Shift+End");
+    await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 30_000 });
+    await expect(caption).toHaveText(expectedLevelTitle);
+    await expect(breadcrumbs.getByRole("button")).toHaveCount(expectedDepth);
+    await expect(breadcrumbs.getByRole("button", { name: expectedLevelTitle, exact: true }))
+      .toHaveAttribute("aria-current", "page");
+  };
+
+  await expect(caption).toHaveText("Product Boundary");
+  await enterSelectedModule(
+    "product-boundary::architecture-block-studio",
+    "Browser Runtime",
+    2,
+  );
+  await enterSelectedModule(
+    "browser-runtime::react-application",
+    "Workbench Composition",
+    3,
+  );
+  await enterSelectedModule(
+    "workbench-composition::module-architecture",
+    "Verified Source Architecture",
+    4,
+  );
+  await enterSelectedModule(
+    "source-architecture::verified-source-graph",
+    "Runtime Source Modules",
+    5,
+  );
+
+  await expect(page.locator(".react-flow__node")).toHaveCount(12, { timeout: 30_000 });
+  await expect(page.locator(".react-flow__edge")).toHaveCount(27, { timeout: 30_000 });
+  await expect(page.locator(".bd-statusbar")).toContainText("View root: Runtime Source Modules");
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 27,
+    auditedPairCount: 351,
+    expectedPairCount: 351,
+    duplicateRouteIds: [],
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+
+  if (process.env.CAPTURE_HIERARCHY_FOCUS === "1" && browserName === "chromium") {
+    await runMenuCommand(page, "View", "Maximize Diagram");
+    await toolbarButton(page, "适应窗口").click({ force: true });
+    await page.waitForTimeout(500);
+    await captureStudioScreenshot(page, "docs/screenshots/hierarchy-focused-source-architecture.png");
+    await runMenuCommand(page, "View", "Restore Diagram");
+    await page.waitForTimeout(350);
+  }
+
+  await page.locator(".bd-react-flow").click({ position: { x: 30, y: 30 } });
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("Runtime Source Modules");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 30_000 });
+  await expect(caption).toHaveText("Verified Source Architecture");
+  await expect(flowNode(page, "source-architecture::verified-source-graph")).toHaveClass(/selected/);
+  await page.keyboard.press("ControlOrMeta+Shift+End");
+  await expect(caption).toHaveText("Runtime Source Modules");
+
+  await breadcrumbs.getByRole("button", { name: "Product Boundary", exact: true }).click();
+  await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 30_000 });
+  await expect(caption).toHaveText("Product Boundary");
+  await expect(page.locator(".react-flow__node")).toHaveCount(1);
+
+  const sources = page.getByRole("region", { name: "Sources" });
+  await sources.getByRole("tab", { name: "Interfaces" }).click({ force: true });
+  await sources.getByLabel("Filter interfaces").fill("import-studio-to-model");
+  await sources.getByRole("list", { name: "Declared interfaces" }).getByRole("button").click();
+  await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 30_000 });
+  await expect(caption).toHaveText("Product Boundary");
+  await expect(page.locator('.react-flow__edge[data-id$="::import-studio-to-model"]'))
+    .toHaveClass(/selected/);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await downloadPromise).path();
+  expect(savedPath).not.toBeNull();
+  expect(JSON.parse(await readFile(savedPath!, "utf8"))).toEqual(original);
+  expect(await page.evaluate(() => history.length)).toBe(browserHistoryLength);
+
+  await page.keyboard.press("Shift+Home");
+  await expect(caption).toHaveText("Product Boundary");
+  await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 30_000 });
+  await sources.getByRole("tab", { name: "Hierarchy" }).click({ force: true });
+  await page.locator(
+    '.bd-tree-select[data-level-id="product-boundary"][data-node-id="architecture-block-studio"]',
+  ).click({ force: true });
+  const purpose = page.locator(
+    ".bd-inspector-form:visible .bd-contract-fieldset:visible textarea",
+  ).nth(1);
+  await expect(purpose).toBeVisible();
+  await purpose.fill(`${await purpose.inputValue()} draft`);
+  await expect(page.locator(".bd-document-title span")).toContainText("*");
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.keyboard.press("ControlOrMeta+Shift+End");
+  await expect(caption).toHaveText("Product Boundary");
+  await expect(flowNode(page, "product-boundary::architecture-block-studio")).toHaveClass(/selected/);
+  await expect(purpose).toHaveValue(/ draft$/);
 });
 
 test("resizes, collapses, maximizes, floats and resets dock panels", async ({ page }) => {
@@ -6607,7 +6736,9 @@ test("keeps object context actions and right-button canvas pan mutually exclusiv
   await expect(canvas).toHaveAttribute("data-context-gesture-outcome", "menu");
   await expect(agent).toHaveClass(/selected/);
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("Agent UI");
-  await expect(moduleMenu.getByRole("menuitem")).toHaveCount(9);
+  await expect(moduleMenu.getByRole("menuitem")).toHaveCount(10);
+  await expect(moduleMenu.getByRole("menuitem", { name: /Enter Module/ }))
+    .toHaveAttribute("aria-disabled", "true");
   await expect(moduleMenu.getByRole("menuitem", { name: /^Create Child Design/ }))
     .not.toHaveAttribute("aria-disabled", "true");
   const menuBounds = await moduleMenu.boundingBox();

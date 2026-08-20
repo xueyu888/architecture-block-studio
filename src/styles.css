@@ -544,6 +544,7 @@ button { color: inherit; }
 .bd-tree-row.is-selected { outline-offset: -1px; }
 .bd-tree-document { border-bottom: 1px solid var(--divider-soft); font-weight: 750; }
 .bd-tree-level-row { color: #465465; font-weight: 700; }
+.bd-tree-level-row.is-view-root { box-shadow: inset 3px 0 #2563d9; color: #174c91; background: var(--blue-soft); }
 
 .bd-canvas-pane {
   position: relative;

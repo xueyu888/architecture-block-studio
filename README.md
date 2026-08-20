@@ -30,6 +30,7 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 - 既可以在画布拖线，也可以通过 **Add Interface** 用键盘选择端点并创建同一类接口合同。
 - 为模块和接口记录 Principle、Purpose、Boundary、Failure 与 Owner。
 - 原位展开子设计，显式绑定父子端口，同时保留系统上下文。
+- 选中含子设计的模块后可执行 **Enter Module** 聚焦内部 Level；使用 **Exit Module**、Esc、**Architecture Home** 或可点击 breadcrumb 一步恢复上层上下文。视图根只改变工作区投影，不改 JSON、层级关系、布局尺寸或浏览器历史。
 - 在 Hierarchy 中按模块标题、id、Owner 或 Level 搜索，并直接定位画布与 Inspector。
 - 选中模块即可查看直接入站 / 出站接口与对端，点击摘要进入完整接口合同。
 - 使用 DRC 检查结构、引用、方向、必连端口和合同完整性，并直接查看修正方向。
@@ -247,6 +248,10 @@ pnpm verify:self-architecture    # 检查示例与当前源码是否一致
 浏览器运行时不会自行扫描仓库，源码仍是依赖事实源，JSON 只是可加载、可替换、可版本化的生成投影。其他语言或仓库可以由人、脚本或 AI 输出同一个 `BlockDesignDocument` 公开契约，再用 Studio 理解、编辑和审查结构。
 
 ![Architecture Block Studio 五层源码架构总览](docs/screenshots/source-architecture-overview.png)
+
+面对五层源码图时，不必把所有父级容器都挤在一个缩放视图里。连续进入模块后，第五层 12 个真实源码模块和 27 条依赖可以独占画布；顶部 breadcrumb 始终保留完整来路，退出时还会重新选中拥有该子设计的父模块。
+
+![聚焦第五层源码模块与依赖](docs/screenshots/hierarchy-focused-source-architecture.png)
 
 选择 `Studio Orchestrator` 后执行 **Select Direct Neighborhood**，可以一次审查真实的一跳依赖；再选择任意线路，即可在 Inspector 查看依赖名称、方向、接口合同和源码归属，画布中央不放置遮挡路线的标签。
 

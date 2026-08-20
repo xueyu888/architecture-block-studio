@@ -274,7 +274,7 @@ export interface CanvasViewportActionRequest {
 }
 
 interface CanvasInnerProps {
-  entryLevelId: string;
+  rootLevelId: string;
   layout: LayoutResult;
   selection: SelectionRef;
   fitRequest: number;
@@ -495,13 +495,14 @@ function focusRestorationWasSuperseded(previousElement: Element | undefined): bo
   );
 }
 
-export interface BlockDesignCanvasProps extends Omit<CanvasInnerProps, "entryLevelId"> {
+export interface BlockDesignCanvasProps extends Omit<CanvasInnerProps, "rootLevelId"> {
   document: BlockDesignDocument;
+  viewRootLevelId: string;
   onAddModule: () => void;
 }
 
 const CanvasInner = memo(function CanvasInner({
-  entryLevelId,
+  rootLevelId,
   layout,
   selection,
   fitRequest,
@@ -1931,7 +1932,7 @@ const CanvasInner = memo(function CanvasInner({
     if (hasToggleModifier(event)) {
       if (top) {
         commitCanvasSelection(
-          toggleDiagramSelection(selectionRef.current, [top.item], entryLevelId),
+          toggleDiagramSelection(selectionRef.current, [top.item], rootLevelId),
           "Toggled the top diagram object under the pointer.",
         );
       }
@@ -1947,7 +1948,7 @@ const CanvasInner = memo(function CanvasInner({
     const nextTargetId = nextTarget?.id;
     const next = hits.find((hit) => hit.target.id === nextTargetId)?.item;
     if (!nextTargetId || !next) {
-      commitCanvasSelection({ kind: "level", levelId: entryLevelId }, "No diagram object under the pointer.");
+      commitCanvasSelection({ kind: "level", levelId: rootLevelId }, "No diagram object under the pointer.");
       return;
     }
     const index = hits.findIndex((hit) => hit.target.id === nextTargetId);
@@ -1957,7 +1958,7 @@ const CanvasInner = memo(function CanvasInner({
         ? `Selected object ${index + 1} of ${hits.length} under the pointer.`
         : "Selected the diagram object under the pointer.",
     );
-  }, [canvasPointHitSelections, commitCanvasSelection, entryLevelId, requestCanvasContextMenu, store]);
+  }, [canvasPointHitSelections, commitCanvasSelection, requestCanvasContextMenu, rootLevelId, store]);
   const onCanvasClickCapture = useCallback((event: ReactMouseEvent) => {
     if (!suppressAltClickRef.current) return;
     suppressAltClickRef.current = false;
@@ -2051,8 +2052,8 @@ const CanvasInner = memo(function CanvasInner({
       });
     });
     const next = gesture.toggle
-      ? toggleDiagramSelection(gesture.base, items, entryLevelId)
-      : replaceDiagramSelection(items, entryLevelId);
+      ? toggleDiagramSelection(gesture.base, items, rootLevelId)
+      : replaceDiagramSelection(items, rootLevelId);
     const count = diagramSelectionItems(next).length;
     commitCanvasSelection(
       next,
@@ -2061,7 +2062,7 @@ const CanvasInner = memo(function CanvasInner({
     window.requestAnimationFrame(() => {
       if (boxSelectionGestureRef.current === gesture) boxSelectionGestureRef.current = undefined;
     });
-  }, [baseNodeById, commitCanvasSelection, entryLevelId, routedEdgeById, store]);
+  }, [baseNodeById, commitCanvasSelection, rootLevelId, routedEdgeById, store]);
   const onElementKeyDownCapture = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -2567,9 +2568,9 @@ const CanvasInner = memo(function CanvasInner({
       alignmentGestureRef.current = undefined;
       resizePreviewRef.current = undefined;
       setAlignmentGuides([]);
-      commitCanvasSelection({ kind: "level", levelId: entryLevelId });
+      commitCanvasSelection({ kind: "level", levelId: rootLevelId });
     },
-    [commitCanvasSelection, entryLevelId],
+    [commitCanvasSelection, rootLevelId],
   );
   const onMiniMapNodeClick = useCallback<NonNullable<MiniMapProps<CanvasFlowNode>["onNodeClick"]>>(
     (event, node) => {
@@ -2723,11 +2724,13 @@ const CanvasInner = memo(function CanvasInner({
 });
 
 export function BlockDesignCanvas(props: BlockDesignCanvasProps) {
-  const entryLevel = props.document.levels.find((level) => level.id === props.document.entryLevelId)!;
+  const viewRootLevel = props.document.levels.find(
+    (level) => level.id === props.viewRootLevelId,
+  ) ?? props.document.levels.find((level) => level.id === props.document.entryLevelId)!;
   return (
     <>
       <CanvasInner
-        entryLevelId={entryLevel.id}
+        rootLevelId={viewRootLevel.id}
         layout={props.layout}
         selection={props.selection}
         fitRequest={props.fitRequest}
@@ -2748,10 +2751,10 @@ export function BlockDesignCanvas(props: BlockDesignCanvasProps) {
         onReconnectConnection={props.onReconnectConnection}
       />
       <div className="bd-canvas-caption bd-canvas-caption-overlay">
-        <strong>{entryLevel.title}</strong>
-        <span>{entryLevel.description}</span>
+        <strong>{viewRootLevel.title}</strong>
+        <span>{viewRootLevel.description}</span>
       </div>
-      {entryLevel.nodes.length === 0 && (
+      {viewRootLevel.nodes.length === 0 && (
         <section className="bd-canvas-empty" aria-labelledby="empty-design-title">
           <span className="bd-canvas-empty-icon"><Box size={20} aria-hidden="true" /></span>
           <small>EMPTY DESIGN</small>

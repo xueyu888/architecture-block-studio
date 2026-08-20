@@ -237,6 +237,10 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 
 层级模块通过 `hierarchy.childLevelId` 指向子 Level，并通过 `hierarchy.portBindings` 将父端口绑定到一个明确内部端点。跨层关系不得根据名称、端口顺序或 interface id 猜测。
 
+`BlockDesignDocument` 仍是层级结构的唯一事实源；当前视图根只是 Studio 拥有的可丢弃工作区状态。`hierarchyLevelTrail` 从 entry Level、`parentLevelId` 和唯一父模块引用派生 breadcrumb 与返回选择，`layoutBlockDesign(rootLevelId)` 只从指定 Level 开始生成画布投影。Enter、Exit、Architecture Home、breadcrumb、Sources 交叉定位和 Canvas 空白选择都消费同一个视图根；展开集合继续只决定当前根内哪些子设计原位展开。二者正交：进入 Level 不写展开状态，展开 Level 不擅自切换视图根。
+
+视图切换不得写 JSON、History、authored geometry、接口方向或浏览器导航历史。进入后选择子 Level；退出时若父 Level 只有一个模块拥有该子设计，则重新选择该父模块并在布局完成后恢复可见焦点，否则安全退回父 Level。未应用 Inspector 草稿仍由统一选择保护拦截，取消确认时视图根和选择都保持不变。目标不存在、脱离 entry 层级或形成 parent cycle 时停止导航而不猜测 fallback。
+
 ## 编辑与历史
 
 所有持久修改必须表示为 `DesignOperation`。`applyDesignOperation` 先克隆当前文档，在克隆上执行单项转换，最后通过完整 Schema 重新解析；任何异常都会使原文档保持不变。

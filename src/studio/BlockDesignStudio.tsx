@@ -135,7 +135,10 @@ import {
   directInterfaceSelectionExpansion,
   directNeighborhoodSelectionExpansion,
   diagramSelectionKey,
+  hierarchyLevelIsWithin,
   hierarchyLevelPath,
+  hierarchyLevelTrail,
+  hierarchyParentSelection,
   diagramSelectionItems,
   levelForSelection,
   nodeForSelection,
@@ -244,6 +247,7 @@ export function BlockDesignStudio({
   const [documentInstalled, setDocumentInstalled] = useState(false);
   const document = documentInstalled ? editor.document : undefined;
   const [expandedLevelIds, setExpandedLevelIds] = useState<Set<string>>(new Set());
+  const [viewRootLevelId, setViewRootLevelId] = useState(bootDocument.entryLevelId);
   const [selection, setSelection] = useState<SelectionRef>({ kind: "document" });
   const [inspectorDraftDirty, setInspectorDraftDirty] = useState(false);
   const [issues, setIssues] = useState<DesignIssue[]>([]);
@@ -264,6 +268,7 @@ export function BlockDesignStudio({
   const [diagramMaximized, setDiagramMaximized] = useState(false);
   const diagramEdgeState = useRef<Map<EdgeGroupPosition, boolean> | undefined>(undefined);
   const fitAfterLayout = useRef(true);
+  const revealSelectionAfterLayout = useRef(false);
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [canvasContextMenu, setCanvasContextMenu] = useState<CanvasContextMenuRequest>();
@@ -290,6 +295,7 @@ export function BlockDesignStudio({
   const editorDocumentRef = useRef(editor.document);
   const editorDirtyRef = useRef(editor.dirty);
   const selectionRef = useRef(selection);
+  const viewRootLevelIdRef = useRef(viewRootLevelId);
   const inspectorDraftDirtyRef = useRef(inspectorDraftDirty);
   const pasteInsertionIndex = useRef(0);
   const dockApiRef = useRef(dockApi);
@@ -297,6 +303,7 @@ export function BlockDesignStudio({
   editorDocumentRef.current = editor.document;
   editorDirtyRef.current = editor.dirty;
   selectionRef.current = selection;
+  viewRootLevelIdRef.current = viewRootLevelId;
   inspectorDraftDirtyRef.current = inspectorDraftDirty;
   dockApiRef.current = dockApi;
   const layoutProjection = useMemo(
@@ -310,6 +317,8 @@ export function BlockDesignStudio({
     fitAfterLayout.current = true;
     setDocumentInstalled(true);
     setExpandedLevelIds(new Set());
+    setViewRootLevelId(next.entryLevelId);
+    viewRootLevelIdRef.current = next.entryLevelId;
     setInspectorDraftDirty(false);
     setSelection({ kind: "level", levelId: next.entryLevelId });
     setIssues(validateBlockDesignDocument(next));
@@ -383,10 +392,21 @@ export function BlockDesignStudio({
     if (!document) return;
     let active = true;
     setLayoutBusy(true);
-    layoutBlockDesign(document, { expandedLevelIds, placementMode })
+    const currentViewRootLevelId = document.levels.some(
+      (level) => level.id === viewRootLevelId,
+    ) ? viewRootLevelId : document.entryLevelId;
+    layoutBlockDesign(document, {
+      expandedLevelIds,
+      placementMode,
+      rootLevelId: currentViewRootLevelId,
+    })
       .then((result) => {
         if (!active) return;
         setLayout(result);
+        if (revealSelectionAfterLayout.current) {
+          revealSelectionAfterLayout.current = false;
+          window.setTimeout(() => setRevealSelectionRequest((value) => value + 1), 0);
+        }
         if (fitAfterLayout.current && result.nodes.length > 0) {
           fitAfterLayout.current = false;
           window.setTimeout(() => setFitRequest((value) => value + 1), 0);
@@ -403,7 +423,7 @@ export function BlockDesignStudio({
             code: "BD-LAYOUT-FAILED",
             message: errorMessage(error),
             remediation: "Resolve the reported layout input or engine failure, then regenerate the layout.",
-            levelId: document.entryLevelId,
+            levelId: currentViewRootLevelId,
           },
         ]);
       })
@@ -411,7 +431,15 @@ export function BlockDesignStudio({
         if (active) setLayoutBusy(false);
       });
     return () => { active = false; };
-  }, [layoutProjection, expandedLevelIds, layoutRevision, placementMode]);
+  }, [layoutProjection, expandedLevelIds, layoutRevision, placementMode, viewRootLevelId]);
+
+  useEffect(() => {
+    if (!document || document.levels.some((level) => level.id === viewRootLevelId)) return;
+    fitAfterLayout.current = true;
+    revealSelectionAfterLayout.current = false;
+    viewRootLevelIdRef.current = document.entryLevelId;
+    setViewRootLevelId(document.entryLevelId);
+  }, [document, viewRootLevelId]);
 
   useEffect(() => {
     if (document && !selectionExists(document, selection)) {
@@ -453,10 +481,38 @@ export function BlockDesignStudio({
       return false;
     }
     setInspectorDraftDirty(false);
+    selectionRef.current = next;
     setSelection(next);
     setCommandNotice(undefined);
     return true;
   }, []);
+
+  const navigateViewRoot = useCallback((
+    levelId: string,
+    nextSelection: SelectionRef = { kind: "level", levelId },
+    notice?: string,
+    revealSelection = false,
+  ): boolean => {
+    const currentDocument = documentRef.current;
+    if (!currentDocument || hierarchyLevelTrail(currentDocument, levelId).length === 0) {
+      setCommandError(`Cannot display missing or detached design level ${levelId}.`);
+      return false;
+    }
+    if (!requestSelection(nextSelection)) return false;
+    if (viewRootLevelIdRef.current !== levelId) {
+      viewRootLevelIdRef.current = levelId;
+      revealSelectionAfterLayout.current = revealSelection;
+      fitAfterLayout.current = !revealSelection;
+      setLayoutBusy(true);
+      setViewRootLevelId(levelId);
+    } else if (revealSelection) {
+      setRevealSelectionRequest((value) => value + 1);
+    }
+    setCanvasContextMenu(undefined);
+    setCommandError(undefined);
+    if (notice) setCommandNotice(notice);
+    return true;
+  }, [requestSelection]);
 
   const requestSelectionFromNavigator = useCallback((next: SelectionRef): boolean => {
     if (!requestSelection(next)) return false;
@@ -603,12 +659,31 @@ export function BlockDesignStudio({
     const currentDocument = documentRef.current;
     if (!currentDocument) return;
     const path = hierarchyLevelPath(currentDocument, levelId);
-    if (path.length === 0) return;
+    const currentViewRoot = viewRootLevelIdRef.current;
+    if (
+      levelId !== currentDocument.entryLevelId &&
+      path.length === 0
+    ) return;
+    if (!hierarchyLevelIsWithin(currentDocument, currentViewRoot, levelId)) {
+      const selected = selectionRef.current;
+      const selectedLevelId = selected.kind === "document" || selected.kind === "multiple"
+        ? undefined
+        : selected.levelId;
+      const revealSelection = selectedLevelId === levelId &&
+        selected.kind !== "document" && selected.kind !== "level";
+      viewRootLevelIdRef.current = levelId;
+      revealSelectionAfterLayout.current = revealSelection;
+      fitAfterLayout.current = !revealSelection;
+      setLayoutBusy(true);
+      setViewRootLevelId(levelId);
+      return;
+    }
+    const visiblePath = path.slice(Math.max(0, path.indexOf(currentViewRoot) + 1));
     setExpandedLevelIds((current) => {
-      if (path.every((id) => current.has(id))) return current;
+      if (visiblePath.every((id) => current.has(id))) return current;
       fitAfterLayout.current = true;
       setLayoutBusy(true);
-      return new Set([...current, ...path]);
+      return new Set([...current, ...visiblePath]);
     });
   }, []);
 
@@ -689,10 +764,68 @@ export function BlockDesignStudio({
     setMessageFocusRequest((value) => value + 1);
   }, [dockApi, document]);
 
-  const activeLevel = document ? levelForSelection(document, selection) : undefined;
+  const effectiveViewRootLevelId = document?.levels.some((level) => level.id === viewRootLevelId)
+    ? viewRootLevelId
+    : document?.entryLevelId;
+  const viewRootLevel = document?.levels.find((level) => level.id === effectiveViewRootLevelId);
+  const viewRootPath = useMemo(
+    () => document && effectiveViewRootLevelId
+      ? hierarchyLevelTrail(document, effectiveViewRootLevelId)
+      : [],
+    [document, effectiveViewRootLevelId],
+  );
+  const activeLevel = document
+    ? selection.kind === "document"
+      ? viewRootLevel
+      : levelForSelection(document, selection)
+    : undefined;
   const selectedNode = document ? nodeForSelection(document, selection) : undefined;
   const selectedConnection = document ? connectionForSelection(document, selection) : undefined;
   const selectedDiagramItemCount = diagramSelectionItems(selection).length;
+  const selectedChildLevelId = selectedNode?.node.hierarchy?.childLevelId;
+  const parentViewSelection = document && effectiveViewRootLevelId
+    ? hierarchyParentSelection(document, effectiveViewRootLevelId)
+    : undefined;
+  const enterHierarchy = useCallback(() => {
+    const currentDocument = documentRef.current;
+    if (!currentDocument) return;
+    const selected = nodeForSelection(currentDocument, selectionRef.current);
+    const childLevelId = selected?.node.hierarchy?.childLevelId;
+    const childLevel = currentDocument?.levels.find((level) => level.id === childLevelId);
+    if (!childLevelId || !childLevel) return;
+    navigateViewRoot(
+      childLevelId,
+      { kind: "level", levelId: childLevelId },
+      `Entered ${childLevel.title}. Use Exit Module or the breadcrumb to restore context.`,
+    );
+  }, [navigateViewRoot]);
+  const exitHierarchy = useCallback(() => {
+    const currentDocument = documentRef.current;
+    const currentRoot = viewRootLevelIdRef.current;
+    if (!currentDocument) return;
+    const parentSelection = hierarchyParentSelection(currentDocument, currentRoot);
+    if (!parentSelection) return;
+    const parentLevelId = parentSelection.kind === "level" || parentSelection.kind === "node"
+      ? parentSelection.levelId
+      : currentDocument.entryLevelId;
+    const parentLevel = currentDocument.levels.find((level) => level.id === parentLevelId);
+    navigateViewRoot(
+      parentLevelId,
+      parentSelection,
+      `Exited to ${parentLevel?.title ?? parentLevelId}.`,
+      parentSelection.kind === "node",
+    );
+  }, [navigateViewRoot]);
+  const homeHierarchy = useCallback(() => {
+    const currentDocument = documentRef.current;
+    if (!currentDocument) return;
+    const entry = currentDocument.levels.find((level) => level.id === currentDocument.entryLevelId);
+    navigateViewRoot(
+      currentDocument.entryLevelId,
+      { kind: "level", levelId: currentDocument.entryLevelId },
+      `Returned to ${entry?.title ?? currentDocument.entryLevelId}.`,
+    );
+  }, [navigateViewRoot]);
   const activeLevelDiagramItemCount = activeLevel
     ? activeLevel.nodes.length + activeLevel.connections.length
     : 0;
@@ -1180,6 +1313,13 @@ export function BlockDesignStudio({
     "outgoing",
   );
   const canAddChildDesign = Boolean(selectedNode && !selectedNode.node.hierarchy);
+  const canEnterHierarchy = Boolean(
+    selectedChildLevelId && document?.levels.some((level) => level.id === selectedChildLevelId),
+  );
+  const canExitHierarchy = Boolean(parentViewSelection);
+  const canHomeHierarchy = Boolean(
+    document && effectiveViewRootLevelId && effectiveViewRootLevelId !== document.entryLevelId,
+  );
   const canAddConnection = Boolean(activeLevel && firstConnectablePair(activeLevel));
   const canAlignSelection = arrangementSelection.available && !inspectorDraftDirty;
   const alignUnavailableReason = arrangementSelection.available
@@ -1472,6 +1612,21 @@ export function BlockDesignStudio({
       id: "validateDesign", label: "Validate Design", toolbarTitle: "验证设计", icon: ShieldCheck,
       ...commandAvailability(Boolean(document), "Open or create a design first."), execute: validateDesign,
     },
+    enterHierarchy: {
+      id: "enterHierarchy", label: "Enter Module", shortcut: "Ctrl/⌘ ⇧ End", icon: GitBranchPlus,
+      ...commandAvailability(canEnterHierarchy, "Select a module with a child design first."),
+      execute: enterHierarchy,
+    },
+    exitHierarchy: {
+      id: "exitHierarchy", label: "Exit Module", shortcut: "Ctrl/⌘ ⇧ Home", icon: RotateCcw,
+      ...commandAvailability(canExitHierarchy, "The current view is already at the entry level."),
+      execute: exitHierarchy,
+    },
+    homeHierarchy: {
+      id: "homeHierarchy", label: "Architecture Home", shortcut: "⇧ Home", icon: CircuitBoard,
+      ...commandAvailability(canHomeHierarchy, "The current view is already at the entry level."),
+      execute: homeHierarchy,
+    },
     fitSelection: {
       id: "fitSelection", label: "Fit Selection", shortcut: "Ctrl/⌘ ⇧ H", icon: ScanSearch,
       ...commandAvailability(selectedDiagramItemCount > 0, "Select a module or interface first."),
@@ -1539,6 +1694,9 @@ export function BlockDesignStudio({
     canCopySelection,
     canDelete,
     canDistributeSelection,
+    canEnterHierarchy,
+    canExitHierarchy,
+    canHomeHierarchy,
     canPaste,
     canReconnectConnection,
     copySelectedModules,
@@ -1561,7 +1719,10 @@ export function BlockDesignStudio({
     editor.canRedo,
     editor.canUndo,
     editorDialogOpen,
+    enterHierarchy,
     exportCurrent,
+    exitHierarchy,
+    homeHierarchy,
     maximizeDiagram,
     mayDiscardChanges,
     openAddBlock,
@@ -1625,7 +1786,31 @@ export function BlockDesignStudio({
       const target = event.target as HTMLElement | null;
       const editingText = target?.matches("input, textarea, select, [contenteditable='true']");
       if (editingText) return;
-      if (modifier && !event.shiftKey && key === "a") {
+      if (modifier && event.shiftKey && event.key === "End") {
+        if (commands.enterHierarchy.enabled) {
+          event.preventDefault();
+          commands.enterHierarchy.execute();
+        }
+      } else if (modifier && event.shiftKey && event.key === "Home") {
+        if (commands.exitHierarchy.enabled) {
+          event.preventDefault();
+          commands.exitHierarchy.execute();
+        }
+      } else if (!modifier && event.shiftKey && event.key === "Home") {
+        if (commands.homeHierarchy.enabled) {
+          event.preventDefault();
+          commands.homeHierarchy.execute();
+        }
+      } else if (
+        event.key === "Escape" &&
+        commands.exitHierarchy.enabled &&
+        selectionRef.current.kind === "level" &&
+        selectionRef.current.levelId === viewRootLevelIdRef.current &&
+        target?.closest(".bd-react-flow")
+      ) {
+        event.preventDefault();
+        commands.exitHierarchy.execute();
+      } else if (modifier && !event.shiftKey && key === "a") {
         if (commands.selectAll.enabled) {
           event.preventDefault();
           commands.selectAll.execute();
@@ -1730,16 +1915,32 @@ export function BlockDesignStudio({
       : undefined;
   const errorCount = issues.filter((issue) => issue.severity === "error").length;
   const warningCount = issues.filter((issue) => issue.severity === "warning").length;
-  const expandedTitles = document.levels.filter((level) => expandedLevelIds.has(level.id)).map((level) => level.title);
   const visibleConnections = layout.edges.filter((edge) => !edge.data?.boundaryContinuation).length;
 
   const dockContent = {
-    sources: <HierarchyTree document={document} expandedLevelIds={expandedLevelIds} selection={selection} onToggleLevel={toggleHierarchy} onRevealLevel={revealLevel} onSelect={requestSelectionFromNavigator} />,
+    sources: <HierarchyTree
+      document={document}
+      expandedLevelIds={expandedLevelIds}
+      viewRootLevelId={effectiveViewRootLevelId!}
+      selection={selection}
+      onToggleLevel={toggleHierarchy}
+      onEnterLevel={(levelId) => {
+        const level = document.levels.find((candidate) => candidate.id === levelId);
+        navigateViewRoot(
+          levelId,
+          { kind: "level", levelId },
+          `Entered ${level?.title ?? levelId}. Use the breadcrumb to restore context.`,
+        );
+      }}
+      onRevealLevel={revealLevel}
+      onSelect={requestSelectionFromNavigator}
+    />,
     diagram: (
       <section className="bd-canvas-pane">
         <ReactFlowProvider>
           <BlockDesignCanvas
             document={document}
+            viewRootLevelId={effectiveViewRootLevelId!}
             layout={layout}
             selection={selection}
             fitRequest={fitRequest}
@@ -1801,8 +2002,15 @@ export function BlockDesignStudio({
 
       <StudioToolbar
         commands={commands}
-        activeLevelTitle={activeLevel!.title}
-        expandedTitles={expandedTitles}
+        viewRootPath={viewRootPath}
+        onNavigateViewRoot={(levelId) => {
+          const level = document.levels.find((candidate) => candidate.id === levelId);
+          navigateViewRoot(
+            levelId,
+            { kind: "level", levelId },
+            `Viewing ${level?.title ?? levelId}.`,
+          );
+        }}
         expandedCount={expandedLevelIds.size}
       />
 
@@ -1811,6 +2019,7 @@ export function BlockDesignStudio({
         <span><Braces size={12} /> BlockDesignDocument {document.schemaVersion}</span>
         <span className={editor.dirty || inspectorDraftDirty ? "is-dirty" : ""}>{inspectorDraftDirty ? "Unapplied Inspector changes" : editor.dirty ? "Unsaved changes" : "Saved"}</span>
         <span>{layout.nodes.length} diagram blocks</span><span>{visibleConnections} diagram interfaces</span>
+        <span>View root: {viewRootLevel?.title}</span>
         <span>ELK placement · obstacle-aware orthogonal routes</span>
       </footer>
 

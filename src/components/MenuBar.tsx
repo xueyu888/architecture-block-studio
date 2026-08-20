@@ -66,6 +66,9 @@ const MENU_DEFINITIONS: Array<{
     id: "view",
     label: "View",
     commandIds: [
+      "enterHierarchy",
+      "exitHierarchy",
+      "homeHierarchy",
       "fitSelection",
       "fitDesign",
       "zoomIn",

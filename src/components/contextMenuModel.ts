@@ -22,6 +22,7 @@ export interface ContextMenuSize {
 }
 
 const NODE_COMMAND_GROUPS: readonly (readonly StudioCommandId[])[] = [
+  ["enterHierarchy"],
   ["addPort", "addChildDesign"],
   ["copySelection", "cutSelection", "duplicateSelection", "deleteSelection"],
   ["selectDirectInterfaces", "selectDirectNeighborhood"],

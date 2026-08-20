@@ -4,7 +4,10 @@ import {
   diagramSelectionItems,
   directInterfaceSelectionExpansion,
   directNeighborhoodSelectionExpansion,
+  hierarchyLevelIsWithin,
   hierarchyLevelPath,
+  hierarchyLevelTrail,
+  hierarchyParentSelection,
   levelForSelection,
   nodeForSelection,
   replaceDiagramSelection,
@@ -82,6 +85,17 @@ describe("workspace selection protocol", () => {
 
     expect(hierarchyLevelPath(document, "system")).toEqual([]);
     expect(hierarchyLevelPath(document, "parent-internal")).toEqual(["parent-internal"]);
+    expect(hierarchyLevelTrail(document, "parent-internal").map((level) => level.id))
+      .toEqual(["system", "parent-internal"]);
+    expect(hierarchyLevelTrail(document, "missing")).toEqual([]);
+    expect(hierarchyLevelIsWithin(document, "system", "parent-internal")).toBe(true);
+    expect(hierarchyLevelIsWithin(document, "parent-internal", "system")).toBe(false);
+    expect(hierarchyParentSelection(document, "parent-internal")).toEqual({
+      kind: "node",
+      levelId: "system",
+      nodeId: "parent",
+    });
+    expect(hierarchyParentSelection(document, "system")).toBeUndefined();
     expect(levelForSelection(document, childSelection).id).toBe("parent-internal");
     expect(levelForSelection(document, { kind: "level", levelId: "missing" }).id).toBe("system");
     expect(nodeForSelection(document, childSelection)?.node.id).toBe("child");

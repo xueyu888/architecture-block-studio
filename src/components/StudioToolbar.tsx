@@ -43,13 +43,13 @@ function CommandGroup({
 
 export function StudioToolbar({
   commands,
-  activeLevelTitle,
-  expandedTitles,
+  viewRootPath,
+  onNavigateViewRoot,
   expandedCount,
 }: {
   commands: StudioCommands;
-  activeLevelTitle: string;
-  expandedTitles: string[];
+  viewRootPath: readonly { id: string; title: string }[];
+  onNavigateViewRoot: (levelId: string) => void;
   expandedCount: number;
 }) {
   return (
@@ -58,9 +58,20 @@ export function StudioToolbar({
       <CommandGroup label="History and selection" commands={commands} ids={["undo", "redo", "deleteSelection"]} />
       <CommandGroup label="Create" commands={commands} ids={["addBlock", "addPort", "addConnection", "addChildDesign"]} />
       <CommandGroup label="Canvas and review" commands={commands} ids={["fitDesign", "validateDesign"]} />
-      <nav className="bd-breadcrumbs" aria-label="Expanded hierarchy">
-        <strong>{activeLevelTitle}</strong>
-        {expandedTitles.map((title) => <span key={title}><b>/</b>{title}</span>)}
+      <nav className="bd-breadcrumbs" aria-label="Diagram view hierarchy">
+        {viewRootPath.map((level, index) => (
+          <span key={level.id}>
+            {index > 0 && <b aria-hidden="true">/</b>}
+            <button
+              type="button"
+              disabled={index === viewRootPath.length - 1}
+              aria-current={index === viewRootPath.length - 1 ? "page" : undefined}
+              onClick={() => onNavigateViewRoot(level.id)}
+            >
+              {level.title}
+            </button>
+          </span>
+        ))}
       </nav>
       <span className="bd-level-chip">{expandedCount} expanded</span>
     </div>
