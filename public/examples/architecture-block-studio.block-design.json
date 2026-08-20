@@ -2,7 +2,7 @@
   "schemaVersion": "2.1",
   "id": "architecture-block-studio.source-architecture.v1",
   "title": "Architecture Block Studio — Source Architecture",
-  "summary": "Generated from 74 managed source files and 27 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
+  "summary": "Generated from 81 managed source files and 27 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
   "entryLevelId": "product-boundary",
   "sourceRef": {
     "label": "architecture-block-studio",
@@ -42,7 +42,7 @@
         "label": "src/components · canvas surface",
         "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/components/AlignmentGuideLayer.tsx"
       },
-      "code": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/moduleDropTarget.ts\nsrc/components/useLiveRoutingPreviewWorker.ts\nsrc/components/viewportAutoPan.ts",
+      "code": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/moduleDropTarget.ts\nsrc/components/latestWorkerRequestQueue.ts\nsrc/components/routingFrameWorkerClient.ts\nsrc/components/useCommittedRoutingWorker.ts\nsrc/components/useLiveRoutingPreviewWorker.ts\nsrc/components/viewportAutoPan.ts",
       "codeLanguage": "text",
       "attributes": {
         "architectureModuleId": "canvas",
@@ -744,7 +744,7 @@
               "label": "Routing",
               "side": "right",
               "direction": "input",
-              "dataType": "1 import declarations",
+              "dataType": "2 import declarations",
               "required": true,
               "order": 1
             },
@@ -784,7 +784,7 @@
               "architectureGroupId": "geometry",
               "hierarchyDepth": "5",
               "sourcePaths": "src/layout/",
-              "sourceFileCount": "10"
+              "sourceFileCount": "11"
             }
           },
           "layout": {
@@ -811,7 +811,7 @@
               "label": "Canvas",
               "side": "right",
               "direction": "input",
-              "dataType": "5 import declarations",
+              "dataType": "8 import declarations",
               "required": true,
               "order": 0
             },
@@ -820,7 +820,7 @@
               "label": "Layout",
               "side": "left",
               "direction": "output",
-              "dataType": "1 import declarations",
+              "dataType": "2 import declarations",
               "required": true,
               "order": 0
             },
@@ -851,7 +851,7 @@
               "architectureGroupId": "geometry",
               "hierarchyDepth": "5",
               "sourcePaths": "src/routing/",
-              "sourceFileCount": "14"
+              "sourceFileCount": "17"
             }
           },
           "layout": {
@@ -1084,7 +1084,7 @@
               "label": "Routing",
               "side": "left",
               "direction": "output",
-              "dataType": "5 import declarations",
+              "dataType": "8 import declarations",
               "required": true,
               "order": 4
             },
@@ -1107,15 +1107,15 @@
               "label": "src/components · canvas surface",
               "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/components/AlignmentGuideLayer.tsx"
             },
-            "code": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/moduleDropTarget.ts\nsrc/components/useLiveRoutingPreviewWorker.ts\nsrc/components/viewportAutoPan.ts",
+            "code": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/moduleDropTarget.ts\nsrc/components/latestWorkerRequestQueue.ts\nsrc/components/routingFrameWorkerClient.ts\nsrc/components/useCommittedRoutingWorker.ts\nsrc/components/useLiveRoutingPreviewWorker.ts\nsrc/components/viewportAutoPan.ts",
             "codeLanguage": "text",
             "attributes": {
               "architectureRole": "source-module",
               "architectureModuleId": "canvas",
               "architectureGroupId": "interaction",
               "hierarchyDepth": "5",
-              "sourcePaths": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/moduleDropTarget.ts\nsrc/components/useLiveRoutingPreviewWorker.ts\nsrc/components/viewportAutoPan.ts",
-              "sourceFileCount": "12"
+              "sourcePaths": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/moduleDropTarget.ts\nsrc/components/latestWorkerRequestQueue.ts\nsrc/components/routingFrameWorkerClient.ts\nsrc/components/useCommittedRoutingWorker.ts\nsrc/components/useLiveRoutingPreviewWorker.ts\nsrc/components/viewportAutoPan.ts",
+              "sourceFileCount": "15"
             }
           },
           "layout": {
@@ -1523,7 +1523,7 @@
         {
           "id": "import-canvas-to-routing",
           "interfaceId": "source-import.routing",
-          "label": "Canvas Interaction → Routing Engine · 5 import declarations",
+          "label": "Canvas Interaction → Routing Engine · 8 import declarations",
           "source": {
             "nodeId": "canvas",
             "portId": "depends-routing"
@@ -1614,7 +1614,7 @@
         {
           "id": "import-routing-to-layout",
           "interfaceId": "source-import.layout",
-          "label": "Routing Engine → Layout Projection · 1 import declaration",
+          "label": "Routing Engine → Layout Projection · 2 import declarations",
           "source": {
             "nodeId": "routing",
             "portId": "depends-layout"

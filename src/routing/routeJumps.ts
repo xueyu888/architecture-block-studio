@@ -110,3 +110,27 @@ export function planRouteJumps(routes: ReadonlyMap<string, PlannedRoute>): Reado
     )] as const;
   }));
 }
+
+function sameRouteJumps(left: readonly RouteJump[] | undefined, right: readonly RouteJump[]): boolean {
+  return Boolean(left && left.length === right.length && left.every((jump, index) => (
+    jump.segmentIndex === right[index].segmentIndex &&
+    jump.point.x === right[index].point.x &&
+    jump.point.y === right[index].point.y &&
+    jump.radius === right[index].radius
+  )));
+}
+
+/** Reuses presentation bridge arrays for routes whose crossings did not change. */
+export function reconcileRouteJumpReferences(
+  previous: ReadonlyMap<string, readonly RouteJump[]>,
+  next: ReadonlyMap<string, readonly RouteJump[]>,
+): ReadonlyMap<string, readonly RouteJump[]> {
+  let changed = previous.size !== next.size;
+  const jumps = new Map([...next].map(([id, routeJumps]) => {
+    const prior = previous.get(id);
+    const resolved = sameRouteJumps(prior, routeJumps) ? prior! : routeJumps;
+    if (resolved !== prior) changed = true;
+    return [id, resolved] as const;
+  }));
+  return changed ? jumps : previous;
+}

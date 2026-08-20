@@ -193,6 +193,16 @@ J(P)=\operatorname{lexmin}(U,Q,X,D_{max},D_{sum},B,H,T)
 - 键盘调整折点时，一次性焦点请求同时携带目标索引与新坐标；只有完全匹配的新路径 DOM 出现后才能恢复焦点，不能命中被替换前的旧折点。
 - 自动路线不因 `Optimize Routing` revision、缩放、Fit、设备像素比或无关属性变化而随机跳线。
 
+### 已提交路由帧
+
+文档操作完成后，Canvas 不把“新节点投影”和“旧认证路线”分别安装。每个已提交帧以 `(layoutIdentity, routeRevision)` 配对：布局投影、路由策略、完整路线、验证证书和展示线桥属于同一次原子结果。小场景同步计算；超过 32 条 leg 时，上一张完整认证帧继续显示，共享 Worker 在后台计算下一张帧。响应只有在 frame key 仍等于当前请求时才能安装；过期、失败或组件卸载后的响应都被丢弃。
+
+普通 move / resize 先以 `solveLiveRoutingPreview` 找到真实 affected legs 和容量邻域，只替换该邻域的候选路线，再由 `certifyRoutingSceneRoutes` 对完整场景逐 leg、逐 pair 复验。显式 Optimize Routes 增加 route revision 并强制 full solve。`RoutingResult.status` 是整帧证书，不属于任一 Edge；Edge 只消费自己的 `PlannedRoute` 和 presentation-only jumps。因此一次 frame status 变化不会让 2000 条未变化线路全部重建。
+
+live 与 committed 两类工作共享一个 Worker，但使用带判别字段的独立协议。每个调用方的 latest-only 队列同时保存 desired、queued 和 in-flight：运行中到达的多次输入只覆盖一个等待槽；响应后若等待槽与刚完成帧不同才发送一次。Worker 内同时生成 route jumps，主线程只做版本核对、引用协调与原子安装。
+
+这条边界对照 draw.io 固定提交中的 [`mxGraphHandler.updateLivePreview`](https://github.com/jgraph/drawio/blob/a1f615b7f5a5237da71de2ce2f057b5fa70b0aeb/src/main/webapp/mxgraph/src/handler/mxGraphHandler.js#L1459-L1615)：临时移动保存旧 state、只刷新受影响 vertex 与 connected edges；以及 [`mxGraphModel.beginUpdate / endUpdate`](https://github.com/jgraph/drawio/blob/a1f615b7f5a5237da71de2ce2f057b5fa70b0aeb/src/main/webapp/mxgraph/src/model/mxGraphModel.js#L1964-L2019)：嵌套修改只在最外层结束时发布一次通知。本项目吸收“局部 invalidation + 原子可见提交”的职责，不复制 mxGraph model、全局状态或文件格式。
+
 ## 9. 交叉线的展示桥
 
 联合目标优先消除容量冲突并减少 crossing，但一般正交图中并非所有 crossing 都能在有限绕行上限内消除。`routeJumps` 从已经提交且验证过的路线派生展示线桥：严格相交时由水平线跨过垂直线，相邻交点合并为一个更宽的桥；端点附近不画桥。候选通过按 x 排序的垂直线段扫描生成，避免以线路对做全量渲染期搜索。

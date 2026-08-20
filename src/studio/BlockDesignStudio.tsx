@@ -114,6 +114,7 @@ import {
   baseNodeDimensions,
   distributeSelection,
   layoutBlockDesign,
+  reconcileLayoutResult,
   layoutFrameSignature,
   layoutProjectionSignature,
   type ArrangementRect,
@@ -457,7 +458,7 @@ export function BlockDesignStudio({
     })
       .then((result) => {
         if (!active) return;
-        setLayout(result);
+        setLayout((current) => reconcileLayoutResult(current, result));
         if (revealSelectionAfterLayout.current) {
           revealSelectionAfterLayout.current = false;
           window.setTimeout(() => setRevealSelectionRequest((value) => value + 1), 0);

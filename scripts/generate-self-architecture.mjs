@@ -162,6 +162,9 @@ const MODULES = [
       "src/components/canvasSelection.ts",
       "src/components/canvasTypes.ts",
       "src/components/moduleDropTarget.ts",
+      "src/components/latestWorkerRequestQueue.ts",
+      "src/components/routingFrameWorkerClient.ts",
+      "src/components/useCommittedRoutingWorker.ts",
       "src/components/useLiveRoutingPreviewWorker.ts",
       "src/components/viewportAutoPan.ts",
     ],
@@ -271,7 +274,8 @@ function sourceOwner(file) {
 }
 
 function resolveRelativeSource(fromFile, specifier) {
-  const base = normalize(join(dirname(join(repositoryRoot, fromFile)), specifier));
+  const sourcePath = specifier.replace(/[?#].*$/, "");
+  const base = normalize(join(dirname(join(repositoryRoot, fromFile)), sourcePath));
   const candidates = [
     base,
     `${base}.ts`,

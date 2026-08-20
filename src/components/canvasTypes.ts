@@ -1,7 +1,7 @@
 import type { Edge, Node } from "@xyflow/react";
 import type { LayoutBlockNodeData, LayoutInterfaceEdgeData } from "../layout";
 import type { BlockPort, ConnectionRouting } from "../model";
-import type { RouteJump, RoutePoint, RoutingStatus } from "../routing";
+import type { RouteJump, RoutePoint } from "../routing";
 
 export interface CanvasBlockNodeData extends LayoutBlockNodeData {
   toggleHierarchy: (levelId: string) => void;
@@ -23,7 +23,6 @@ export interface NodeResizeGeometry {
 export interface CanvasInterfaceEdgeData extends LayoutInterfaceEdgeData {
   plannedRoute?: readonly RoutePoint[];
   routeJumps?: readonly RouteJump[];
-  routingStatus?: RoutingStatus;
   simplifiedInteraction?: boolean;
   canEditSelection?: () => boolean;
   updateRouting?: (routing: ConnectionRouting | undefined) => boolean;

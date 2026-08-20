@@ -94,7 +94,7 @@ flowchart LR
   io --> model
 ```
 
-图中箭头严格表达“左侧源码模块 import 右侧模块”，不是运行时数据流，也不按卡片相对位置猜方向。`Studio Orchestrator` 与叶子 `Command & Selection` 分开，是因为前者拥有产品组合，后者只拥有无 UI 依赖的命令和选择协议；Canvas 与 Workbench 也按直接画布手势和外围审查界面分开。这个划分恰好覆盖当前 74 个受管源码文件，不能漏文件或让一个文件同时属于多个模块。桌面主进程是 OS 适配边界，不反向进入这张 renderer 源码依赖图。
+图中箭头严格表达“左侧源码模块 import 右侧模块”，不是运行时数据流，也不按卡片相对位置猜方向。`Studio Orchestrator` 与叶子 `Command & Selection` 分开，是因为前者拥有产品组合，后者只拥有无 UI 依赖的命令和选择协议；Canvas 与 Workbench 也按直接画布手势和外围审查界面分开。这个划分恰好覆盖当前 81 个受管源码文件，不能漏文件或让一个文件同时属于多个模块。桌面主进程是 OS 适配边界，不反向进入这张 renderer 源码依赖图。
 
 生成和验证必须保持以下不变量：
 
@@ -318,7 +318,8 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 
 - 布局输入只有文档、展开 Level、placement mode 和 revision；输出是可重建的 `LayoutResult`。
 - `layoutProjectionSignature` 由布局 Owner 枚举布局与 Canvas 真正消费的模块可见字段、端口、拓扑、接口类型和手工路由；文档 / Level 说明和 Inspector 合同正文不在该投影中。只有投影变化才重建 React Flow 图。
-- `layoutFrameSignature` 只包含会改变拓扑、端点、Port 或层级边界的框架事实，用于决定是否重新 Fit；直接 move / resize 已由用户指定当前视野，不能再次 Fit 并把选中模块移出 viewport，可见标题变化同样不能冒充框架变化。
+- `layoutFrameSignature` 只包含会改变拓扑、端点、Port 或层级边界的框架事实，用于决定是否发出一次新的 Fit 命令；Canvas 以递增游标恰好消费一次，后续节点增删不得重放历史 Fit。直接 move / resize 和指定画布点的新建 / 粘贴已由用户给出当前视野，不能再次 Fit；点放置结果已完整可见时保持 viewport，只有碰撞避让后的最终卡片不可见才执行一次条件 reveal。可见标题变化同样不能冒充框架变化。
+- 每次纯文档布局可以生成新的对象，但 `reconcileLayoutResult` 按完整投影只复用语义未变化的 node / edge 引用。Canvas 再按 layout item、route 与 line-jump 引用投影 Flow 对象；frame 级路由状态只属于 Canvas，不能复制进每条 Edge 并造成全图失效。
 - Level 标题覆盖层与重型 React Flow 图分开渲染；工作区命令回调通过稳定边界读取最新事实，普通属性编辑不能因 callback identity 变化重映射全部节点和边。
 - Canvas selection 只在受影响的前后节点 / 边对象上投影 `selected`，未受影响的 Flow 元素保持引用稳定；React Flow 事件、配置对象和静态控件同样保持稳定，选择不能借回调或 JSX identity 触发全图协调。
 - Canvas detail level 只从 React Flow viewport 的 zoom 派生，并以根节点展示属性投影给 CSS；低缩放隐藏不可读的 process、摘要、Owner 和 data type，但始终保留模块标题、端口名、端口把手与线路。节点不分别订阅 viewport，这个展示策略不进入文档、历史或布局结果。
@@ -330,6 +331,8 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 - 直接 move / resize 期间只有一个可丢弃的 scene frame：实时节点几何先由 `projectCompoundNodeGrowth` 从最深 owner 向外投影，父框只向右 / 下增长且不移动原点；节点、端口、障碍物、Gate、MiniMap 与线路都消费这同一帧。容器 padding 只来自 `BLOCK_CONTAINER_GEOMETRY`，不能在布局和预览中各写一套数值。
 - live routing 只重算端点、域、locked geometry 或障碍相交真正变化的线路，并通过 Gate 与实际容量相交关系闭包；不受影响的已验证路线直接保留。至多 32 条受影响线路在主线程精确求解，更大的场景交给 Worker；Worker 始终只处理一个在途请求，指针新状态覆盖等待槽，过期几何结果不得上屏，失败时保留 committed route 而不是画未经验证的 fallback。
 - pointerup 后 gesture 进入短暂 settling，直到新的文档投影与 live frame 的几何签名一致才丢弃预览，禁止出现松手瞬间回到旧线路再跳向新线路。临时父框、affected set、Worker telemetry 和 settling phase 都不得进入 JSON 或 History。
+- committed routing 同样只有一个带 `layout identity + route revision` 的版本帧。32 条以内同步提交；更大的场景由 live / committed 共用的单一 Worker 计算，`LatestWorkerRequestQueue` 分离 desired、queued 与 in-flight，请求完成后只发送期间真正积累的最新输入，不能重复投递同一帧。普通几何编辑只重算 affected neighborhood，再由独立 verifier 认证完整候选；显式 Optimize Routes 才强制 full solve。
+- Worker 返回的 policy、routes、line-jumps、证书和 affected 集合必须与当前 frame key 匹配后一次原子安装；过期响应或失败都保留上一张完整认证帧。React Flow 不能先显示新节点再搭配旧线路，也不能把未认证 preview 伪装成 committed。大图只为实际变化的节点调用 `updateNodeInternals`，并保留未变化 route / jump / node / edge 的引用。
 - 展开子设计时，子节点使用 compound parent 与相对位置，父模块继续提供上下文和边界。
 - 路径从具名源端口开始，在具名目标端口结束。
 - 每条可见逻辑连接只在真实 target 显示一个语义箭头；内部 hierarchy continuation 不重复显示箭头，Port Handle 不承担方向表达。

@@ -1,51 +1,42 @@
 import { useEffect, useRef, useState } from "react";
 import type {
-  LiveRoutingWorkerRequest,
-  LiveRoutingWorkerResponse,
-} from "../routing/liveRoutingWorkerProtocol";
+  CommittedRoutingWorkerRequest,
+  CommittedRoutingWorkerResponse,
+} from "../routing/committedRoutingWorkerProtocol";
 import { LatestWorkerRequestQueue } from "./latestWorkerRequestQueue";
 import {
   acquireRoutingFrameWorker,
   type RoutingFrameWorkerLease,
 } from "./routingFrameWorkerClient";
 
-export type LiveRoutingWorkerInput = Omit<LiveRoutingWorkerRequest, "requestId">;
+export type CommittedRoutingWorkerInput = Omit<CommittedRoutingWorkerRequest, "requestId">;
 
-export interface LiveRoutingWorkerState {
+export interface CommittedRoutingWorkerState {
   status: "idle" | "pending" | "ready" | "failed";
-  response?: LiveRoutingWorkerResponse;
+  response?: CommittedRoutingWorkerResponse;
 }
 
 /**
- * Runs large disposable routing frames outside the browser UI thread.
+ * Serializes committed route-frame work through one latest-only Worker.
  *
- * At most one request is in flight. Pointer updates replace one latest slot;
- * after a result returns, stale geometry is dropped and only the newest frame
- * is dispatched. The worker never writes document state or commits history.
+ * One request may be executing while newer document projections replace a
+ * single waiting slot. Only the response paired with the current frame key is
+ * published; stale results never become visible or mutate editor state.
  */
-export function useLiveRoutingPreviewWorker(
-  input: LiveRoutingWorkerInput | undefined,
-): LiveRoutingWorkerState {
+export function useCommittedRoutingWorker(
+  input: CommittedRoutingWorkerInput | undefined,
+): CommittedRoutingWorkerState {
   const workerLeaseRef = useRef<RoutingFrameWorkerLease | undefined>(undefined);
-  const queueRef = useRef(new LatestWorkerRequestQueue<LiveRoutingWorkerRequest>());
+  const queueRef = useRef(new LatestWorkerRequestQueue<CommittedRoutingWorkerRequest>());
   const inFlightRef = useRef(false);
   const requestIdRef = useRef(0);
   const pumpRef = useRef<() => void>(() => undefined);
-  const [state, setState] = useState<LiveRoutingWorkerState>({ status: "idle" });
-
-  pumpRef.current = () => {
-    const workerLease = workerLeaseRef.current;
-    if (!workerLease || inFlightRef.current) return;
-    const queued = queueRef.current.takeQueued();
-    if (!queued) return;
-    inFlightRef.current = true;
-    workerLease.post({ kind: "live", ...queued });
-  };
+  const [state, setState] = useState<CommittedRoutingWorkerState>({ status: "idle" });
 
   useEffect(() => {
     workerLeaseRef.current = acquireRoutingFrameWorker({
       onMessage: (response) => {
-        if (response.kind !== "live") return;
+        if (response.kind !== "committed") return;
         inFlightRef.current = false;
         if (queueRef.current.accepts(response.requestId)) {
           setState({ status: "ready", response });
@@ -66,6 +57,16 @@ export function useLiveRoutingPreviewWorker(
     };
   }, []);
 
+  pumpRef.current = () => {
+    if (inFlightRef.current) return;
+    const workerLease = workerLeaseRef.current;
+    if (!workerLease) return;
+    const queued = queueRef.current.takeQueued();
+    if (!queued) return;
+    inFlightRef.current = true;
+    workerLease.post({ kind: "committed", ...queued });
+  };
+
   useEffect(() => {
     if (!input) {
       queueRef.current.clear();
@@ -75,9 +76,7 @@ export function useLiveRoutingPreviewWorker(
     requestIdRef.current += 1;
     const request = { ...input, requestId: requestIdRef.current };
     queueRef.current.replace(request);
-    setState((current) => current.response?.geometrySignature === input.geometrySignature
-      ? current
-      : { status: "pending" });
+    setState({ status: "pending" });
     pumpRef.current();
   }, [input]);
 

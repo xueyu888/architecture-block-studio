@@ -296,7 +296,6 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
       data-target-node-id={props.target}
       data-connection-id={data.connection.id}
       data-routing-mode={persistedPoints ? "manual" : "automatic"}
-      data-routing-status={data.routingStatus}
       data-simplified-interaction={data.simplifiedInteraction ? "true" : "false"}
       data-boundary-continuation={data.boundaryContinuation ? "true" : "false"}
       data-boundary-node-id={data.boundaryNodeId}

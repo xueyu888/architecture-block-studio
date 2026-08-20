@@ -22,7 +22,7 @@ export {
   type RoutingPreviewNodeGeometry,
   type RoutingPreviewEndpointGeometry,
 } from "./connectionPreview";
-export { planRouteJumps } from "./routeJumps";
+export { planRouteJumps, reconcileRouteJumpReferences } from "./routeJumps";
 export {
   editableOrthogonalRoute,
   editableRouteBends,
@@ -44,7 +44,7 @@ export {
   type RoutingObstacleCatalog,
   type RoutingObstacleCatalogEntry,
 } from "./obstacleCatalog";
-export { solveRoutingScene } from "./sceneRouter";
+export { certifyRoutingSceneRoutes, solveRoutingScene } from "./sceneRouter";
 export {
   LIVE_ROUTING_EXACT_LEG_LIMIT,
   solveLiveRoutingPreview,
@@ -52,6 +52,16 @@ export {
   type LiveRoutingPreviewMode,
   type LiveRoutingPreviewOptions,
 } from "./liveRoutingPreview";
+export {
+  committedRoutingFrameKey,
+  computeCommittedRoutingFrame,
+  computeCommittedRoutingProjectionFrame,
+  reconcileRoutingRouteReferences,
+  reconcileRoutingResultReferences,
+  type CommittedRoutingComputation,
+  type CommittedRoutingComputationMode,
+  type PreviousCommittedRoutingFrame,
+} from "./committedRoutingFrame";
 export {
   DEFAULT_ROUTING_POLICY,
   routingPolicyForScene,

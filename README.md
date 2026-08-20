@@ -273,7 +273,7 @@ pnpm dev --host 127.0.0.1 --port 4317
 http://127.0.0.1:4317/?design=%2Fexamples%2Farchitecture-block-studio.block-design.json
 ```
 
-这份示例不是手绘宣传图。生成器会遍历 `src` 中的 TypeScript、TSX 与 CSS 文件，要求每个文件恰好属于一个责任模块，并把所有可解析的跨模块相对 import 投影为接口；当前示例覆盖 74 个源码文件、12 个责任模块、27 条跨模块依赖和 5 层上下文。缺失归属、虚构依赖、无法解析的引用或模块环都会使验证失败。
+这份示例不是手绘宣传图。生成器会遍历 `src` 中的 TypeScript、TSX 与 CSS 文件，要求每个文件恰好属于一个责任模块，并把所有可解析的跨模块相对 import（包括 Vite 资源查询）投影为接口；当前示例覆盖 81 个源码文件、12 个责任模块、27 条跨模块依赖和 5 层上下文。缺失归属、虚构依赖、无法解析的引用或模块环都会使验证失败。
 
 ```bash
 pnpm generate:self-architecture  # 源码结构变化后重新生成示例

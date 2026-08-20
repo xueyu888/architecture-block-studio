@@ -969,3 +969,64 @@ export function solveRoutingScene(
     },
   };
 }
+
+/**
+ * Certifies a complete pre-planned route set without solving the scene again.
+ *
+ * This is the promotion boundary for an incremental preview: the candidate
+ * routes may come from a bounded rebase, but committed rendering only accepts
+ * them after the independent verifier has audited every leg and unordered
+ * route pair in the new scene. Certification never claims single-commodity
+ * optimality because it did not construct the candidate paths.
+ */
+export function certifyRoutingSceneRoutes(
+  scene: RoutingScene,
+  routes: ReadonlyMap<string, PlannedRoute>,
+  policy: RoutingPolicy = DEFAULT_ROUTING_POLICY,
+): RoutingResult {
+  const obstacleCatalog = routingObstacleCatalogFor(scene.obstacles, policy);
+  const signature = inputSignature(scene, policy);
+  const invalid = validateInput(scene);
+  if (invalid.length > 0) {
+    const emptyVerification = verifyRoutingResult(scene, new Map(), policy, obstacleCatalog);
+    return {
+      status: "InvalidInput",
+      routes: new Map(),
+      diagnostics: invalid,
+      certificate: {
+        policyVersion: policy.version,
+        coordinateScale: policy.coordinateScale,
+        deterministicInputSignature: signature,
+        proof: "none",
+        verified: false,
+        audit: emptyVerification.audit,
+        objective: emptyVerification.objective,
+      },
+    };
+  }
+
+  const verification = verifyRoutingResult(scene, routes, policy, obstacleCatalog);
+  const lockedLegIds = new Set(scene.legs.filter((leg) => leg.lockedPoints).map((leg) => leg.id));
+  const lockedInvalid = verification.diagnostics.some((entry) =>
+    entry.code === "invalid-locked-route" || (entry.legId ? lockedLegIds.has(entry.legId) : false)
+  );
+  const status = lockedInvalid
+    ? "InvalidInput"
+    : routes.size !== scene.legs.length || !verification.valid || verification.objective.capacityViolations > 0
+      ? "Unresolved"
+      : "Feasible";
+  return {
+    status,
+    routes,
+    diagnostics: verification.diagnostics,
+    certificate: {
+      policyVersion: policy.version,
+      coordinateScale: policy.coordinateScale,
+      deterministicInputSignature: signature,
+      proof: status === "Feasible" ? "bounded-feasible" : "none",
+      verified: verification.valid,
+      audit: verification.audit,
+      objective: verification.objective,
+    },
+  };
+}

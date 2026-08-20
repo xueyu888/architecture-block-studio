@@ -3,6 +3,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron, expect, test } from "@playwright/test";
 
+async function canvasZoom(window: import("@playwright/test").Page): Promise<number> {
+  return window.locator(".react-flow__viewport").evaluate((viewport) => {
+    const transform = new DOMMatrix(window.getComputedStyle(viewport).transform);
+    return transform.a;
+  });
+}
+
 test("launches the isolated Windows desktop shell and renders the full workbench", async () => {
   const environment = Object.fromEntries(
     Object.entries(process.env).filter(([name]) => name !== "ELECTRON_RUN_AS_NODE"),
@@ -15,6 +22,9 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     await expect(window.getByText("Architecture Block Studio").first()).toBeVisible();
     await expect(window.locator(".react-flow__node")).toHaveCount(7, { timeout: 30_000 });
     await expect(window.locator(".react-flow__edge")).toHaveCount(10, { timeout: 30_000 });
+    await expect(window.locator(".bd-canvas-busy")).toHaveCount(0);
+    await expect(window.locator(".bd-react-flow")).toHaveAttribute("data-committed-routing-status", "ready");
+    await expect.poll(() => canvasZoom(window)).toBeLessThan(1);
 
     const isolation = await window.evaluate(() => ({
       bridgePlatform: window.architectureBlockStudioDesktop?.platform,
@@ -54,12 +64,15 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     await window.keyboard.press("Enter");
     await expect(agentUi.locator(".bd-block-heading h3")).toHaveText("Agent Desktop Workbench");
     await expect(window.locator(".bd-statusbar")).toContainText("Unsaved");
+    await expect.poll(() => canvasZoom(window)).toBeLessThan(1);
     await window.keyboard.press("Control+Z");
     await expect(agentUi.locator(".bd-block-heading h3")).toHaveText("Agent UI");
     await expect(window.locator(".bd-statusbar")).toContainText("Saved");
+    await expect.poll(() => canvasZoom(window)).toBeLessThan(1);
 
     await agentUi.click({ force: true });
     await window.keyboard.press("Control+C");
+    await expect.poll(() => canvasZoom(window)).toBeLessThan(1);
     const project = window.locator('.react-flow__node[data-id="system::project"]');
     const projectBounds = await project.boundingBox();
     expect(projectBounds).not.toBeNull();

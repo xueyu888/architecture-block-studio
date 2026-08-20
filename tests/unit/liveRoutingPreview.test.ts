@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   DEFAULT_ROUTING_POLICY,
+  certifyRoutingSceneRoutes,
   solveLiveRoutingPreview,
   solveRoutingScene,
   verifyRoutingResult,
@@ -135,5 +136,39 @@ describe("live routing preview", () => {
     const preview = solveLiveRoutingPreview(scene, live, committed, DEFAULT_ROUTING_POLICY);
 
     expect(preview.affectedLegIds).toEqual(["leg-0", "leg-1"]);
+  });
+
+  test("promotes an incremental route set only through a complete new-scene certificate", () => {
+    const committedScene = horizontalScene(40);
+    const committed = solveRoutingScene(committedScene, DEFAULT_ROUTING_POLICY);
+    const liveScene: RoutingScene = {
+      ...committedScene,
+      obstacles: committedScene.obstacles.map((obstacle) => obstacle.id === "target-0"
+        ? { ...obstacle, bounds: { ...obstacle.bounds, top: 0, bottom: 48 } }
+        : obstacle),
+      legs: committedScene.legs.map((leg) => leg.id === "leg-0"
+        ? { ...leg, target: { ...leg.target, point: { x: 200, y: 24 } } }
+        : leg),
+    };
+    const preview = solveLiveRoutingPreview(
+      committedScene,
+      liveScene,
+      committed,
+      DEFAULT_ROUTING_POLICY,
+    );
+    const promoted = certifyRoutingSceneRoutes(
+      liveScene,
+      preview.routes,
+      DEFAULT_ROUTING_POLICY,
+    );
+
+    expect(promoted.status).toBe("Feasible");
+    expect(promoted.certificate).toMatchObject({
+      proof: "bounded-feasible",
+      verified: true,
+      audit: { auditedPairCount: 780 },
+    });
+    expect(promoted.certificate.audit.auditedLegIds).toHaveLength(40);
+    expect(promoted.routes.get("leg-39")).toBe(committed.routes.get("leg-39"));
   });
 });

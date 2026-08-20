@@ -2,6 +2,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -76,16 +77,23 @@ import {
 } from "../layout";
 import type { NodeResizeDirection, NodeResizeRect } from "../layout";
 import {
+  committedRoutingFrameKey,
+  computeCommittedRoutingFrame,
+  computeCommittedRoutingProjectionFrame,
   createRoutingLayoutProjectionFromLayout,
   LIVE_ROUTING_EXACT_LEG_LIMIT,
   planRouteJumps,
+  reconcileRouteJumpReferences,
+  reconcileRoutingRouteReferences,
+  reconcileRoutingResultReferences,
   routingPolicyForScene,
   solveLiveRoutingPreview,
-  solveRoutingScene,
+  type CommittedRoutingComputationMode,
   type LiveRoutingPreview,
   type RoutingLayoutProjection,
   type RoutingPolicy,
   type RoutingResult,
+  type RouteJump,
 } from "../routing";
 import {
   diagramSelectionKey,
@@ -133,6 +141,7 @@ import {
   type ModuleDropTargetCandidate,
 } from "./moduleDropTarget";
 import { Tooltip } from "./Tooltip";
+import { useCommittedRoutingWorker } from "./useCommittedRoutingWorker";
 import { ViewportAutoPanProvider } from "./ViewportAutoPanContext";
 import { useLiveRoutingPreviewWorker } from "./useLiveRoutingPreviewWorker";
 import {
@@ -167,10 +176,17 @@ const REACT_FLOW_OPTIONS = { hideAttribution: true };
 const VIEWPORT_CULL_NODE_COUNT = 500;
 const VIEWPORT_CULL_EDGE_COUNT = 1000;
 interface RoutingCanvasProjection {
-  geometrySignature: string;
+  frameKey: string;
+  routeRevision: number;
+  layout: LayoutResult;
   layoutProjection: RoutingLayoutProjection;
   policy: RoutingPolicy;
   result: RoutingResult;
+  mode: CommittedRoutingComputationMode;
+  affectedLegIds: readonly string[];
+  neighborhoodLegIds: readonly string[];
+  durationMs: number;
+  routeJumps: ReadonlyMap<string, readonly RouteJump[]>;
 }
 
 type DirectManipulationKind = "node-drag" | "node-resize" | "selection-resize";
@@ -180,7 +196,16 @@ interface DirectManipulationPreview {
   phase: "active" | "settling";
 }
 
-const routingResultCache = new WeakMap<object, RoutingCanvasProjection>();
+const EMPTY_LAYOUT: LayoutResult = { nodes: [], edges: [] };
+const EMPTY_ROUTING_COMPUTATION = computeCommittedRoutingFrame(EMPTY_LAYOUT);
+const EMPTY_ROUTING_PROJECTION: RoutingCanvasProjection = {
+  frameKey: "empty:0",
+  routeRevision: 0,
+  layout: EMPTY_LAYOUT,
+  durationMs: 0,
+  routeJumps: planRouteJumps(EMPTY_ROUTING_COMPUTATION.result.routes),
+  ...EMPTY_ROUTING_COMPUTATION,
+};
 
 function routingNodeGeometrySignature(nodes: readonly LayoutFlowNode[]): string {
   return nodes.map((node) => {
@@ -585,7 +610,7 @@ export interface BlockDesignCanvasProps extends Omit<CanvasInnerProps, "rootLeve
 const CanvasInner = memo(function CanvasInner({
   rootLevelId,
   rootLevelTitle,
-  layout,
+  layout: requestedLayout,
   selection,
   fitRequest,
   fitSelectionRequest,
@@ -643,6 +668,14 @@ const CanvasInner = memo(function CanvasInner({
   }), [store]);
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
+  const toggleHierarchyRef = useRef(onToggleHierarchy);
+  toggleHierarchyRef.current = onToggleHierarchy;
+  const renameNodeRef = useRef(onRenameNode);
+  renameNodeRef.current = onRenameNode;
+  const resizeNodeRef = useRef(onResizeNode);
+  resizeNodeRef.current = onResizeNode;
+  const routeConnectionRef = useRef(onRouteConnection);
+  routeConnectionRef.current = onRouteConnection;
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   const [nodeFocusRequest, setNodeFocusRequest] = useState<NodeFocusRequest>();
@@ -669,6 +702,14 @@ const CanvasInner = memo(function CanvasInner({
   const [selectionResizePreview, setSelectionResizePreview] = useState<SelectionResizePreview>();
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
   const alignmentGestureRef = useRef<AlignmentGesture | undefined>(undefined);
+  const beginAlignmentGestureCallbackRef = useRef<(nodeId: string) => AlignmentGesture | undefined>(() => undefined);
+  const snapResizeGeometryCallbackRef = useRef<(
+    node: LayoutFlowNode,
+    geometry: { position: { x: number; y: number }; size: { width: number; height: number } },
+    disableSnap: boolean,
+  ) => { position: { x: number; y: number }; size: { width: number; height: number } }>(
+    (_node, geometry) => geometry,
+  );
   const nodeDragAutoPanRef = useRef<ViewportAutoPanGesture | undefined>(undefined);
   const nodeDragModifiersRef = useRef({ altKey: false, ctrlKey: false, metaKey: false, shiftKey: false });
   const selectionResizeGestureRef = useRef<SelectionResizeGesture | undefined>(undefined);
@@ -691,6 +732,111 @@ const CanvasInner = memo(function CanvasInner({
       ? { ...current, phase: "settling" }
       : undefined);
   }, []);
+  const desiredCommittedFrameKey = useMemo(
+    () => committedRoutingFrameKey(requestedLayout, routeRevision),
+    [requestedLayout, routeRevision],
+  );
+  const requestedRoutingProjection = useMemo(
+    () => createRoutingLayoutProjectionFromLayout(requestedLayout.nodes, requestedLayout.edges),
+    [requestedLayout],
+  );
+  const [acceptedCommittedFrame, setAcceptedCommittedFrame] = useState<RoutingCanvasProjection>();
+  const synchronousCommittedFrame = useMemo<RoutingCanvasProjection | undefined>(() => {
+    if (requestedLayout.edges.length > LIVE_ROUTING_EXACT_LEG_LIMIT ||
+      acceptedCommittedFrame?.frameKey === desiredCommittedFrameKey) return undefined;
+    const startedAt = performance.now();
+    const forceFull = Boolean(
+      acceptedCommittedFrame && acceptedCommittedFrame.routeRevision !== routeRevision,
+    );
+    const computation = computeCommittedRoutingProjectionFrame(
+      requestedRoutingProjection,
+      acceptedCommittedFrame ? {
+        scene: acceptedCommittedFrame.layoutProjection.scene,
+        policy: acceptedCommittedFrame.policy,
+        result: acceptedCommittedFrame.result,
+      } : undefined,
+      forceFull,
+    );
+    return {
+      frameKey: desiredCommittedFrameKey,
+      routeRevision,
+      layout: requestedLayout,
+      durationMs: performance.now() - startedAt,
+      routeJumps: planRouteJumps(computation.result.routes),
+      ...computation,
+    };
+  }, [
+    acceptedCommittedFrame,
+    desiredCommittedFrameKey,
+    requestedLayout,
+    requestedRoutingProjection,
+    routeRevision,
+  ]);
+  const committedRoutingWorkerInput = useMemo(() => {
+    if (requestedLayout.edges.length <= LIVE_ROUTING_EXACT_LEG_LIMIT ||
+      acceptedCommittedFrame?.frameKey === desiredCommittedFrameKey) return undefined;
+    const previous = acceptedCommittedFrame ? {
+      scene: acceptedCommittedFrame.layoutProjection.scene,
+      policy: acceptedCommittedFrame.policy,
+      result: acceptedCommittedFrame.result,
+    } : undefined;
+    return {
+      frameKey: desiredCommittedFrameKey,
+      layoutProjection: requestedRoutingProjection,
+      previous,
+      forceFull: !previous ||
+        acceptedCommittedFrame?.routeRevision !== routeRevision ||
+        (acceptedCommittedFrame.layout.edges.length === 0 && requestedLayout.edges.length > 0),
+    };
+  }, [
+    acceptedCommittedFrame,
+    desiredCommittedFrameKey,
+    requestedLayout,
+    requestedRoutingProjection,
+    routeRevision,
+  ]);
+  const committedRoutingWorker = useCommittedRoutingWorker(committedRoutingWorkerInput);
+  const newlyReadyCommittedFrame = useMemo<RoutingCanvasProjection | undefined>(() => {
+    if (acceptedCommittedFrame?.frameKey === desiredCommittedFrameKey) return undefined;
+    if (synchronousCommittedFrame) return synchronousCommittedFrame;
+    const response = committedRoutingWorker.response;
+    if (!response || response.frameKey !== desiredCommittedFrameKey) return undefined;
+    return {
+      frameKey: response.frameKey,
+      routeRevision,
+      layout: requestedLayout,
+      layoutProjection: requestedRoutingProjection,
+      policy: response.policy,
+      result: reconcileRoutingResultReferences(acceptedCommittedFrame?.result, response.result),
+      routeJumps: reconcileRouteJumpReferences(
+        acceptedCommittedFrame?.routeJumps ?? new Map(),
+        response.routeJumps,
+      ),
+      mode: response.mode,
+      affectedLegIds: response.affectedLegIds,
+      neighborhoodLegIds: response.neighborhoodLegIds,
+      durationMs: response.durationMs,
+    };
+  }, [
+    acceptedCommittedFrame,
+    committedRoutingWorker.response,
+    desiredCommittedFrameKey,
+    requestedLayout,
+    requestedRoutingProjection,
+    routeRevision,
+    synchronousCommittedFrame,
+  ]);
+  useLayoutEffect(() => {
+    if (!newlyReadyCommittedFrame) return;
+    setAcceptedCommittedFrame(newlyReadyCommittedFrame);
+  }, [newlyReadyCommittedFrame]);
+  const acceptedOrEmptyCommittedFrame = newlyReadyCommittedFrame ?? acceptedCommittedFrame ?? EMPTY_ROUTING_PROJECTION;
+  const layout = acceptedOrEmptyCommittedFrame.layout;
+  const committedRoutingStatus = acceptedOrEmptyCommittedFrame.frameKey === desiredCommittedFrameKey
+    ? "ready"
+    : committedRoutingWorker.status === "failed"
+      ? "failed"
+      : "pending";
   const connectionGestureRef = useRef<ActiveConnectionGesture | undefined>(connectionGesture);
   const pendingReconnectGestureRef = useRef(false);
   const connectionGestureCommitRef = useRef<ConnectionGestureCommitResult | undefined>(undefined);
@@ -1001,9 +1147,34 @@ const CanvasInner = memo(function CanvasInner({
       size: resizePreviewRef.current.size,
     };
   }, [beginAlignmentGesture]);
-  const baseNodes = useMemo<CanvasFlowNode[]>(
-    () =>
-      layout.nodes.map((node) => ({
+  beginAlignmentGestureCallbackRef.current = beginAlignmentGesture;
+  snapResizeGeometryCallbackRef.current = snapResizeGeometry;
+  const baseNodeProjectionCacheRef = useRef(new Map<string, {
+    source: LayoutFlowNode;
+    titleEditRevision: number | undefined;
+    resizeRestoreRevision: number;
+    node: CanvasFlowNode;
+  }>());
+  const projectedNodeChangeCountRef = useRef({ frameKey: "", count: 0 });
+  const previousBaseNodesRef = useRef<CanvasFlowNode[]>([]);
+  const baseNodes = useMemo<CanvasFlowNode[]>(() => {
+    const nextCache = new Map<string, {
+      source: LayoutFlowNode;
+      titleEditRevision: number | undefined;
+      resizeRestoreRevision: number;
+      node: CanvasFlowNode;
+    }>();
+    let changedCount = 0;
+    const projected = layout.nodes.map((node) => {
+      const titleRevision = titleEditRequest?.flowNodeId === node.id ? titleEditRequest.revision : undefined;
+      const cached = baseNodeProjectionCacheRef.current.get(node.id);
+      if (cached?.source === node && cached.titleEditRevision === titleRevision &&
+        cached.resizeRestoreRevision === resizeRestoreRevision) {
+        nextCache.set(node.id, cached);
+        return cached.node;
+      }
+      changedCount += 1;
+      const projectedNode: CanvasFlowNode = {
         ...node,
         focusable: true,
         domAttributes: {
@@ -1012,15 +1183,15 @@ const CanvasInner = memo(function CanvasInner({
         },
         data: {
           ...node.data,
-          toggleHierarchy: onToggleHierarchy,
-          titleEditRequest: titleEditRequest?.flowNodeId === node.id ? titleEditRequest.revision : undefined,
+          toggleHierarchy: (levelId: string) => toggleHierarchyRef.current(levelId),
+          titleEditRequest: titleRevision,
           acknowledgeTitleEditRequest: (revision: number) => {
             setTitleEditRequest((current) =>
               current?.flowNodeId === node.id && current.revision === revision ? undefined : current
             );
           },
           renameNode: (title: string) => {
-            const accepted = onRenameNode(node.data.levelId, node.data.block.id, title);
+            const accepted = renameNodeRef.current(node.data.levelId, node.data.block.id, title);
             if (accepted) setCanvasAnnouncement(`Renamed module to ${title}.`);
             return accepted;
           },
@@ -1028,21 +1199,21 @@ const CanvasInner = memo(function CanvasInner({
           inspectPort: (nodeId: string, port: BlockPort) =>
             selectRef.current({ kind: "port", levelId: node.data.levelId, nodeId, portId: port.id }),
           beginResize: node.data.positionEditable && !node.data.expanded
-            ? () => {
+              ? () => {
                 beginDirectManipulation("node-resize");
-                beginAlignmentGesture(node.id);
+                beginAlignmentGestureCallbackRef.current(node.id);
               }
             : undefined,
           previewResize: node.data.positionEditable && !node.data.expanded
-            ? (geometry, disableSnap) => { snapResizeGeometry(node, geometry, disableSnap); }
+            ? (geometry, disableSnap) => { snapResizeGeometryCallbackRef.current(node, geometry, disableSnap); }
             : undefined,
           resizeNode: node.data.positionEditable && !node.data.expanded
             ? (geometry, disableSnap) => {
-                const snapped = snapResizeGeometry(node, geometry, disableSnap);
+                const snapped = snapResizeGeometryCallbackRef.current(node, geometry, disableSnap);
                 alignmentGestureRef.current = undefined;
                 resizePreviewRef.current = undefined;
                 setAlignmentGuides([]);
-                const accepted = onResizeNode(
+                const accepted = resizeNodeRef.current(
                   node.data.levelId,
                   node.data.block.id,
                   {
@@ -1057,21 +1228,36 @@ const CanvasInner = memo(function CanvasInner({
               }
             : undefined,
         },
-      })),
-    [
-      beginAlignmentGesture,
-      beginDirectManipulation,
-      finishDirectManipulation,
-      layout.nodes,
-      onResizeNode,
-      onRenameNode,
-      onToggleHierarchy,
-      resizeRestoreRevision,
-      multiSelection,
-      snapResizeGeometry,
-      titleEditRequest,
-    ],
-  );
+      };
+      nextCache.set(node.id, {
+        source: node,
+        titleEditRevision: titleRevision,
+        resizeRestoreRevision,
+        node: projectedNode,
+      });
+      return projectedNode;
+    });
+    if (projectedNodeChangeCountRef.current.frameKey !== acceptedOrEmptyCommittedFrame.frameKey || changedCount > 0) {
+      projectedNodeChangeCountRef.current = {
+        frameKey: acceptedOrEmptyCommittedFrame.frameKey,
+        count: changedCount,
+      };
+    }
+    baseNodeProjectionCacheRef.current = nextCache;
+    const previous = previousBaseNodesRef.current;
+    const stable = previous.length === projected.length && projected.every((node, index) => node === previous[index])
+      ? previous
+      : projected;
+    previousBaseNodesRef.current = stable;
+    return stable;
+  }, [
+    acceptedOrEmptyCommittedFrame.frameKey,
+    beginDirectManipulation,
+    finishDirectManipulation,
+    layout.nodes,
+    resizeRestoreRevision,
+    titleEditRequest,
+  ]);
   const baseNodeById = useMemo(() => new Map(baseNodes.map((node) => [node.id, node])), [baseNodes]);
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasFlowNode>(baseNodes);
   const displayNodes = useMemo(
@@ -1080,91 +1266,85 @@ const CanvasInner = memo(function CanvasInner({
   );
   const committedGeometrySignature = routingNodeGeometrySignature(baseNodes);
   const liveGeometrySignature = routingNodeGeometrySignature(displayNodes);
-  const routingCacheSignature = `${committedGeometrySignature}|revision:${routeRevision}`;
-  const committedRoutingProjection = useMemo(() => {
-    const cached = routingResultCache.get(layout.edges);
-    if (cached?.geometrySignature === routingCacheSignature) return cached;
-    const layoutProjection = createRoutingLayoutProjectionFromLayout(baseNodes, layout.edges);
-    const policy = routingPolicyForScene(layoutProjection.scene);
-    const result = solveRoutingScene(layoutProjection.scene, policy);
-    const projection = { geometrySignature: routingCacheSignature, layoutProjection, policy, result };
-    routingResultCache.set(layout.edges, projection);
-    return projection;
-  }, [layout.edges, routingCacheSignature]);
   const routingProjection = useMemo(() => {
     if (!directManipulationPreview || liveGeometrySignature === committedGeometrySignature) {
-      return committedRoutingProjection.layoutProjection;
+      return acceptedOrEmptyCommittedFrame.layoutProjection;
     }
     return createRoutingLayoutProjectionFromLayout(displayNodes, layout.edges);
   }, [
+    acceptedOrEmptyCommittedFrame,
     committedGeometrySignature,
-    committedRoutingProjection,
     directManipulationPreview,
     displayNodes,
     layout.edges,
     liveGeometrySignature,
   ]);
   const routingPolicy = useMemo(
-    () => routingProjection === committedRoutingProjection.layoutProjection
-      ? committedRoutingProjection.policy
+    () => routingProjection === acceptedOrEmptyCommittedFrame.layoutProjection
+      ? acceptedOrEmptyCommittedFrame.policy
       : routingPolicyForScene(routingProjection.scene),
-    [committedRoutingProjection, routingProjection],
+    [acceptedOrEmptyCommittedFrame, routingProjection],
   );
   const liveRoutingWorkerInput = useMemo(() => {
-    if (routingProjection === committedRoutingProjection.layoutProjection ||
+    if (routingProjection === acceptedOrEmptyCommittedFrame.layoutProjection ||
       routingProjection.scene.legs.length <= LIVE_ROUTING_EXACT_LEG_LIMIT) return undefined;
     return {
-      geometrySignature: `${routingCacheSignature}->${liveGeometrySignature}`,
-      committedScene: committedRoutingProjection.layoutProjection.scene,
+      geometrySignature: `${acceptedOrEmptyCommittedFrame.frameKey}->${liveGeometrySignature}`,
+      committedScene: acceptedOrEmptyCommittedFrame.layoutProjection.scene,
       liveScene: routingProjection.scene,
-      committedResult: committedRoutingProjection.result,
+      committedResult: acceptedOrEmptyCommittedFrame.result,
       policy: routingPolicy,
     };
   }, [
-    committedRoutingProjection,
+    acceptedOrEmptyCommittedFrame,
     liveGeometrySignature,
-    routingCacheSignature,
     routingPolicy,
     routingProjection,
   ]);
   const liveRoutingWorker = useLiveRoutingPreviewWorker(liveRoutingWorkerInput);
   const routingFrame = useMemo<LiveRoutingPreview>(() => {
-    if (routingProjection === committedRoutingProjection.layoutProjection) {
+    if (routingProjection === acceptedOrEmptyCommittedFrame.layoutProjection) {
       return {
         mode: "retained",
-        status: committedRoutingProjection.result.status,
-        routes: committedRoutingProjection.result.routes,
+        status: acceptedOrEmptyCommittedFrame.result.status,
+        routes: acceptedOrEmptyCommittedFrame.result.routes,
         affectedLegIds: [],
         neighborhoodLegIds: [],
       };
     }
     if (routingProjection.scene.legs.length <= LIVE_ROUTING_EXACT_LEG_LIMIT) {
       return solveLiveRoutingPreview(
-        committedRoutingProjection.layoutProjection.scene,
+        acceptedOrEmptyCommittedFrame.layoutProjection.scene,
         routingProjection.scene,
-        committedRoutingProjection.result,
+        acceptedOrEmptyCommittedFrame.result,
         routingPolicy,
       );
     }
     const response = liveRoutingWorker.response;
     if (response && response.geometrySignature === liveRoutingWorkerInput?.geometrySignature) {
-      return response.preview;
+      return {
+        ...response.preview,
+        routes: reconcileRoutingRouteReferences(
+          acceptedOrEmptyCommittedFrame.result.routes,
+          response.preview.routes,
+        ),
+      };
     }
     return {
       mode: "retained",
-      status: committedRoutingProjection.result.status,
-      routes: committedRoutingProjection.result.routes,
+      status: acceptedOrEmptyCommittedFrame.result.status,
+      routes: acceptedOrEmptyCommittedFrame.result.routes,
       affectedLegIds: [],
       neighborhoodLegIds: [],
     };
   }, [
-    committedRoutingProjection,
+    acceptedOrEmptyCommittedFrame,
     liveRoutingWorker.response,
     liveRoutingWorkerInput,
     routingPolicy,
     routingProjection,
   ]);
-  const routingResult = committedRoutingProjection.result;
+  const routingResult = acceptedOrEmptyCommittedFrame.result;
   const unresolvedDetail = routingResult.certificate.objective.unrouted > 0
     ? `${routingResult.certificate.objective.unrouted} connection${routingResult.certificate.objective.unrouted === 1 ? "" : "s"} could not be routed.`
     : routingResult.certificate.objective.capacityViolations > 0
@@ -1178,14 +1358,52 @@ const CanvasInner = memo(function CanvasInner({
           ? `${routingResult.diagnostics.length} locked or scene geometry issue${routingResult.diagnostics.length === 1 ? "" : "s"}; manual geometry was preserved.`
           : `${unresolvedDetail} Move modules apart or add manual waypoints.`,
       };
-  const routeJumps = useMemo(() => planRouteJumps(routingFrame.routes), [routingFrame.routes]);
+  const routeJumps = useMemo(() => {
+    if (routingProjection === acceptedOrEmptyCommittedFrame.layoutProjection) {
+      return acceptedOrEmptyCommittedFrame.routeJumps;
+    }
+    const response = liveRoutingWorker.response;
+    if (response && response.geometrySignature === liveRoutingWorkerInput?.geometrySignature) {
+      return reconcileRouteJumpReferences(
+        acceptedOrEmptyCommittedFrame.routeJumps,
+        response.routeJumps,
+      );
+    }
+    return planRouteJumps(routingFrame.routes);
+  }, [
+    acceptedOrEmptyCommittedFrame,
+    liveRoutingWorker.response,
+    liveRoutingWorkerInput,
+    routingFrame.routes,
+    routingProjection,
+  ]);
   const simplifiedEdgeInteraction = layout.nodes.length >= 120 || layout.edges.length >= 240;
-  const baseEdges = useMemo<CanvasFlowEdge[]>(
-    () => layout.edges.map<CanvasFlowEdge>((edge) => {
+  const baseEdgeProjectionCacheRef = useRef(new Map<string, {
+    source: LayoutResult["edges"][number];
+    plannedRoute: RoutingResult["routes"] extends ReadonlyMap<string, infer T> ? T | undefined : never;
+    routeJumps: readonly RouteJump[] | undefined;
+    simplifiedInteraction: boolean;
+    edge: CanvasFlowEdge;
+  }>());
+  const projectedEdgeChangeCountRef = useRef({ frameKey: "", count: 0 });
+  const previousBaseEdgesRef = useRef<CanvasFlowEdge[]>([]);
+  const baseEdges = useMemo<CanvasFlowEdge[]>(() => {
+    const nextCache = new Map<string, typeof baseEdgeProjectionCacheRef.current extends Map<string, infer T> ? T : never>();
+    let changedCount = 0;
+    const projected = layout.edges.map<CanvasFlowEdge>((edge) => {
         const data = edge.data;
         if (!data) throw new Error(`Layout edge ${edge.id} is missing interface data.`);
-        const plannedRoute = routingFrame.routes.get(edge.id)?.points;
-        return {
+        const plannedRoute = routingFrame.routes.get(edge.id);
+        const edgeRouteJumps = routeJumps.get(edge.id);
+        const cached = baseEdgeProjectionCacheRef.current.get(edge.id);
+        if (cached?.source === edge && cached.plannedRoute === plannedRoute &&
+          cached.routeJumps === edgeRouteJumps &&
+          cached.simplifiedInteraction === simplifiedEdgeInteraction) {
+          nextCache.set(edge.id, cached);
+          return cached.edge;
+        }
+        changedCount += 1;
+        const projectedEdge: CanvasFlowEdge = {
           ...edge,
           focusable: true,
           domAttributes: {
@@ -1197,21 +1415,46 @@ const CanvasInner = memo(function CanvasInner({
           data: {
             ...data,
             canEditSelection: () => selectionRef.current.kind !== "multiple",
-            plannedRoute,
-            routeJumps: routeJumps.get(edge.id),
-            routingStatus: routingFrame.status,
+            plannedRoute: plannedRoute?.points,
+            routeJumps: edgeRouteJumps,
             simplifiedInteraction: simplifiedEdgeInteraction,
             updateRouting: data.boundaryContinuation
               ? undefined
-              : (routing) => onRouteConnection(data.levelId, data.connection.id, routing),
+              : (routing) => routeConnectionRef.current(data.levelId, data.connection.id, routing),
             requestRouteHandleFocus: data.boundaryContinuation
               ? undefined
               : (handle) => setRouteHandleFocusRequest({ edgeId: edge.id, ...handle }),
           },
         };
-      }),
-    [layout.edges, multiSelection, onRouteConnection, routeJumps, routingFrame, simplifiedEdgeInteraction],
-  );
+        nextCache.set(edge.id, {
+          source: edge,
+          plannedRoute,
+          routeJumps: edgeRouteJumps,
+          simplifiedInteraction: simplifiedEdgeInteraction,
+          edge: projectedEdge,
+        });
+        return projectedEdge;
+      });
+    if (projectedEdgeChangeCountRef.current.frameKey !== acceptedOrEmptyCommittedFrame.frameKey || changedCount > 0) {
+      projectedEdgeChangeCountRef.current = {
+        frameKey: acceptedOrEmptyCommittedFrame.frameKey,
+        count: changedCount,
+      };
+    }
+    baseEdgeProjectionCacheRef.current = nextCache;
+    const previous = previousBaseEdgesRef.current;
+    const stable = previous.length === projected.length && projected.every((edge, index) => edge === previous[index])
+      ? previous
+      : projected;
+    previousBaseEdgesRef.current = stable;
+    return stable;
+  }, [
+    acceptedOrEmptyCommittedFrame.frameKey,
+    layout.edges,
+    routeJumps,
+    routingFrame.routes,
+    simplifiedEdgeInteraction,
+  ]);
   const onCanvasNodesChange = useCallback((changes: NodeChange<CanvasFlowNode>[]) => {
     const preview = resizePreviewRef.current;
     if (!preview) {
@@ -1393,6 +1636,7 @@ const CanvasInner = memo(function CanvasInner({
   }, [baseNodeById, baseNodes, layout.nodes, selectedDiagramItems, selectedNodeIds, store]);
   const [selectionRestoreRevision, setSelectionRestoreRevision] = useState(0);
   const handledRevealSelectionRequest = useRef(0);
+  const handledFitRequest = useRef(0);
   const handledFitSelectionRequest = useRef(0);
   const handledViewportActionRequest = useRef(0);
   const [edges, setEdges] = useState<CanvasFlowEdge[]>(() =>
@@ -1733,12 +1977,16 @@ const CanvasInner = memo(function CanvasInner({
     setEdges(reconcileCanvasSelection(routedEdges, selectedEdgeIdsRef.current));
   }, [routedEdges]);
 
+  const nodeInternalsProjectionRef = useRef<ReadonlyMap<string, CanvasFlowNode>>(new Map());
   useEffect(() => {
-    if (baseNodes.length === 0) return;
+    const previous = nodeInternalsProjectionRef.current;
+    const changedNodes = baseNodes.filter((node) => previous.get(node.id) !== node);
+    nodeInternalsProjectionRef.current = new Map(baseNodes.map((node) => [node.id, node]));
+    if (changedNodes.length === 0) return;
     const retry = window.setTimeout(() => {
       const state = store.getState();
       const updates = new Map();
-      baseNodes.forEach((node) => {
+      changedNodes.forEach((node) => {
         const nodeElement = state.domNode?.querySelector<HTMLElement>(
           `.react-flow__node[data-id="${node.id}"]`,
         );
@@ -1752,6 +2000,16 @@ const CanvasInner = memo(function CanvasInner({
   useEffect(() => {
     setNodes((current) => reconcileCanvasSelection(current, selectedNodeIdsRef.current));
   }, [selectedNodeIdsKey, selectionRestoreRevision, setNodes]);
+
+  const previousNodeSelectionMultiplicityRef = useRef(multiSelection);
+  useEffect(() => {
+    const editabilityChanged = previousNodeSelectionMultiplicityRef.current !== multiSelection;
+    previousNodeSelectionMultiplicityRef.current = multiSelection;
+    if (!editabilityChanged) return;
+    setNodes((current) => current.map((node) => selectedNodeIdsRef.current.has(node.id)
+      ? { ...node, data: { ...node.data } }
+      : node));
+  }, [multiSelection, setNodes]);
 
   useEffect(() => {
     setEdges((current) => reconcileCanvasSelection(current, selectedEdgeIdsRef.current));
@@ -1890,10 +2148,11 @@ const CanvasInner = memo(function CanvasInner({
   }, [edges, routeHandleFocusRequest, store]);
 
   useEffect(() => {
-    if (fitRequest <= 0) return;
+    if (fitRequest <= handledFitRequest.current || baseNodes.length === 0) return;
+    handledFitRequest.current = fitRequest;
     const timer = window.setTimeout(() => navigateViewport({ padding: FIT_PADDING, duration: fitDuration() }), 60);
     return () => window.clearTimeout(timer);
-  }, [fitRequest, navigateViewport]);
+  }, [baseNodes.length, fitRequest, navigateViewport]);
 
   useEffect(() => {
     if (viewportActionRequest.revision <= handledViewportActionRequest.current) return;
@@ -3112,6 +3371,7 @@ const CanvasInner = memo(function CanvasInner({
           maxZoom={MAX_ZOOM}
           autoPanOnConnect
           autoPanOnNodeDrag={false}
+          autoPanOnNodeFocus={false}
           autoPanSpeed={CANVAS_VIEWPORT_AUTO_PAN_POLICY.maximumFrameDistancePx}
           panOnScroll
           panOnDrag={[1]}
@@ -3135,6 +3395,14 @@ const CanvasInner = memo(function CanvasInner({
           data-routing-frame-neighborhood={routingFrame.neighborhoodLegIds.length}
           data-routing-frame-worker={liveRoutingWorkerInput ? liveRoutingWorker.status : "inline"}
           data-routing-frame-duration-ms={liveRoutingWorker.response?.durationMs.toFixed(2) ?? "0"}
+          data-routing-status={routingFrame.status}
+          data-committed-routing-status={committedRoutingStatus}
+          data-committed-routing-mode={acceptedOrEmptyCommittedFrame.mode}
+          data-committed-routing-affected={acceptedOrEmptyCommittedFrame.affectedLegIds.length}
+          data-committed-routing-neighborhood={acceptedOrEmptyCommittedFrame.neighborhoodLegIds.length}
+          data-committed-routing-duration-ms={acceptedOrEmptyCommittedFrame.durationMs.toFixed(2)}
+          data-projected-node-changes={projectedNodeChangeCountRef.current.count}
+          data-projected-edge-changes={projectedEdgeChangeCountRef.current.count}
           >
           {CANVAS_BACKGROUND}
           {spacePanActive ? (
@@ -3165,7 +3433,12 @@ const CanvasInner = memo(function CanvasInner({
             </ViewportPortal>
           ) : null}
           <AlignmentGuideLayer guides={alignmentGuides} />
-          {routingFailure ? (
+          {committedRoutingStatus === "failed" ? (
+            <div className="bd-routing-diagnostic nokey" role="alert">
+              <strong>Routing worker failed</strong>
+              <span>The last verified frame is preserved. Reload the design to retry this projection.</span>
+            </div>
+          ) : routingFailure ? (
             <div
               className="bd-routing-diagnostic nokey"
               role="status"
@@ -3229,6 +3502,9 @@ const CanvasInner = memo(function CanvasInner({
           </ReactFlow>
         </ConnectionGesturePreviewProvider>
       </ViewportAutoPanProvider>
+      {committedRoutingStatus === "pending" ? (
+        <div className="bd-canvas-busy" role="status">Finalizing verified routes...</div>
+      ) : null}
       <div className="bd-visually-hidden bd-canvas-announcement" role="status" aria-live="polite" aria-atomic="true">
         {canvasAnnouncement}
       </div>

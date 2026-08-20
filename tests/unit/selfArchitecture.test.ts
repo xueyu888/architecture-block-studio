@@ -57,7 +57,7 @@ describe("generated Architecture Block Studio source architecture", () => {
     )).size).toBe(12);
     expect(moduleNodes.reduce((count, node) =>
       count + Number(node.inspector.attributes.sourceFileCount), 0
-    )).toBe(74);
+    )).toBe(81);
 
     const connections = document.levels.flatMap((level) => level.connections);
     expect(connections).toHaveLength(27);

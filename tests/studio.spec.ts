@@ -26,6 +26,7 @@ const examplePath = fileURLToPath(
 const invalidPath = fileURLToPath(new URL("./fixtures/invalid.block-design.json", import.meta.url));
 const legacyPath = fileURLToPath(new URL("./fixtures/legacy-v2.0.block-design.json", import.meta.url));
 const browserProblems = new WeakMap<Page, string[]>();
+const FIREFOX_VITE_INLINE_WORKER_WARNING = /^\[JavaScript Warning: "Attempting to create a Worker from an empty source\. This is probably unintentional\." \{file: "http:\/\/127\.0\.0\.1:\d+\/(?:\?[^\"]*)?" line: 0\}\]$/;
 const canvasGuideSelector = ".bd-alignment-guide, .bd-size-guide, .bd-distance-guide";
 const wcagTags = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 // Axe's color-contrast rule does not complete against this transformed SVG
@@ -516,6 +517,11 @@ async function waitForLayout(page: Page): Promise<void> {
 
 async function waitForEditorIdle(page: Page): Promise<void> {
   await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 30_000 });
+  const canvas = page.locator(".bd-react-flow");
+  if (await canvas.count()) {
+    await expect(canvas).toHaveAttribute("data-committed-routing-status", "ready", { timeout: 30_000 });
+    await expect(canvas).toHaveAttribute("data-routing-frame-phase", "idle", { timeout: 30_000 });
+  }
   await page.waitForTimeout(250);
 }
 
@@ -690,7 +696,7 @@ async function dragSelectionResizeHandle(
   delta: { x: number; y: number },
   modifiers: { alt?: boolean; shift?: boolean } = {},
   whileHeld?: () => Promise<void>,
-): Promise<void> {
+): Promise<{ pointerReleaseMs: number; committedReadyMs: number }> {
   const box = await handle.boundingBox();
   expect(box).not.toBeNull();
   const start = { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
@@ -704,10 +710,16 @@ async function dragSelectionResizeHandle(
   await expect(page.locator(".react-flow")).toHaveAttribute("data-selection-resize-active", "true");
   await page.mouse.move(start.x + delta.x, start.y + delta.y, { steps: 12 });
   await whileHeld?.();
+  const releaseStartedAt = performance.now();
   await page.mouse.up();
+  const pointerReleaseMs = performance.now() - releaseStartedAt;
   if (modifiers.shift) await page.keyboard.up("Shift");
   if (modifiers.alt) await page.keyboard.up("Alt");
   await waitForEditorIdle(page);
+  return {
+    pointerReleaseMs,
+    committedReadyMs: performance.now() - releaseStartedAt,
+  };
 }
 
 async function expandHierarchy(page: Page, title: string): Promise<void> {
@@ -1164,11 +1176,13 @@ async function exhaustiveRouteAudit(page: Page) {
   });
 }
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ browserName, page }) => {
   const problems: string[] = [];
   browserProblems.set(page, problems);
   page.on("console", (message) => {
     if (message.type() === "warning" || message.type() === "error") {
+      if (browserName === "firefox" && message.type() === "warning" &&
+        FIREFOX_VITE_INLINE_WORKER_WARNING.test(message.text())) return;
       problems.push(`${message.type()}: ${message.text()}`);
     }
   });
@@ -2817,7 +2831,7 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
   await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 60_000 });
   await expect(page.locator(".react-flow__node")).toHaveCount(101, { timeout: 60_000 });
   await expect(page.locator(".react-flow__edge")).toHaveCount(100, { timeout: 60_000 });
-  await expect(page.locator('[data-routing-status="Feasible"]')).toHaveCount(100);
+  await expect(page.locator('.bd-react-flow[data-routing-status="Feasible"]')).toHaveCount(1);
 
   const assertCompleteAudit = async () => {
     const audit = await exhaustiveRouteAudit(page);
@@ -3087,7 +3101,7 @@ test("expands five hierarchy layers and audits every visible route and pair", as
   await expect(page.locator(".bd-level-chip")).toHaveText("5 expanded");
   await expect(page.locator(".react-flow__node")).toHaveCount(17, { timeout: 60_000 });
   await expect(page.locator(".react-flow__edge")).toHaveCount(20, { timeout: 60_000 });
-  await expect(page.locator('[data-routing-status="Feasible"]')).toHaveCount(20);
+  await expect(page.locator('.bd-react-flow[data-routing-status="Feasible"]')).toHaveCount(1);
   expect(await geometryIssues(page)).toEqual({
     collisions: [],
     labelOverlaps: [],
@@ -3734,7 +3748,7 @@ test("loads the repository-derived five-depth module architecture and reviews ev
   await expect(page.locator(".bd-level-chip")).toHaveText("4 expanded");
   await expect(page.locator(".react-flow__node")).toHaveCount(16, { timeout: 60_000 });
   await expect(page.locator(".react-flow__edge")).toHaveCount(27, { timeout: 60_000 });
-  await expect(page.locator('[data-routing-status="Feasible"]')).toHaveCount(27);
+  await expect(page.locator('.bd-react-flow[data-routing-status="Feasible"]')).toHaveCount(1);
   await expect(page.locator(".react-flow__edge-text")).toHaveCount(0);
   await expect(page.locator(".bd-statusbar")).toContainText("16 diagram blocks");
   await expect(page.locator(".bd-statusbar")).toContainText("27 diagram interfaces");
@@ -4240,7 +4254,7 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   const performanceRouteAuditBefore = stress ? undefined : await exhaustiveRouteAudit(page);
   let performanceLiveResizeAuditMs = 0;
   const performanceGroupResizeStarted = performance.now();
-  await dragSelectionResizeHandle(
+  const performanceResizeTiming = await dragSelectionResizeHandle(
     page,
     performanceGroupResizer.locator(".bd-selection-resize-handle.middle.right"),
     { x: 18, y: 0 },
@@ -4282,6 +4296,33 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   metrics.groupResizeTwoModulesMs = Math.round(
     performance.now() - performanceGroupResizeStarted - performanceLiveResizeAuditMs,
   );
+  metrics.groupResizePointerReleaseMs = Math.round(performanceResizeTiming.pointerReleaseMs);
+  metrics.groupResizeCommittedReadyMs = Math.round(performanceResizeTiming.committedReadyMs);
+  const committedCanvas = page.locator(".bd-react-flow");
+  await expect(committedCanvas).toHaveAttribute("data-committed-routing-mode", "rebased");
+  metrics.committedResizeAffectedRoutes = Number(
+    await committedCanvas.getAttribute("data-committed-routing-affected"),
+  );
+  metrics.committedResizeNeighborhoodRoutes = Number(
+    await committedCanvas.getAttribute("data-committed-routing-neighborhood"),
+  );
+  metrics.committedResizeWorkerDurationMs = Number(
+    await committedCanvas.getAttribute("data-committed-routing-duration-ms"),
+  );
+  metrics.committedResizeProjectedNodeChanges = Number(
+    await committedCanvas.getAttribute("data-projected-node-changes"),
+  );
+  metrics.committedResizeProjectedEdgeChanges = Number(
+    await committedCanvas.getAttribute("data-projected-edge-changes"),
+  );
+  expect(metrics.committedResizeAffectedRoutes).toBeGreaterThan(0);
+  expect(metrics.committedResizeNeighborhoodRoutes).toBeGreaterThanOrEqual(
+    metrics.committedResizeAffectedRoutes,
+  );
+  expect(metrics.committedResizeNeighborhoodRoutes).toBeLessThan(connectionCount);
+  expect(metrics.committedResizeWorkerDurationMs).toBeLessThan(1_000);
+  expect(metrics.committedResizeProjectedNodeChanges).toBeLessThanOrEqual(2);
+  expect(metrics.committedResizeProjectedEdgeChanges).toBeLessThan(connectionCount);
   metrics.liveResizeFullAuditMs = Math.round(performanceLiveResizeAuditMs);
   const performanceResizeAfter = await Promise.all([
     selectedFlowNode.boundingBox(),
