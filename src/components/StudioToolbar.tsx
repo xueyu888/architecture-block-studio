@@ -1,4 +1,5 @@
 import type { StudioCommand, StudioCommandId, StudioCommands } from "../studio/commands";
+import { MODULE_CREATION_DRAG_TYPE } from "./moduleCreationGesture";
 import { Tooltip } from "./Tooltip";
 
 function CommandButton({ command }: { command: StudioCommand }) {
@@ -17,6 +18,15 @@ function CommandButton({ command }: { command: StudioCommand }) {
         className="bd-tool-button"
         aria-label={accessibleTitle}
         disabled={!command.enabled}
+        draggable={command.id === "addBlock" && command.enabled}
+        onDragStart={command.id === "addBlock" ? (event) => {
+          if (!command.enabled) {
+            event.preventDefault();
+            return;
+          }
+          event.dataTransfer.effectAllowed = "copy";
+          event.dataTransfer.setData(MODULE_CREATION_DRAG_TYPE, "module");
+        } : undefined}
         onClick={command.execute}
       >
         <Icon size={15} aria-hidden="true" />

@@ -387,6 +387,12 @@ React Flow 的库内键盘位移被阻止后，其内建 aria-live 不再拥有�
 
 Paste Here 在同一右键协议上增加一次性 `insertionPoint`，但不让菜单拥有几何规则。Canvas 用 React Flow 的 screen-to-flow 变换得到根投影坐标，再从目标 Level 任一可见模块的绝对投影位置与 `designPosition` 之差反推出层级原点；因此对象右键可进入其真实所属 Level，空白右键只进入当前 view root。`contextMenuModel` 只决定 Canvas / Module / Interface 应展示 `pasteHere`，`StudioCommands` 继续唯一拥有名称、可用性和执行；`fragmentPlacement` 才拥有片段 bounds、32px 网格、24px 间距与最近无碰撞搜索。Studio 的 `insertFragment(fragment, levelId, placement)` 只组合三种显式 policy：普通 Paste / Duplicate 使用 cascade，Paste Here 使用 point，Ctrl-drag 使用已经确认的 offset；三者最终都只提交一个 `fragment/insert`。触发点、菜单 anchor、搜索候选和层级原点均不进入 JSON 或 History，最终 `node.layout.position` 仍是唯一几何事实。这吸收了 draw.io [`pasteHere`](https://github.com/jgraph/drawio/blob/dev/src/main/webapp/js/grapheditor/Actions.js#L200-L208) 将 trigger point 交给剪贴板协调器、再由 [`moveCellsTo`](https://github.com/jgraph/drawio/blob/dev/src/main/webapp/js/grapheditor/Graph.js#L12140-L12170) 对齐图形 bounds 的责任划分，同时保留本项目自己的五层模型、引用重写和碰撞合同。
 
+位置化新建模块沿用同一坐标和碰撞数学，但不把新模块伪造成片段。`AddBlockDialogRequest` 只携带目标 Level 与 `automatic | point` policy；Canvas 只投影右键 / drop 的 Windows pointer，Studio 在提交草稿后才用真实模块尺寸和当前 Level 的全部 authored rect 调用 `findBlockPlacementAtPoint`。该纯函数与 Paste Here 共用 32px 网格、24px 间距、确定性最近空位及外圈回退，`createBlock` 再把求得的 `position` 与 `pinned: true` 随同名称、Owner 一起交给唯一 `node/add`。因此一次创建就是一次 History，绝不先自动新增、再补一次 move。普通 Add Module 继续使用自动布局 policy，两者只在放置输入上不同。
+
+工具栏拖放使用单用途自定义 MIME 作为手势协议；Toolbar 只声明可拖动入口，Canvas 只显示虚线模块预览并把 drop 点转换到当前 view root，Dialog、Studio 与 Editor 继续复用上述同一链。取消拖放、关闭 Dialog、目标 Level 消失、非有限坐标或 Inspector 草稿拒绝时均不写 JSON。成功后视口采用 preserve policy：若新模块已经在画布内完整可见且与 Controls、MiniMap、详情面板、诊断或平移提示保持至少 16 CSS px 间距，则不移动；否则才执行一次可中断 reveal。可见性与预览只属于工作区，不反向定义模块几何。
+
+该职责划分参考 draw.io [`Sidebar.createDropHandler`](https://github.com/jgraph/drawio/blob/dev/src/main/webapp/js/grapheditor/Sidebar.js#L3742-L3908) 的“准备 cells → 对齐 drop point → 一次 import → 选择并按需 reveal”，以及 [`Sidebar.addClickHandler`](https://github.com/jgraph/drawio/blob/dev/src/main/webapp/js/grapheditor/Sidebar.js#L5533-L5606) 对 click 与 drag 容差的分离；本项目保留模块对话框、五层 Level、文档 Schema 和无碰撞 placement 的独立业务合同。
+
 `useDialogFocus` 是模态焦点循环、Esc 关闭和默认恢复的共享协议。命令面板执行动作时调用其 `prepareFocusHandoff`：先恢复原调用位置，再禁止卸载清理重复抢焦点，最后让被执行动作决定是否把焦点交给新 Dialog、Messages 或继续留在原位置。普通 Esc / 遮罩关闭仍走默认恢复，不需要每个 Dialog 各自查询 DOM 或复制延时逻辑。
 
 默认 Hierarchy 先由 `projectHierarchyRows` 按文档顺序和当前展开集合生成完整的 document / level / node 行投影；搜索和接口浏览器同样始终从完整文档派生有序结果与总数。三类列表只按 40 行批次把结果渐进挂入 DOM，接近滚动底部时继续加载。批次窗口是可丢弃展示状态，不截断结果、不改变排序、不重置选择，也不生成第二份模块或接口事实；展开只改变完整行投影，不能把已经滚动加载的窗口弹回顶部。

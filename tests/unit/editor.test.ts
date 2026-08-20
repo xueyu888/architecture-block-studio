@@ -95,6 +95,24 @@ describe("public design operations", () => {
     });
   });
 
+  test("constructs a positioned module as one authored geometry fact", () => {
+    const positioned = createBlock({
+      id: "positioned",
+      title: "Positioned Module",
+      position: { x: 96.4, y: 159.6 },
+    });
+
+    expect(positioned.layout).toEqual({
+      position: { x: 96, y: 160 },
+      pinned: true,
+    });
+    expect(() => createBlock({
+      id: "invalid-position",
+      title: "Invalid Position",
+      position: { x: Number.NaN, y: 0 },
+    })).toThrow("finite coordinates");
+  });
+
   test("renames one module without copying its remaining properties", () => {
     const document = connectedDesign();
     const renamed = applyDesignOperation(document, {

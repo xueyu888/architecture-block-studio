@@ -387,6 +387,9 @@ button { color: inherit; }
   background: var(--surface-raised);
 }
 
+.bd-tool-button[draggable="true"] { cursor: grab; }
+.bd-tool-button[draggable="true"]:active { cursor: grabbing; }
+
 .bd-tool-button:disabled,
 .bd-icon-button:disabled { opacity: 0.38; cursor: default; }
 
@@ -1169,6 +1172,27 @@ button { color: inherit; }
 .bd-react-flow .react-flow__pane { cursor: grab; }
 .bd-react-flow .react-flow__pane:active { cursor: grabbing; }
 .bd-react-flow .react-flow__node { cursor: move; }
+
+.bd-module-drop-preview {
+  position: absolute;
+  z-index: 12;
+  width: 168px;
+  height: 96px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 7px;
+  transform: translate(-50%, -50%);
+  border: 2px dashed color-mix(in srgb, var(--blue) 72%, white);
+  border-radius: 8px;
+  color: #174c91;
+  background: color-mix(in srgb, var(--blue-soft) 86%, white 14%);
+  box-shadow: 0 8px 24px rgba(36, 92, 154, 0.18);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
 
 .bd-canvas-pan-mode {
   z-index: 10;

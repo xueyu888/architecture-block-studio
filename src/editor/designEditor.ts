@@ -30,6 +30,7 @@ export interface BlockDraft {
   id: string;
   title: string;
   owner?: string;
+  position?: { x: number; y: number };
 }
 
 export interface PortDraft {
@@ -614,6 +615,9 @@ export function createDesignLevel(id: string, title: string, parentLevelId?: str
 
 export function createBlock(draft: BlockDraft): BlockNode {
   requireAuthorId(draft.id, "Block id");
+  if (draft.position && ![draft.position.x, draft.position.y].every(Number.isFinite)) {
+    editError("Block position must contain finite coordinates.");
+  }
   return {
     id: draft.id,
     title: draft.title.trim() || draft.id,
@@ -622,7 +626,15 @@ export function createBlock(draft: BlockDraft): BlockNode {
     owner: draft.owner?.trim() || undefined,
     ports: [],
     inspector: emptyInspector(),
-    layout: { pinned: false },
+    layout: draft.position
+      ? {
+          position: {
+            x: Math.round(draft.position.x),
+            y: Math.round(draft.position.y),
+          },
+          pinned: true,
+        }
+      : { pinned: false },
   };
 }
 

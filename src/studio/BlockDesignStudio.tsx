@@ -133,6 +133,7 @@ import {
 } from "../model";
 import type { StudioCommandAvailability, StudioCommands } from "./commands";
 import {
+  findBlockPlacementAtPoint,
   findDesignFragmentPlacement,
   findDesignFragmentPlacementAtPoint,
 } from "./fragmentPlacement";
@@ -223,6 +224,17 @@ type FragmentInsertionPlacement =
   | { kind: "offset"; offset: { x: number; y: number } }
   | { kind: "point"; point: { x: number; y: number } };
 
+type AddBlockDialogRequest = {
+  levelId: string;
+  placement:
+    | { kind: "automatic" }
+    | { kind: "point"; point: { x: number; y: number } };
+};
+
+interface RunOperationOptions {
+  viewport?: "fit-frame-change" | "preserve";
+}
+
 type ConnectionEndpointDialogRequest =
   | { kind: "create"; levelId: string }
   | { kind: "reconnect"; levelId: string; connectionId: string };
@@ -287,7 +299,7 @@ export function BlockDesignStudio({
   const canvasContextMenuRevision = useRef(0);
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [saveAsDialogOpen, setSaveAsDialogOpen] = useState(false);
-  const [addBlockLevelId, setAddBlockLevelId] = useState<string>();
+  const [addBlockRequest, setAddBlockRequest] = useState<AddBlockDialogRequest>();
   const [addPortTarget, setAddPortTarget] = useState<{ levelId: string; nodeId: string }>();
   const [connectionEndpointRequest, setConnectionEndpointRequest] = useState<ConnectionEndpointDialogRequest>();
   const [inspectorReconnectFocusRequest, setInspectorReconnectFocusRequest] = useState(0);
@@ -602,11 +614,16 @@ export function BlockDesignStudio({
     return window.confirm(`Discard unapplied Inspector changes and ${action}?`);
   }, []);
 
-  const runOperation = useCallback((operation: DesignOperation): BlockDesignDocument | undefined => {
+  const runOperation = useCallback((
+    operation: DesignOperation,
+    options: RunOperationOptions = {},
+  ): BlockDesignDocument | undefined => {
     try {
       const previousFrame = layoutFrameSignature(editorDocumentRef.current);
       const next = editor.apply(operation);
-      if (layoutFrameSignature(next) !== previousFrame) fitAfterLayout.current = true;
+      if (layoutFrameSignature(next) !== previousFrame) {
+        fitAfterLayout.current = options.viewport === "preserve" ? false : true;
+      }
       setIssues(validateBlockDesignDocument(next));
       setCommandError(undefined);
       setCommandNotice(undefined);
@@ -1034,12 +1051,42 @@ export function BlockDesignStudio({
     return { available: true, levelId, items };
   }, [document, layout.nodes, layoutBusy, selection]);
 
+  const occupiedModuleRects = useCallback((levelId: string) => layout.nodes
+    .filter((node) => node.data.levelId === levelId)
+    .map((node) => ({
+      x: node.data.designPosition.x,
+      y: node.data.designPosition.y,
+      width: (node.width ?? Number(node.style?.width)) || 0,
+      height: (node.height ?? Number(node.style?.height)) || 0,
+    })), [layout.nodes]);
+
   const openAddBlock = useCallback(() => {
     const currentDocument = documentRef.current;
     if (!currentDocument) return;
     if (!requireAppliedInspectorDraft("adding a module")) return;
+    const level = levelForSelection(currentDocument, selectionRef.current);
+    if (!level) return;
     setCommandError(undefined);
-    setAddBlockLevelId(levelForSelection(currentDocument, selectionRef.current)?.id);
+    setAddBlockRequest({ levelId: level.id, placement: { kind: "automatic" } });
+  }, [requireAppliedInspectorDraft]);
+
+  const openAddBlockAt = useCallback((
+    levelId: string,
+    point: { x: number; y: number },
+  ): boolean => {
+    const currentDocument = documentRef.current;
+    if (!currentDocument?.levels.some((level) => level.id === levelId)) {
+      setCommandError(`Design level ${levelId} is no longer available.`);
+      return false;
+    }
+    if (!requireAppliedInspectorDraft("adding a module")) return false;
+    if (![point.x, point.y].every(Number.isFinite)) {
+      setCommandError("Module insertion point must contain finite coordinates.");
+      return false;
+    }
+    setCommandError(undefined);
+    setAddBlockRequest({ levelId, placement: { kind: "point", point } });
+    return true;
   }, [requireAppliedInspectorDraft]);
 
   const openAddPort = useCallback(() => {
@@ -1147,14 +1194,7 @@ export function BlockDesignStudio({
     const before = new Set(
       documentRef.current?.levels.find((level) => level.id === levelId)?.nodes.map((node) => node.id) ?? [],
     );
-    const occupied = layout.nodes
-      .filter((node) => node.data.levelId === levelId)
-      .map((node) => ({
-        x: node.data.designPosition.x,
-        y: node.data.designPosition.y,
-        width: (node.width ?? Number(node.style?.width)) || 0,
-        height: (node.height ?? Number(node.style?.height)) || 0,
-      }));
+    const occupied = occupiedModuleRects(levelId);
     const offset = placement.kind === "offset"
       ? placement.offset
       : placement.kind === "point"
@@ -1165,8 +1205,9 @@ export function BlockDesignStudio({
       levelId,
       fragment,
       offset,
-    });
+    }, { viewport: placement.kind === "point" ? "preserve" : "fit-frame-change" });
     if (!next) return undefined;
+    if (placement.kind === "point") revealSelectionAfterLayout.current = true;
     const insertedNodeIds = next.levels
       .find((level) => level.id === levelId)?.nodes
       .map((node) => node.id)
@@ -1175,9 +1216,9 @@ export function BlockDesignStudio({
       insertedNodeIds.map((nodeId) => ({ kind: "node" as const, levelId, nodeId })),
       levelId,
     ));
-    setRevealSelectionRequest((value) => value + 1);
+    if (placement.kind !== "point") setRevealSelectionRequest((value) => value + 1);
     return insertedNodeIds;
-  }, [layout.nodes, runOperation]);
+  }, [occupiedModuleRects, runOperation]);
 
   const copySelectedModules = useCallback(async () => {
     if (!requireAppliedInspectorDraft("copying the selected modules")) return;
@@ -1454,7 +1495,7 @@ export function BlockDesignStudio({
     loadDialogOpen ||
     newDialogOpen ||
     saveAsDialogOpen ||
-    addBlockLevelId ||
+    addBlockRequest ||
     addPortTarget ||
     connectionEndpointRequest ||
     childDesignTarget ||
@@ -1491,6 +1532,14 @@ export function BlockDesignStudio({
   const pasteHereUnavailableReason = canvasContextMenu
     ? pasteUnavailableReason
     : "Open the canvas context menu at the requested insertion point first.";
+  const canAddBlockHere = Boolean(
+    document && !layoutBusy && canvasContextMenu?.target.kind === "canvas",
+  );
+  const addBlockHereUnavailableReason = layoutBusy
+    ? "Wait for the diagram layout to finish."
+    : canvasContextMenu?.target.kind !== "canvas"
+      ? "Open the canvas context menu at the requested insertion point first."
+      : "Open or create a design first.";
   const commands = useMemo<StudioCommands>(() => ({
     newDesign: {
       id: "newDesign", label: "New Design...", toolbarTitle: "新建设计", icon: FilePlus2, enabled: true,
@@ -1711,6 +1760,14 @@ export function BlockDesignStudio({
       id: "addBlock", label: "Add Module...", toolbarTitle: "添加模块", icon: Box,
       ...commandAvailability(Boolean(document), "Open or create a design first."), execute: openAddBlock,
     },
+    addBlockHere: {
+      id: "addBlockHere", label: "Add Module Here...", showInPalette: false, icon: Box,
+      ...commandAvailability(canAddBlockHere, addBlockHereUnavailableReason),
+      execute: () => {
+        if (canvasContextMenu?.target.kind !== "canvas") return;
+        openAddBlockAt(canvasContextMenu.target.levelId, canvasContextMenu.insertionPoint);
+      },
+    },
     addPort: {
       id: "addPort", label: "Add Port...", toolbarTitle: "添加端口", icon: Cable,
       ...commandAvailability(Boolean(selectedNode), "Select a module first."), execute: openAddPort,
@@ -1823,12 +1880,14 @@ export function BlockDesignStudio({
       },
     },
   }), [
+    addBlockHereUnavailableReason,
     alignUnavailableReason,
     activeLevel,
     activeLevelDiagramItemCount,
     arrangeModules,
     canAddChildDesign,
     canAddConnection,
+    canAddBlockHere,
     canAlignSelection,
     canCopySelection,
     canDelete,
@@ -1868,6 +1927,7 @@ export function BlockDesignStudio({
     maximizeDiagram,
     mayDiscardChanges,
     openAddBlock,
+    openAddBlockAt,
     openAddChildDesign,
     openAddConnection,
     openAddPort,
@@ -2031,7 +2091,9 @@ export function BlockDesignStudio({
     );
   }
 
-  const addBlockLevel = addBlockLevelId ? document.levels.find((level) => level.id === addBlockLevelId) : undefined;
+  const addBlockLevel = addBlockRequest
+    ? document.levels.find((level) => level.id === addBlockRequest.levelId)
+    : undefined;
   const addPortNode = addPortTarget
     ? document.levels.find((level) => level.id === addPortTarget.levelId)?.nodes.find((node) => node.id === addPortTarget.nodeId)
     : undefined;
@@ -2097,6 +2159,7 @@ export function BlockDesignStudio({
             revealSelectionRequest={revealSelectionRequest}
             routeRevision={routeRevision}
             onSelect={requestSelection}
+            onRequestAddModuleAt={openAddBlockAt}
             onOpenContextMenu={openCanvasContextMenu}
             onDismissContextMenu={dismissCanvasContextMenu}
             onToggleHierarchy={toggleHierarchy}
@@ -2210,13 +2273,29 @@ export function BlockDesignStudio({
           ? uniqueId(suggestId(title, "module"), addBlockLevel.nodes.map((node) => node.id))
           : suggestId(title, "module")}
         error={commandError}
-        onClose={() => { setAddBlockLevelId(undefined); setCommandError(undefined); }}
+        onClose={() => { setAddBlockRequest(undefined); setCommandError(undefined); }}
         onCreate={(values) => {
-          if (!addBlockLevel) return;
+          if (!addBlockLevel || !addBlockRequest) return;
           try {
-            if (runOperation({ type: "node/add", levelId: addBlockLevel.id, node: createBlock(values) })) {
+            const draftBlock = createBlock(values);
+            const position = addBlockRequest.placement.kind === "point"
+              ? findBlockPlacementAtPoint(
+                  draftBlock,
+                  occupiedModuleRects(addBlockLevel.id),
+                  addBlockRequest.placement.point,
+                )
+              : undefined;
+            const block = position ? createBlock({ ...values, position }) : draftBlock;
+            if (runOperation(
+              { type: "node/add", levelId: addBlockLevel.id, node: block },
+              { viewport: position ? "preserve" : "fit-frame-change" },
+            )) {
+              if (position) revealSelectionAfterLayout.current = true;
               setSelection({ kind: "node", levelId: addBlockLevel.id, nodeId: values.id });
-              setAddBlockLevelId(undefined);
+              setAddBlockRequest(undefined);
+              if (position) {
+                setCommandNotice(`Added ${block.title} at the requested canvas position in ${addBlockLevel.title}.`);
+              }
             }
           } catch (error) { setCommandError(errorMessage(error)); }
         }}

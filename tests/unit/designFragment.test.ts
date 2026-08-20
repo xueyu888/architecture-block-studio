@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   applyDesignOperation,
+  createBlock,
   createDesignFragment,
   parseDesignFragment,
   serializeDesignFragment,
@@ -9,6 +10,7 @@ import {
 import {
   DESIGN_FRAGMENT_PLACEMENT_GRID,
   designFragmentBounds,
+  findBlockPlacementAtPoint,
   findDesignFragmentPlacement,
   findDesignFragmentPlacementAtPoint,
 } from "../../src/studio/fragmentPlacement";
@@ -176,6 +178,20 @@ describe("self-contained design fragments", () => {
       outsideOrigin.y >= 10_000 + 24 ||
       outsideOrigin.y + bounds.height + 24 <= -10_000
     ).toBe(true);
+  });
+
+  test("centers a new module on the point and reuses deterministic collision clearance", () => {
+    const block = createBlock({ id: "review", title: "Review Module" });
+    const point = { x: 640, y: 480 };
+    const exact = findBlockPlacementAtPoint(block, [], point);
+
+    expect(exact).toEqual({ x: 512, y: 416 });
+    const occupied = [{ x: exact.x, y: exact.y, width: 242, height: 144 }];
+    const avoided = findBlockPlacementAtPoint(block, occupied, point);
+    expect(avoided).not.toEqual(exact);
+    expect(findBlockPlacementAtPoint(block, occupied, point)).toEqual(avoided);
+    expect(() => findBlockPlacementAtPoint(block, [], { x: Number.POSITIVE_INFINITY, y: 0 }))
+      .toThrow("finite coordinates");
   });
 
   test("duplicates an owned hierarchy as one self-contained level tree", () => {

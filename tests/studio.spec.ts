@@ -13,6 +13,8 @@ import {
   groupDistanceGuideDesignDocument,
 } from "./fixtures/distanceGuideDesign";
 import { createPerformanceSample, emitPerformanceSample } from "./performance/performanceSample";
+import { createBlock } from "../src/editor";
+import { findBlockPlacementAtPoint } from "../src/studio/fragmentPlacement";
 
 const examplePath = fileURLToPath(
   new URL("../public/examples/aio-agent-runtime.block-design.json", import.meta.url),
@@ -555,6 +557,80 @@ async function addModule(page: Page, values: { title: string; id: string; owner?
   if (values.owner) await dialog.getByLabel("Owner").fill(values.owner);
   await dialog.getByRole("button", { name: "Add Module", exact: true }).click({ force: true });
   await waitForEditorIdle(page);
+}
+
+async function clearModuleInsertionPoints(page: Page, count: number): Promise<Array<{
+  client: { x: number; y: number };
+  designPoint: { x: number; y: number };
+  expectedOrigin: { x: number; y: number };
+}>> {
+  return page.evaluate((requestedCount) => {
+    const canvas = document.querySelector<HTMLElement>(".bd-react-flow");
+    const viewport = document.querySelector<HTMLElement>(".react-flow__viewport");
+    if (!canvas || !viewport) throw new Error("Canvas geometry is unavailable.");
+    const canvasBounds = canvas.getBoundingClientRect();
+    const matrix = new DOMMatrix(getComputedStyle(viewport).transform);
+    const zoom = matrix.a;
+    const width = 242;
+    const height = 144;
+    const gap = 24 * zoom;
+    const occupied = [...document.querySelectorAll<HTMLElement>(".react-flow__node")]
+      .map((node) => node.getBoundingClientRect());
+    const obstructions = [...document.querySelectorAll<HTMLElement>([
+      ".react-flow__controls",
+      ".react-flow__minimap",
+      ".bd-canvas-detail-panel",
+      ".bd-routing-diagnostic",
+      ".bd-canvas-pan-mode",
+    ].join(", "))]
+      .filter((element) => element.getClientRects().length > 0)
+      .map((element) => element.getBoundingClientRect());
+    const result: Array<{
+      client: { x: number; y: number };
+      designPoint: { x: number; y: number };
+      expectedOrigin: { x: number; y: number };
+    }> = [];
+    for (let y = canvasBounds.bottom - 84; y >= canvasBounds.top + 84; y -= 28) {
+      for (let x = canvasBounds.right - 92; x >= canvasBounds.left + 92; x -= 28) {
+        const designPoint = {
+          x: (x - canvasBounds.left - matrix.e) / zoom,
+          y: (y - canvasBounds.top - matrix.f) / zoom,
+        };
+        const expectedOrigin = {
+          x: Math.round((designPoint.x - width / 2) / 32) * 32,
+          y: Math.round((designPoint.y - height / 2) / 32) * 32,
+        };
+        const rendered = {
+          left: canvasBounds.left + matrix.e + expectedOrigin.x * zoom,
+          top: canvasBounds.top + matrix.f + expectedOrigin.y * zoom,
+          right: canvasBounds.left + matrix.e + (expectedOrigin.x + width) * zoom,
+          bottom: canvasBounds.top + matrix.f + (expectedOrigin.y + height) * zoom,
+        };
+        const collides = occupied.some((rect) =>
+          rendered.left < rect.right + gap && rendered.right + gap > rect.left &&
+          rendered.top < rect.bottom + gap && rendered.bottom + gap > rect.top);
+        const clipped = rendered.left < canvasBounds.left + 12 || rendered.right > canvasBounds.right - 12 ||
+          rendered.top < canvasBounds.top + 12 || rendered.bottom > canvasBounds.bottom - 12;
+        const obstructed = obstructions.some((rect) =>
+          rendered.left < rect.right + 16 && rendered.right + 16 > rect.left &&
+          rendered.top < rect.bottom + 16 && rendered.bottom + 16 > rect.top);
+        const overlapsCandidate = result.some((candidate) => {
+          const other = candidate.expectedOrigin;
+          return expectedOrigin.x < other.x + width + 24 && expectedOrigin.x + width + 24 > other.x &&
+            expectedOrigin.y < other.y + height + 24 && expectedOrigin.y + height + 24 > other.y;
+        });
+        const blockedAtPointer = document.elementsFromPoint(x, y).some((element) =>
+          Boolean(element.closest(
+            ".react-flow__node, .react-flow__edge, .react-flow__controls, .react-flow__minimap, .bd-canvas-detail-panel",
+          )));
+        if (!collides && !clipped && !obstructed && !overlapsCandidate && !blockedAtPointer) {
+          result.push({ client: { x, y }, designPoint, expectedOrigin });
+          if (result.length === requestedCount) return result;
+        }
+      }
+    }
+    throw new Error(`Only ${result.length} clear module insertion points were found.`);
+  }, count);
 }
 
 async function addPort(page: Page, values: {
@@ -2006,14 +2082,9 @@ test("protects unapplied Inspector changes across review navigation and save", a
   const project = page.locator(".bd-tree-select").filter({ hasText: "Project" });
   const viewportBeforeReveal = await canvasViewportTransform(page);
   await agentUi.click({ force: true });
-  await expect.poll(() => canvasViewportTransform(page)).not.toBe(viewportBeforeReveal);
-  const canvasBox = await page.getByRole("application").boundingBox();
-  expect(canvasBox).not.toBeNull();
-  await page.mouse.move(canvasBox!.x + 12, canvasBox!.y + 12);
-  await page.waitForTimeout(30);
-  const interruptedViewport = await canvasViewportTransform(page);
-  await page.waitForTimeout(80);
-  expect(await canvasViewportTransform(page)).toBe(interruptedViewport);
+  await expect(flowNode(page, "system::agent-ui")).toHaveClass(/selected/);
+  await page.waitForTimeout(400);
+  expect(await canvasViewportTransform(page)).toBe(viewportBeforeReveal);
   await inspector.getByLabel("Title").fill("Agent UI draft");
   await expect(inspector.getByText("UNAPPLIED", { exact: true })).toBeVisible();
   await expect(page.locator(".bd-statusbar")).toContainText("Unapplied Inspector changes");
@@ -3073,6 +3144,79 @@ test("expands five hierarchy layers and audits every visible route and pair", as
   await expect(page.locator(".react-flow__node")).toHaveCount(17);
   await expect(diagramNode(page, "level-5", "target-00-2")).toHaveCount(0);
 
+  const levelFiveRow = page.locator(".bd-tree-level-row").filter({ hasText: /^Layer 5/ });
+  await levelFiveRow.dblclick({ force: true });
+  await waitForEditorIdle(page);
+  await expect(page.locator(".bd-canvas-caption strong")).toHaveText("Layer 5");
+  await expect(page.locator(".react-flow__node")).toHaveCount(2);
+  const nestedCanvas = page.locator(".bd-react-flow");
+  const nestedCanvasBounds = await nestedCanvas.boundingBox();
+  const nestedDropTarget = flowNode(page, "level-5::target-00");
+  const nestedTargetBounds = await nestedDropTarget.boundingBox();
+  expect(nestedCanvasBounds).not.toBeNull();
+  expect(nestedTargetBounds).not.toBeNull();
+  await toolbarButton(page, "添加模块").dragTo(nestedCanvas, {
+    targetPosition: {
+      x: nestedTargetBounds!.x + nestedTargetBounds!.width / 2 - nestedCanvasBounds!.x,
+      y: nestedTargetBounds!.y + nestedTargetBounds!.height / 2 - nestedCanvasBounds!.y,
+    },
+  });
+  const nestedAddDialog = page.getByRole("dialog", { name: /Add Module/ });
+  await nestedAddDialog.getByLabel("Module title").fill("Nested Review");
+  await nestedAddDialog.getByLabel("Module id").fill("nested-review");
+  await nestedAddDialog.getByRole("button", { name: "Add Module", exact: true }).click();
+  await waitForEditorIdle(page);
+  await expect(flowNode(page, "level-5::nested-review")).toHaveClass(/selected/);
+  const nestedAddDownload = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const nestedAddSavedPath = await (await nestedAddDownload).path();
+  expect(nestedAddSavedPath).not.toBeNull();
+  const nestedAddSaved = JSON.parse(await readFile(nestedAddSavedPath!, "utf8"));
+  const nestedAddLevel = nestedAddSaved.levels.find((level: { id: string }) => level.id === "level-5");
+  const expectedNestedPosition = findBlockPlacementAtPoint(
+    createBlock({ id: "nested-review", title: "Nested Review" }),
+    document.levels.find((level) => level.id === "level-5")!.nodes.map((node) => ({
+      x: node.layout.position!.x,
+      y: node.layout.position!.y,
+      width: node.layout.width!,
+      height: node.layout.height!,
+    })),
+    { x: 200, y: 138 },
+  );
+  expect(nestedAddLevel.nodes.find((node: { id: string }) => node.id === "nested-review").layout)
+    .toEqual({ position: expectedNestedPosition, pinned: true });
+
+  await page.keyboard.press("Shift+Home");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".bd-canvas-caption strong")).toHaveText("Five-Level Routing System");
+  await expect(page.locator(".react-flow__node")).toHaveCount(18);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(20);
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    microSegments: [],
+    sharedRoutes: [],
+  });
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 20,
+    auditedPairCount: 190,
+    expectedPairCount: 190,
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  if (process.env.CAPTURE_ADD_MODULE_HERE === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/add-module-here-level-five.png");
+  }
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(17);
+  await expect(diagramNode(page, "level-5", "nested-review")).toHaveCount(0);
+
   await page.locator(
     '.bd-tree-select[data-level-id="level-5"][data-node-id="target-00"]',
   ).click({ force: true });
@@ -3380,7 +3524,7 @@ test("loads the repository-derived five-depth module architecture and reviews ev
   await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
   await page.mouse.click(sourceEdgePoint.x, sourceEdgePoint.y);
   await expect(page.locator(".bd-inspector-title h2")).toHaveText(
-    "Studio Orchestrator → Model Contract · 1 import declaration",
+    "Studio Orchestrator → Model Contract · 2 import declarations",
   );
   await expect(page.locator(".bd-inspector-title code")).toContainText(
     "studio.depends-model → model.used-by-studio",
@@ -6961,6 +7105,106 @@ test("pastes a copied module at the requested empty-canvas design point", async 
   await page.keyboard.press("ControlOrMeta+Z");
   await waitForEditorIdle(page);
   await expect(flowNode(page, "system::agent-ui-2")).toHaveCount(0);
+  await expect(page.locator(".react-flow__node")).toHaveCount(7);
+});
+
+test("creates one module at a canvas point from context menu or toolbar drag", async ({ page, browserName }) => {
+  test.setTimeout(120_000);
+  const canvas = page.locator(".bd-react-flow");
+  const [contextPoint] = await clearModuleInsertionPoints(page, 1);
+  const viewportBeforeContextInsert = await canvasViewportTransform(page);
+
+  await page.mouse.click(contextPoint.client.x, contextPoint.client.y, { button: "right" });
+  const canvasMenu = page.getByRole("menu", { name: "Canvas actions" });
+  await expect(canvasMenu).toBeVisible();
+  await expect(canvasMenu.getByRole("menuitem")).toHaveCount(4);
+  await canvasMenu.getByRole("menuitem", { name: "Add Module Here...", exact: true }).click();
+  const contextDialog = page.getByRole("dialog", { name: /Add Module/ });
+  await contextDialog.getByLabel("Module title").fill("Review Point");
+  await contextDialog.getByLabel("Module id").fill("review-point");
+  await contextDialog.getByRole("button", { name: "Add Module", exact: true }).click();
+  await waitForEditorIdle(page);
+
+  await expect(flowNode(page, "system::review-point")).toHaveClass(/selected/);
+  await expect(page.locator(".bd-command-notice")).toContainText(
+    "Added Review Point at the requested canvas position in System Overview",
+  );
+  expect(await canvasViewportTransform(page)).toBe(viewportBeforeContextInsert);
+  const contextDownload = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const contextSavedPath = await (await contextDownload).path();
+  expect(contextSavedPath).not.toBeNull();
+  const contextSaved = JSON.parse(await readFile(contextSavedPath!, "utf8"));
+  const contextSystem = contextSaved.levels.find((level: { id: string }) => level.id === "system");
+  expect(contextSystem.nodes.find((node: { id: string }) => node.id === "review-point").layout)
+    .toEqual({ position: contextPoint.expectedOrigin, pinned: true });
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    microSegments: [],
+    sharedRoutes: [],
+  });
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 10,
+    auditedPairCount: 45,
+    expectedPairCount: 45,
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(flowNode(page, "system::review-point")).toHaveCount(0);
+
+  const [dragPoint] = await clearModuleInsertionPoints(page, 1);
+  const canvasBounds = await canvas.boundingBox();
+  expect(canvasBounds).not.toBeNull();
+  await toolbarButton(page, "添加模块").dragTo(canvas, {
+    targetPosition: {
+      x: dragPoint.client.x - canvasBounds!.x,
+      y: dragPoint.client.y - canvasBounds!.y,
+    },
+  });
+  const dragDialog = page.getByRole("dialog", { name: /Add Module/ });
+  await expect(dragDialog).toBeVisible();
+  await dragDialog.getByLabel("Module title").fill("Dragged Review");
+  await dragDialog.getByLabel("Module id").fill("dragged-review");
+  await dragDialog.getByRole("button", { name: "Add Module", exact: true }).click();
+  await waitForEditorIdle(page);
+
+  await expect(flowNode(page, "system::dragged-review")).toHaveClass(/selected/);
+  await expect(page.locator(".bd-command-notice")).toContainText(
+    "Added Dragged Review at the requested canvas position in System Overview",
+  );
+  const dragDownload = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const dragSavedPath = await (await dragDownload).path();
+  expect(dragSavedPath).not.toBeNull();
+  const dragSaved = JSON.parse(await readFile(dragSavedPath!, "utf8"));
+  const dragSystem = dragSaved.levels.find((level: { id: string }) => level.id === "system");
+  expect(dragSystem.nodes.find((node: { id: string }) => node.id === "dragged-review").layout)
+    .toEqual({ position: dragPoint.expectedOrigin, pinned: true });
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    microSegments: [],
+    sharedRoutes: [],
+  });
+  if (process.env.CAPTURE_ADD_MODULE_HERE === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/add-module-here.png");
+  }
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(flowNode(page, "system::dragged-review")).toHaveCount(0);
   await expect(page.locator(".react-flow__node")).toHaveCount(7);
 });
 

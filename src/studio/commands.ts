@@ -33,6 +33,7 @@ export type StudioCommandId =
   | "distributeSelectionHorizontally"
   | "distributeSelectionVertically"
   | "addBlock"
+  | "addBlockHere"
   | "addPort"
   | "addConnection"
   | "reconnectConnection"

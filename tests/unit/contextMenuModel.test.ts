@@ -29,7 +29,7 @@ describe("canvas context menu model", () => {
 
     expect(contextMenuCommandGroups(level, canvas)).toEqual([
       ["pasteHere"],
-      ["addBlock"],
+      ["addBlockHere"],
       ["selectAll", "fitDesign"],
     ]);
     expect(contextMenuAccessibleName(level, canvas)).toBe("Canvas actions");

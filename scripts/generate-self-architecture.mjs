@@ -134,6 +134,7 @@ const MODULES = [
       "src/components/Tooltip.tsx",
       "src/components/contextMenuModel.ts",
       "src/components/hierarchyRows.ts",
+      "src/components/moduleCreationGesture.ts",
       "src/components/useDialogFocus.ts",
     ],
     position: { x: 680, y: 720 },

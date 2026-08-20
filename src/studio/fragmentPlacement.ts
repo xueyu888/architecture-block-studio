@@ -1,5 +1,6 @@
 import type { DesignFragment } from "../editor";
 import { baseNodeDimensions } from "../layout";
+import type { BlockNode } from "../model";
 
 export const DESIGN_FRAGMENT_PLACEMENT_GRID = 32;
 export const DESIGN_FRAGMENT_PLACEMENT_GAP = 24;
@@ -95,23 +96,18 @@ function nearbyPointCandidates(distance: number): Array<{ x: number; y: number }
   });
 }
 
-/**
- * Places the fragment's bounding-box origin on the requested design point.
- * The point is snapped once to the placement grid. When that exact placement
- * is occupied, the closest deterministic grid translation is used instead.
- */
-export function findDesignFragmentPlacementAtPoint(
-  fragment: DesignFragment,
+function findRectPlacementAtOrigin(
+  bounds: DesignFragmentPlacementRect,
   occupied: readonly DesignFragmentPlacementRect[],
-  point: { x: number; y: number },
+  requestedOrigin: { x: number; y: number },
+  subject: "Fragment" | "Module",
 ): { x: number; y: number } {
-  if (![point.x, point.y].every(Number.isFinite)) {
-    throw new Error("Fragment insertion point must contain finite coordinates.");
+  if (![requestedOrigin.x, requestedOrigin.y].every(Number.isFinite)) {
+    throw new Error(`${subject} insertion point must contain finite coordinates.`);
   }
-  const bounds = designFragmentBounds(fragment);
   const snappedOrigin = {
-    x: Math.round(point.x / DESIGN_FRAGMENT_PLACEMENT_GRID) * DESIGN_FRAGMENT_PLACEMENT_GRID,
-    y: Math.round(point.y / DESIGN_FRAGMENT_PLACEMENT_GRID) * DESIGN_FRAGMENT_PLACEMENT_GRID,
+    x: Math.round(requestedOrigin.x / DESIGN_FRAGMENT_PLACEMENT_GRID) * DESIGN_FRAGMENT_PLACEMENT_GRID,
+    y: Math.round(requestedOrigin.y / DESIGN_FRAGMENT_PLACEMENT_GRID) * DESIGN_FRAGMENT_PLACEMENT_GRID,
   };
   const clear = (offset: { x: number; y: number }) => {
     const candidate = {
@@ -165,5 +161,37 @@ export function findDesignFragmentPlacementAtPoint(
     y: origin.y - bounds.y,
   })).find(clear);
   if (outer) return outer;
-  throw new Error("No collision-free fragment placement was found around the occupied design bounds.");
+  throw new Error(`No collision-free ${subject.toLowerCase()} placement was found around the occupied design bounds.`);
+}
+
+/**
+ * Places the fragment's bounding-box origin on the requested design point.
+ * The point is snapped once to the placement grid. When that exact placement
+ * is occupied, the closest deterministic grid translation is used instead.
+ */
+export function findDesignFragmentPlacementAtPoint(
+  fragment: DesignFragment,
+  occupied: readonly DesignFragmentPlacementRect[],
+  point: { x: number; y: number },
+): { x: number; y: number } {
+  const bounds = designFragmentBounds(fragment);
+  return findRectPlacementAtOrigin(bounds, occupied, point, "Fragment");
+}
+
+/**
+ * Centers a new module on the requested design point, then snaps its authored
+ * origin and applies the same deterministic clearance contract as Paste Here.
+ */
+export function findBlockPlacementAtPoint(
+  block: BlockNode,
+  occupied: readonly DesignFragmentPlacementRect[],
+  point: { x: number; y: number },
+): { x: number; y: number } {
+  const dimensions = baseNodeDimensions(block);
+  const bounds = { x: 0, y: 0, ...dimensions };
+  const offset = findRectPlacementAtOrigin(bounds, occupied, {
+    x: point.x - dimensions.width / 2,
+    y: point.y - dimensions.height / 2,
+  }, "Module");
+  return { x: offset.x, y: offset.y };
 }

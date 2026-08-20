@@ -41,7 +41,7 @@ const CONNECTION_COMMAND_GROUPS: readonly (readonly StudioCommandId[])[] = [
 
 const CANVAS_COMMAND_GROUPS: readonly (readonly StudioCommandId[])[] = [
   ["pasteHere"],
-  ["addBlock"],
+  ["addBlockHere"],
   ["selectAll", "fitDesign"],
 ];
 

@@ -83,6 +83,28 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     await window.keyboard.press("Control+Z");
     await expect(window.locator(".react-flow__node")).toHaveCount(7);
     await expect(window.locator(".bd-statusbar")).toContainText("Saved");
+
+    const addModuleTool = window
+      .getByRole("toolbar", { name: "Architecture design tools" })
+      .getByRole("button", { name: "添加模块", exact: true });
+    await addModuleTool.dragTo(project);
+    const addModuleDialog = window.getByRole("dialog", { name: /Add Module/ });
+    await expect(addModuleDialog).toBeVisible();
+    await addModuleDialog.getByLabel("Module title").fill("Desktop Review");
+    await addModuleDialog.getByLabel("Module id").fill("desktop-review");
+    await addModuleDialog.getByRole("button", { name: "Add Module", exact: true }).click();
+    await expect(window.locator(".react-flow__node")).toHaveCount(8);
+    await expect(window.locator('.react-flow__node[data-id="system::desktop-review"]')).toHaveClass(/selected/);
+    await expect(window.locator(".bd-command-notice")).toContainText(
+      "Added Desktop Review at the requested canvas position in System Overview",
+    );
+    await window.screenshot({
+      path: resolve(screenshotDirectory, "windows-add-module-here.png"),
+      animations: "disabled",
+    });
+    await window.keyboard.press("Control+Z");
+    await expect(window.locator(".react-flow__node")).toHaveCount(7);
+    await expect(window.locator(".bd-statusbar")).toContainText("Saved");
     await window.getByRole("button", { name: "Fit design" }).click({ force: true });
     await window.waitForTimeout(320);
 

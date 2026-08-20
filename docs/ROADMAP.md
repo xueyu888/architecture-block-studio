@@ -2,7 +2,7 @@
 
 ## 当前成熟度
 
-当前版本为 **0.2 Windows 桌面基础版**：核心本地编辑闭环、层级聚焦、依赖审查、专业图形操作、DRC、Schema 迁移、canonical JSON 文件流、大图路由门禁与压力观测已经成立。Iteration 102 新增安全 Electron 壳、原生文件闭环、Windows x64 NSIS 安装包和 tag 发布流水线；Iteration 103 让模块标题进入 Windows 画布直接编辑；Iteration 104 再让空白画布、模块或接口右键菜单按当前层设计坐标执行 Paste Here，并在指定位置被占用时寻找最近的无碰撞网格位置。renderer 的 66 个受管源码文件继续生成五层架构 JSON 并双向闭合 27 条 import。崩溃恢复、历史容量策略、固定 CI 性能预算、商业代码签名与更高阶审查工作流仍未达到生产级。
+当前版本为 **0.2 Windows 桌面基础版**：核心本地编辑闭环、层级聚焦、依赖审查、专业图形操作、DRC、Schema 迁移、canonical JSON 文件流、大图路由门禁与压力观测已经成立。Iteration 102 新增安全 Electron 壳、原生文件闭环、Windows x64 NSIS 安装包和 tag 发布流水线；Iteration 103 让模块标题进入 Windows 画布直接编辑；Iteration 104 让右键位置成为 Paste Here 的五层设计坐标；Iteration 105 进一步支持空白画布 Add Module Here 与 Windows 工具栏拖放，在指定位置被占用时寻找最近无碰撞网格位置，并避免已可见结果产生视口跳动。renderer 的 67 个受管源码文件继续生成五层架构 JSON 并双向闭合 27 条 import。崩溃恢复、历史容量策略、固定 CI 性能预算、商业代码签名与更高阶审查工作流仍未达到生产级。
 
 路线图记录真实完成的迭代，不用计划数量冒充执行数量。长期目标可以拆成 100 个小步，但每一行都必须对应实际代码、验证或文档证据。
 
@@ -38,7 +38,7 @@ P0 未收敛前不扩展协作或服务端事实源。源码分析作为适配�
 | P1 | 已完成 | 模块尺寸直接编辑 | Iteration 66 以 `node.layout.position / width / height` 为唯一持久几何，提供单模块四边 / 四角 pointer resize、内容安全下限、Ctrl/Cmd + Shift + Arrow 精调、路由跟随、Undo / Redo、保存和草稿拒绝恢复；Iteration 98 用同一几何事实补齐同父级多模块统一八向 resize 与一次 `nodes/resize` |
 | P1 | 已完成 | 模块标题直接编辑 | Iteration 103 对照 draw.io 的 `startEditingAtCell` 动作边界，让选中模块通过 F2 或双击 Header 标题进入局部输入；临时字符串只属于当前输入会话，提交仍由 Editor 的一次具名 `node/rename` 写入唯一文档事实，Escape、空值和 Inspector 草稿冲突不会写入 |
 | P2 | 已完成 | 连线可读性与手动路由 | Iteration 7–52 建立基础正交避障与手动 route；Iteration 65 完成虚拟线段点、真实折点、端点重连和小型抓手；Iteration 71 以独立场景级多连接策略替换哈希 lane、模块对 channel、逐线 smart-edge 和事后偏移，加入层级 commodity / Gate、确定性联合目标、绕行上限、证明等级与独立验证 |
-| P2 | 进行中 | 图形直接操作 | 单线段 / 折点 / 端点编辑、模块与组 resize、框选、多选、吸附、对齐、分布、子图 Copy / Cut / Paste / Paste Here / Duplicate、右键菜单、层级 Enter / Exit / Home 与依赖邻域审查已沿同一文档 / Editor / Selection 合同成立；仍需继续用真实复杂架构场景对照 draw.io，不能把局部能力数量冒充同等级整体体验 |
+| P2 | 进行中 | 图形直接操作 | 单线段 / 折点 / 端点编辑、模块与组 resize、框选、多选、吸附、对齐、分布、位置化 Add Module Here / toolbar drag、子图 Copy / Cut / Paste / Paste Here / Duplicate、右键菜单、层级 Enter / Exit / Home 与依赖邻域审查已沿同一文档 / Editor / Selection 合同成立；仍需继续用真实复杂架构场景对照 draw.io，不能把局部能力数量冒充同等级整体体验 |
 | P2 | 已完成 | 多尺度总览可读性 | Iteration 41 从 viewport 唯一派生 detail level；低缩放只隐藏不可读的次级文字，保留模块标题、端口名、把手和线路，放大自动恢复完整细节 |
 | P2 | 已完成 | 高频命令效率 | Iteration 55 已建立菜单字符定位，Iteration 59 已统一命令 Tooltip；Iteration 61 用 `Ctrl/⌘ K` 建立可搜索命令面板，名称、快捷键、可用性、禁用原因和执行仍只来自 `StudioCommands`，高频动作不再依赖记忆菜单分类或跨工作区 Tab |
 | P2 | 进行中 | 大设计性能 | Iteration 16 建立 200 / 400 全量几何基线；Iteration 28 建立 1000 / 2000 heap 与连续编辑基线并消除无关编辑整图重排；Iteration 29、34 完成 Sources 搜索、接口与默认层级渐进挂载；Iteration 31 收敛选择投影；Iteration 32 仅对压力档启用 Canvas 视口裁剪；Iteration 35 建立带版本原始样本、重复执行入口和只观察趋势报告；Iteration 36 让压力跨图定位只做一次 viewport 变换，并修复 MiniMap 冻结初始回调；Iteration 50 最新三轮最终测量内存中位数约 65.3 MB，Sources / MiniMap 定位中位数 217 / 63 ms；固定 CI 数值预算尚未建立 |
@@ -46,7 +46,7 @@ P0 未收敛前不扩展协作或服务端事实源。源码分析作为适配�
 | P3 | 进行中 | Windows 桌面交付 | Iteration 102 已建立 Electron 启动、sandbox / context isolation、原生文件端到端与 Windows x64 NSIS tag 构建；商业代码签名、SmartScreen 信誉和真实安装 / 卸载人工矩阵仍待补齐 |
 | P3 | 进行中 | 可访问性 | 已有 dialog focus trap、WCAG A / AA 结构与文本对比度门禁、桌面菜单，以及 Chromium / Firefox 连续无鼠标核心旅程；Iteration 48 为被接受的模块键盘移动补齐位置 live 公告，Iteration 55 补齐字符定位，Iteration 56 为禁用命令补齐可见原因与 accessible name，Iteration 61 补齐可搜索 listbox、焦点恢复与下游 Dialog / Messages 交接；读屏人工验证与 WebKit 自动化仍缺 |
 | P4 | 待完善 | 高级审查工作流 | 设计 Diff、传递影响范围、源码定位与评审状态尚未建立；不能用临时高亮伪装这些事实 |
-| P4 | 已有参考实现 | 源码可视化适配 | renderer 运行时不扫描代码；仓库内 TypeScript AST 适配器将当前 66 个源码文件、12 个责任模块与 27 条跨模块 import 生成五层 `BlockDesignDocument`，build 双向检查源码与示例漂移；其他语言继续通过公开契约接入 |
+| P4 | 已有参考实现 | 源码可视化适配 | renderer 运行时不扫描代码；仓库内 TypeScript AST 适配器将当前 67 个源码文件、12 个责任模块与 27 条跨模块 import 生成五层 `BlockDesignDocument`，build 双向检查源码与示例漂移；其他语言继续通过公开契约接入 |
 | P4 | 待评估 | 仓库与协作 | 单人文件模型稳定后再决定 Git diff、评论、协作和服务端边界 |
 
 ## 阶段路线
@@ -227,9 +227,10 @@ Iteration 63–72 的实现顺序只会因 P0 或上一轮证据揭示的新根�
 | Iteration 102 | 浏览器下载不能提供 Windows 软件需要的原位保存、原生对话框、窗口关闭保护和安装发布；直接给 renderer Node 或路径又会破坏文件边界 | `BlockDesignDocument` / canonical serializer 继续拥有设计与磁盘内容，Editor 拥有 dirty；Electron main 只拥有窗口、一次性 open token、当前文件路径、原生 dialog 和 32 MiB JSON 原子读写，sandbox preload 只暴露 8 个具名能力。Open 校验后才绑定，Save 成功后才 `markSaved`，路径不进 JSON；仅构建 Windows x64 NSIS | 180 / 180 unit（24 files）；1903-module production build；Electron 壳、7 modules / 10 interfaces、无 Node / require、具名 bridge、原生 Open → accept → Save As 字节一致 1 / 1；Windows tag workflow 在 Windows runner 重跑类型、单元、Electron 与打包并发布 SHA-256；`windows-desktop-app.png` 人工复核工作台、端口和路线无遮挡 | 浏览器只保留开发 / 测试适配器，不是第二产品；安装包未使用商业代码签名，SmartScreen 信誉、真实安装 / 卸载人工矩阵与崩溃恢复仍待补齐。整体仍未达到 draw.io，下一轮回到图形界面与操作能力 |
 | Iteration 103 | 模块标题仍只能在右侧 Properties 修改，日常改名需要离开画布；直接让卡片 DOM 或 Inspector 草稿成为标题源又会制造双状态，Canvas 的 Escape 捕获还会把取消误解释成失焦提交 | 对照 draw.io `Actions.edit → graph.startEditingAtCell()` 的直接编辑边界，BlockNode 只拥有一次临时标题会话；Canvas 用一次性 request 启动 F2，双击仅限标题槽，保留层级卡片双击进入语义；Enter / blur 调用 Studio 守卫后只提交具名 `node/rename`，Escape 和空值零写入。原生表单按键先于 Canvas 对象导航，Inspector 草稿锁继续唯一生效 | 181 / 181 unit（24 files）；1903-module production build；Chromium 84 / 84 + Firefox 83 / 83 = 167 / 167（5.4 分钟）；五层 20 routes / 190 pairs、源码 27 / 351、偏斜 Hub 100 / 4,950、200 / 400 和 1000 / 2000 完整回归；Electron 真实窗口 1 / 1 覆盖 F2、Enter、Undo、dirty、隔离与原生文件链。`inline-title-editing.png`、`windows-inline-title-editing.png` 逐图复核 0 线路 / 端口遮挡 | 标题事实仍只在 `BlockDesignDocument`；输入值、F2 request、焦点和 live announcement 均可丢弃，不进 JSON / History。整体仍未达到 draw.io；连接文字直编、画布指定位置插入 / 粘贴、更多桌面手势和长期人工体验仍需继续迭代 |
 | Iteration 104 | 普通 Paste 只能按自动级联偏移放置，空白画布右键短按没有操作入口；把屏幕坐标直接写进任意层又会在五层父容器投影中错位，另写一套粘贴逻辑还会漂移 ID、接口和 Undo 语义 | 对照 draw.io `pasteHere → pasteFromClipboard(triggerPoint) → moveCellsTo` 的职责链，Canvas 只把右键点转换为目标 Level 设计坐标；context menu 只携带一次性 insertion point；`fragmentPlacement` 统一把片段左上界对齐 32px 网格，并在占用时求最近确定性空位；Studio 的同一 `insertFragment` 继续负责片段、引用、一次 Editor 提交、selection 与 reveal。普通 Paste、Duplicate 和 Ctrl-drag 只选择不同 placement policy，不复制插入实现 | 183 / 183 unit（24 files）；1903-module production build；Chromium 85 / 85 + Firefox 84 / 84 = 169 / 169（5.5 分钟）；Electron 1 / 1。空白右键、Shift+F10、对象附近碰撞避让、第 5 层坐标、下载 JSON 精确位置、Undo、右拖互斥全部通过；五层 20 / 190、Hub 100 / 4,950、源码 27 / 351、200 / 400 和 1000 / 2000 完整回归。三张 Paste Here 截图人工复核 0 卡片 / 线路 / 端口遮挡 | trigger point、菜单 anchor、焦点与 placement search 都是可丢弃操作状态；文档仍只保存最终模块几何。菜单淡入曾让快捷键在首帧降到 3.42:1，现移除 opacity 动画并通过即时 4.5:1 门禁。整体仍未达到 draw.io；下一轮继续位置化新建模块与桌面直接操控 |
+| Iteration 105 | Add Module 仍只能自动插入后再拖动；若工具栏自行写节点或 Canvas 先创建再 move，会分裂 Dialog、碰撞、Undo 和五层坐标合同。截图实审还发现“数学上在 viewport 内”不代表没有被 MiniMap 挡住 | 对照 draw.io Sidebar 的 click / drag 与一次 import 边界，`AddBlockDialogRequest` 只增加 automatic / point policy；Canvas 只投影当前 view root 坐标并显示虚线预览；`findBlockPlacementAtPoint` 与 Paste Here 共用网格、净空和确定性搜索；Editor 一次 `node/add` 同时写最终 `position / pinned`。结果已完整可见且与 viewport controls 保持 16px 时保留视口，否则才 reveal | 185 / 185 unit（24 files）；1904-module build；Chromium 86 / 86 + Firefox 85 / 85 = 171 / 171；Electron 1 / 1。右键、真实 toolbar drag、下载 JSON 精确位置、一次 Undo、草稿拒绝、五层碰撞回退全部通过；五层 20 / 190、Hub 100 / 4,950、源码 27 / 351、200 / 400 和 1000 / 2000 完整回归。三张新增截图逐图复核 0 遮挡 / 线中标签 | 模块几何仍只在 JSON；pointer、drag MIME、preview、Dialog request、可见性测量与 reveal 均可丢弃。整体仍未达到 draw.io：inline 展开的子 Level 还缺直接 drop target 识别和高亮 |
 
 ## 下一轮
 
-**Iteration 105 — Windows 画布中的位置化新建模块与拖放复评。**
+**Iteration 106 — 内联层级目标识别与拖放预览复评。**
 
-复用 Iteration 104 已成立的目标 Level 设计坐标和无碰撞 placement Owner，复核 Add Module 是否仍迫使用户先自动插入再拖动。对照 draw.io stencil drop / insert point 的职责边界，评估空白画布 “Add Module Here” 与桌面拖放所需的最小闭环；目标点仍只能作为一次操作输入，Dialog 只拥有未提交模块草稿，最终几何仍由唯一 `node/add` / Editor 合同写入。继续在 Windows 壳、双浏览器、五层和偏斜高连接场景验证，不投入移动端、网页产品或其他桌面系统。
+Iteration 105 的 toolbar drop 明确写入当前 view root，避免按视觉重叠暗猜 hierarchy；但在保留上层上下文的 inline expansion 中，用户把模块拖进可见子容器时还没有目标 Level 高亮。下一轮先建立一次性 drop-target projection：只从已渲染的层级容器与文档 binding 派生候选，显示唯一目标和最终卡片预览，离开 / 取消即销毁，不写 JSON；提交仍复用同一 AddBlock Dialog、`findBlockPlacementAtPoint` 与 `node/add`。继续以 Windows 壳、五层、1～100+ 偏斜连接和逐线 / 全线对门禁验证，不投入移动端、网页产品或其他桌面系统。

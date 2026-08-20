@@ -2,7 +2,7 @@
   "schemaVersion": "2.1",
   "id": "architecture-block-studio.source-architecture.v1",
   "title": "Architecture Block Studio — Source Architecture",
-  "summary": "Generated from 66 managed source files and 27 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
+  "summary": "Generated from 67 managed source files and 27 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
   "entryLevelId": "product-boundary",
   "sourceRef": {
     "label": "architecture-block-studio",
@@ -222,7 +222,7 @@
         "label": "src/components · workbench surfaces",
         "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/components/CanvasContextMenu.tsx"
       },
-      "code": "src/components/CanvasContextMenu.tsx\nsrc/components/CommandPalette.tsx\nsrc/components/DockWorkspace.tsx\nsrc/components/EditorDialogs.tsx\nsrc/components/HierarchyTree.tsx\nsrc/components/Inspector.tsx\nsrc/components/LoadDesignDialog.tsx\nsrc/components/MenuBar.tsx\nsrc/components/MessagesPanel.tsx\nsrc/components/StudioToolbar.tsx\nsrc/components/Tooltip.tsx\nsrc/components/contextMenuModel.ts\nsrc/components/hierarchyRows.ts\nsrc/components/useDialogFocus.ts",
+      "code": "src/components/CanvasContextMenu.tsx\nsrc/components/CommandPalette.tsx\nsrc/components/DockWorkspace.tsx\nsrc/components/EditorDialogs.tsx\nsrc/components/HierarchyTree.tsx\nsrc/components/Inspector.tsx\nsrc/components/LoadDesignDialog.tsx\nsrc/components/MenuBar.tsx\nsrc/components/MessagesPanel.tsx\nsrc/components/StudioToolbar.tsx\nsrc/components/Tooltip.tsx\nsrc/components/contextMenuModel.ts\nsrc/components/hierarchyRows.ts\nsrc/components/moduleCreationGesture.ts\nsrc/components/useDialogFocus.ts",
       "codeLanguage": "text",
       "attributes": {
         "architectureModuleId": "workbench",
@@ -516,7 +516,7 @@
               "label": "Studio",
               "side": "right",
               "direction": "input",
-              "dataType": "1 import declarations",
+              "dataType": "2 import declarations",
               "required": true,
               "order": 6
             },
@@ -954,7 +954,7 @@
               "label": "Canvas",
               "side": "right",
               "direction": "input",
-              "dataType": "2 import declarations",
+              "dataType": "3 import declarations",
               "required": true,
               "order": 0
             },
@@ -1004,15 +1004,15 @@
               "label": "src/components · workbench surfaces",
               "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/components/CanvasContextMenu.tsx"
             },
-            "code": "src/components/CanvasContextMenu.tsx\nsrc/components/CommandPalette.tsx\nsrc/components/DockWorkspace.tsx\nsrc/components/EditorDialogs.tsx\nsrc/components/HierarchyTree.tsx\nsrc/components/Inspector.tsx\nsrc/components/LoadDesignDialog.tsx\nsrc/components/MenuBar.tsx\nsrc/components/MessagesPanel.tsx\nsrc/components/StudioToolbar.tsx\nsrc/components/Tooltip.tsx\nsrc/components/contextMenuModel.ts\nsrc/components/hierarchyRows.ts\nsrc/components/useDialogFocus.ts",
+            "code": "src/components/CanvasContextMenu.tsx\nsrc/components/CommandPalette.tsx\nsrc/components/DockWorkspace.tsx\nsrc/components/EditorDialogs.tsx\nsrc/components/HierarchyTree.tsx\nsrc/components/Inspector.tsx\nsrc/components/LoadDesignDialog.tsx\nsrc/components/MenuBar.tsx\nsrc/components/MessagesPanel.tsx\nsrc/components/StudioToolbar.tsx\nsrc/components/Tooltip.tsx\nsrc/components/contextMenuModel.ts\nsrc/components/hierarchyRows.ts\nsrc/components/moduleCreationGesture.ts\nsrc/components/useDialogFocus.ts",
             "codeLanguage": "text",
             "attributes": {
               "architectureRole": "source-module",
               "architectureModuleId": "workbench",
               "architectureGroupId": "interaction",
               "hierarchyDepth": "5",
-              "sourcePaths": "src/components/CanvasContextMenu.tsx\nsrc/components/CommandPalette.tsx\nsrc/components/DockWorkspace.tsx\nsrc/components/EditorDialogs.tsx\nsrc/components/HierarchyTree.tsx\nsrc/components/Inspector.tsx\nsrc/components/LoadDesignDialog.tsx\nsrc/components/MenuBar.tsx\nsrc/components/MessagesPanel.tsx\nsrc/components/StudioToolbar.tsx\nsrc/components/Tooltip.tsx\nsrc/components/contextMenuModel.ts\nsrc/components/hierarchyRows.ts\nsrc/components/useDialogFocus.ts",
-              "sourceFileCount": "14"
+              "sourcePaths": "src/components/CanvasContextMenu.tsx\nsrc/components/CommandPalette.tsx\nsrc/components/DockWorkspace.tsx\nsrc/components/EditorDialogs.tsx\nsrc/components/HierarchyTree.tsx\nsrc/components/Inspector.tsx\nsrc/components/LoadDesignDialog.tsx\nsrc/components/MenuBar.tsx\nsrc/components/MessagesPanel.tsx\nsrc/components/StudioToolbar.tsx\nsrc/components/Tooltip.tsx\nsrc/components/contextMenuModel.ts\nsrc/components/hierarchyRows.ts\nsrc/components/moduleCreationGesture.ts\nsrc/components/useDialogFocus.ts",
+              "sourceFileCount": "15"
             }
           },
           "layout": {
@@ -1093,7 +1093,7 @@
               "label": "Workbench",
               "side": "left",
               "direction": "output",
-              "dataType": "2 import declarations",
+              "dataType": "3 import declarations",
               "required": true,
               "order": 5
             }
@@ -1187,7 +1187,7 @@
               "label": "Model",
               "side": "left",
               "direction": "output",
-              "dataType": "1 import declarations",
+              "dataType": "2 import declarations",
               "required": true,
               "order": 4
             },
@@ -1536,7 +1536,7 @@
         {
           "id": "import-canvas-to-workbench",
           "interfaceId": "source-import.workbench",
-          "label": "Canvas Interaction → Workbench Components · 2 import declarations",
+          "label": "Canvas Interaction → Workbench Components · 3 import declarations",
           "source": {
             "nodeId": "canvas",
             "portId": "depends-workbench"
@@ -1692,7 +1692,7 @@
         {
           "id": "import-studio-to-model",
           "interfaceId": "source-import.model",
-          "label": "Studio Orchestrator → Model Contract · 1 import declaration",
+          "label": "Studio Orchestrator → Model Contract · 2 import declarations",
           "source": {
             "nodeId": "studio",
             "portId": "depends-model"

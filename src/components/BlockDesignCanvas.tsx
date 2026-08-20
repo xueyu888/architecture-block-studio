@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
@@ -113,6 +114,7 @@ import {
 import type { CanvasContextMenuIntent, CanvasContextMenuTarget } from "./contextMenuModel";
 import type { CanvasFlowEdge, CanvasFlowNode, RouteHandleFocusTarget } from "./canvasTypes";
 import { InterfaceEdgeComponent } from "./InterfaceEdge";
+import { containsModuleCreationDrag } from "./moduleCreationGesture";
 import { Tooltip } from "./Tooltip";
 import { ViewportAutoPanProvider } from "./ViewportAutoPanContext";
 import {
@@ -134,6 +136,14 @@ const NODE_KEYBOARD_DELTAS: Readonly<Record<string, { x: number; y: number; dire
   ArrowDown: { x: 0, y: DESIGN_GRID_SIZE.y, direction: "down" },
 };
 const CANVAS_OBJECT_CONTROL_SELECTOR = "button:not([disabled]), [tabindex='0']";
+const CANVAS_VIEWPORT_OBSTRUCTION_SELECTOR = [
+  ".react-flow__controls",
+  ".react-flow__minimap",
+  ".bd-canvas-detail-panel",
+  ".bd-routing-diagnostic",
+  ".bd-canvas-pan-mode",
+].join(", ");
+const CANVAS_VIEWPORT_OBSTRUCTION_GAP_PX = 16;
 const FIT_VIEW_OPTIONS = { padding: FIT_PADDING };
 const REACT_FLOW_OPTIONS = { hideAttribution: true };
 const VIEWPORT_CULL_NODE_COUNT = 500;
@@ -283,6 +293,7 @@ interface CanvasInnerProps {
   revealSelectionRequest: number;
   routeRevision: number;
   onSelect: (selection: SelectionRef) => boolean;
+  onRequestAddModuleAt: (levelId: string, point: { x: number; y: number }) => boolean;
   onOpenContextMenu: (intent: CanvasContextMenuIntent) => boolean;
   onDismissContextMenu: () => void;
   onToggleHierarchy: (levelId: string) => void;
@@ -483,11 +494,25 @@ function renderedFlowElement(
     .find((element) => idSet.has(element.getAttribute("data-id") ?? ""));
 }
 
-function flowElementIntersectsCanvas(element: Element, root: HTMLElement): boolean {
+function flowElementIsComfortablyVisible(element: Element, root: HTMLElement): boolean {
   const bounds = element.getBoundingClientRect();
   const canvas = root.getBoundingClientRect();
-  return bounds.right >= canvas.left && bounds.left <= canvas.right
-    && bounds.bottom >= canvas.top && bounds.top <= canvas.bottom;
+  const margin = 12;
+  if (
+    bounds.left < canvas.left + margin ||
+    bounds.right > canvas.right - margin ||
+    bounds.top < canvas.top + margin ||
+    bounds.bottom > canvas.bottom - margin
+  ) return false;
+  const obstructions = root.parentElement?.querySelectorAll<HTMLElement>(CANVAS_VIEWPORT_OBSTRUCTION_SELECTOR) ?? [];
+  return [...obstructions].every((obstruction) => {
+    if (obstruction.getClientRects().length === 0) return true;
+    const overlay = obstruction.getBoundingClientRect();
+    return bounds.right + CANVAS_VIEWPORT_OBSTRUCTION_GAP_PX <= overlay.left ||
+      bounds.left >= overlay.right + CANVAS_VIEWPORT_OBSTRUCTION_GAP_PX ||
+      bounds.bottom + CANVAS_VIEWPORT_OBSTRUCTION_GAP_PX <= overlay.top ||
+      bounds.top >= overlay.bottom + CANVAS_VIEWPORT_OBSTRUCTION_GAP_PX;
+  });
 }
 
 function focusRestorationWasSuperseded(previousElement: Element | undefined): boolean {
@@ -512,6 +537,7 @@ const CanvasInner = memo(function CanvasInner({
   revealSelectionRequest,
   routeRevision,
   onSelect,
+  onRequestAddModuleAt,
   onOpenContextMenu,
   onDismissContextMenu,
   onToggleHierarchy,
@@ -567,9 +593,20 @@ const CanvasInner = memo(function CanvasInner({
   const selectionFocusRevision = useRef(0);
   const [routeHandleFocusRequest, setRouteHandleFocusRequest] = useState<RouteHandleFocusRequest>();
   const [canvasAnnouncement, setCanvasAnnouncement] = useState("");
+  const [moduleDropPreview, setModuleDropPreview] = useState<{ x: number; y: number }>();
   const [connectionGesture, setConnectionGesture] = useState<ActiveConnectionGesture>();
   const [connectionFeedback, setConnectionFeedback] = useState<ConnectionGestureFeedback>();
   const [spacePanActive, setSpacePanActive] = useState(false);
+
+  useEffect(() => {
+    const clearCancelledModuleDrop = () => setModuleDropPreview(undefined);
+    window.addEventListener("dragend", clearCancelledModuleDrop);
+    window.addEventListener("blur", clearCancelledModuleDrop);
+    return () => {
+      window.removeEventListener("dragend", clearCancelledModuleDrop);
+      window.removeEventListener("blur", clearCancelledModuleDrop);
+    };
+  }, []);
   const [compactOverviewMapOpen, setCompactOverviewMapOpen] = useState(false);
   const [resizeRestoreRevision, setResizeRestoreRevision] = useState(0);
   const [selectionResizePreview, setSelectionResizePreview] = useState<SelectionResizePreview>();
@@ -1759,6 +1796,12 @@ const CanvasInner = memo(function CanvasInner({
     }
     if (targetNodeIds.size === 0) return;
     handledRevealSelectionRequest.current = revealSelectionRequest;
+    const root = store.getState().domNode;
+    const alreadyVisible = Boolean(root) && [...targetNodeIds].every((id) => {
+      const element = root!.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(id)}"]`);
+      return element ? flowElementIsComfortablyVisible(element, root!) : false;
+    });
+    if (alreadyVisible) return;
     const timer = window.setTimeout(() => {
       navigateViewport({
         nodes: [...targetNodeIds].map((id) => ({ id })),
@@ -1779,6 +1822,7 @@ const CanvasInner = memo(function CanvasInner({
     revealSelectionRequest,
     routedEdges,
     selection,
+    store,
   ]);
 
   const commitCanvasSelection = useCallback((next: SelectionRef, announcement?: string) => {
@@ -1794,7 +1838,7 @@ const CanvasInner = memo(function CanvasInner({
       : flowEdgeIdsBySelection.get(`${item.levelId}\u0000${item.connectionId}`) ?? [];
     const selector = item.kind === "node" ? ".react-flow__node" : ".react-flow__edge";
     const element = renderedFlowElement(root, selector, flowIds);
-    if (root && (!element || !flowElementIntersectsCanvas(element, root))) {
+    if (root && (!element || !flowElementIsComfortablyVisible(element, root))) {
       const navigationNodeIds = item.kind === "node"
         ? flowIds
         : [...new Set(flowIds.flatMap((id) => {
@@ -1882,15 +1926,10 @@ const CanvasInner = memo(function CanvasInner({
       return item ? [{ target, item }] : [];
     });
   }, [baseNodes, routedEdges, store]);
-  const requestCanvasContextMenu = useCallback((
-    target: CanvasContextMenuTarget,
+  const designPointForLevel = useCallback((
+    levelId: string,
     anchor: { x: number; y: number },
-    focusFirst: boolean,
-  ) => {
-    const levelId = target.levelId;
-    const nextSelection = target.kind === "canvas"
-      ? { kind: "level" as const, levelId }
-      : selectionForCanvasContext(selectionRef.current, target);
+  ): { x: number; y: number } | undefined => {
     const flowPoint = screenToFlowPosition(anchor);
     const levelNode = baseNodes.find((node) => node.data.levelId === levelId);
     const renderedLevelNode = levelNode ? store.getState().nodeLookup.get(levelNode.id) : undefined;
@@ -1904,14 +1943,27 @@ const CanvasInner = memo(function CanvasInner({
         : undefined;
     if (!levelOrigin) {
       setCanvasAnnouncement(`Could not map the context point into design level ${levelId}.`);
-      return false;
+      return undefined;
     }
+    return {
+      x: flowPoint.x - levelOrigin.x,
+      y: flowPoint.y - levelOrigin.y,
+    };
+  }, [baseNodes, rootLevelId, screenToFlowPosition, store]);
+  const requestCanvasContextMenu = useCallback((
+    target: CanvasContextMenuTarget,
+    anchor: { x: number; y: number },
+    focusFirst: boolean,
+  ) => {
+    const levelId = target.levelId;
+    const nextSelection = target.kind === "canvas"
+      ? { kind: "level" as const, levelId }
+      : selectionForCanvasContext(selectionRef.current, target);
+    const insertionPoint = designPointForLevel(levelId, anchor);
+    if (!insertionPoint) return false;
     const accepted = onOpenContextMenu({
       anchor,
-      insertionPoint: {
-        x: flowPoint.x - levelOrigin.x,
-        y: flowPoint.y - levelOrigin.y,
-      },
+      insertionPoint,
       target,
       selection: nextSelection,
       focusFirst,
@@ -1928,7 +1980,33 @@ const CanvasInner = memo(function CanvasInner({
       );
     }
     return accepted;
-  }, [baseNodes, onOpenContextMenu, rootLevelId, screenToFlowPosition, store]);
+  }, [designPointForLevel, onOpenContextMenu]);
+  const onModuleDragOver = useCallback((event: ReactDragEvent) => {
+    if (!containsModuleCreationDrag(event.dataTransfer.types)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+    const bounds = store.getState().domNode?.getBoundingClientRect();
+    if (!bounds) return;
+    setModuleDropPreview({ x: event.clientX - bounds.left, y: event.clientY - bounds.top });
+  }, [store]);
+  const onModuleDragLeave = useCallback((event: ReactDragEvent) => {
+    if (!containsModuleCreationDrag(event.dataTransfer.types)) return;
+    const root = store.getState().domNode;
+    if (event.relatedTarget instanceof Node && root?.contains(event.relatedTarget)) return;
+    setModuleDropPreview(undefined);
+  }, [store]);
+  const onModuleDrop = useCallback((event: ReactDragEvent) => {
+    if (!containsModuleCreationDrag(event.dataTransfer.types)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setModuleDropPreview(undefined);
+    const point = designPointForLevel(rootLevelId, { x: event.clientX, y: event.clientY });
+    if (!point) return;
+    if (onRequestAddModuleAt(rootLevelId, point)) {
+      setCanvasAnnouncement("Opened a new module draft at the dropped canvas position.");
+    }
+  }, [designPointForLevel, onRequestAddModuleAt, rootLevelId]);
   const onCanvasPointerUpCapture = useCallback((event: ReactPointerEvent) => {
     const contextGesture = contextClickGestureRef.current;
     if (contextGesture?.pointerId === event.pointerId) {
@@ -2701,6 +2779,9 @@ const CanvasInner = memo(function CanvasInner({
           onPointerCancelCapture={onCanvasPointerCancelCapture}
           onClickCapture={onCanvasClickCapture}
           onContextMenuCapture={onCanvasContextMenuCapture}
+          onDragOver={onModuleDragOver}
+          onDragLeave={onModuleDragLeave}
+          onDrop={onModuleDrop}
           onKeyDownCapture={onElementKeyDownCapture}
           onConnect={onConnect}
           onConnectStart={onConnectStart}
@@ -2794,6 +2875,17 @@ const CanvasInner = memo(function CanvasInner({
             maskColor="var(--minimap-mask)"
             onNodeClick={onMiniMapNodeClick}
           />
+          {moduleDropPreview ? (
+            <div
+              className="bd-module-drop-preview nokey"
+              data-module-drop-preview="true"
+              style={{ left: moduleDropPreview.x, top: moduleDropPreview.y }}
+              aria-hidden="true"
+            >
+              <Box size={17} />
+              <span>New module</span>
+            </div>
+          ) : null}
           </ReactFlow>
         </ConnectionGesturePreviewProvider>
       </ViewportAutoPanProvider>
@@ -2820,6 +2912,7 @@ export function BlockDesignCanvas(props: BlockDesignCanvasProps) {
         revealSelectionRequest={props.revealSelectionRequest}
         routeRevision={props.routeRevision}
         onSelect={props.onSelect}
+        onRequestAddModuleAt={props.onRequestAddModuleAt}
         onOpenContextMenu={props.onOpenContextMenu}
         onDismissContextMenu={props.onDismissContextMenu}
         onToggleHierarchy={props.onToggleHierarchy}
