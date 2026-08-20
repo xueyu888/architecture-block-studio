@@ -1,6 +1,6 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { Box, Minus, Pin, Plus } from "lucide-react";
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import {
   BLOCK_NODE_GEOMETRY,
   bindingPortId,
@@ -219,6 +219,10 @@ function PortRail({
 export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowNode>) {
   const resizeGestureRef = useRef<{ original: NodeResizeRect; direction: NodeResizeDirection } | undefined>(undefined);
   const resizeAutoPanRef = useRef<ViewportAutoPanGesture | undefined>(undefined);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const handledTitleEditRequestRef = useRef<number | undefined>(undefined);
+  const suppressTitleBlurCommitRef = useRef(false);
+  const [titleDraft, setTitleDraft] = useState<string>();
   const viewportAutoPan = useViewportAutoPan();
   useEffect(() => () => resizeAutoPanRef.current?.stop(), []);
   const { block } = data;
@@ -243,6 +247,47 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
   } as GeometryStyle;
   const minimumSize = minimumNodeDimensions(block);
   const resizeVisible = selected && !data.expanded && Boolean(data.resizeNode) && data.canEditSelection?.() !== false;
+  const beginTitleEdit = () => {
+    if (!selected || !data.renameNode || data.canEditSelection?.() === false) return;
+    suppressTitleBlurCommitRef.current = false;
+    setTitleDraft(block.title);
+  };
+  const finishTitleEdit = (commit: boolean): boolean => {
+    if (titleDraft === undefined) return false;
+    const nextTitle = titleDraft.trim();
+    if (commit && nextTitle.length === 0) {
+      titleInputRef.current?.setCustomValidity("Module title is required.");
+      titleInputRef.current?.reportValidity();
+      titleInputRef.current?.focus();
+      return false;
+    }
+    if (commit && nextTitle !== block.title && data.renameNode?.(nextTitle) === false) {
+      titleInputRef.current?.focus();
+      return false;
+    }
+    setTitleDraft(undefined);
+    return true;
+  };
+  const onTitleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter" && event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (finishTitleEdit(event.key === "Enter")) suppressTitleBlurCommitRef.current = true;
+  };
+  useEffect(() => {
+    if (titleDraft === undefined) return;
+    titleInputRef.current?.focus();
+    titleInputRef.current?.select();
+  }, [titleDraft]);
+  useEffect(() => {
+    if (
+      data.titleEditRequest === undefined ||
+      data.titleEditRequest === handledTitleEditRequestRef.current
+    ) return;
+    handledTitleEditRequestRef.current = data.titleEditRequest;
+    beginTitleEdit();
+    data.acknowledgeTitleEditRequest?.(data.titleEditRequest);
+  }, [data.titleEditRequest]);
 
   return (
     <article
@@ -339,8 +384,37 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
             {data.expanded ? <Minus size={12} aria-hidden="true" /> : <Plus size={12} aria-hidden="true" />}
           </button>
         ) : <Box className="bd-block-symbol" size={13} aria-hidden="true" />}
-        <div className="bd-block-heading">
-          <h3>{block.title}</h3>
+        <div
+          className="bd-block-heading"
+          onDoubleClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            beginTitleEdit();
+          }}
+        >
+          {titleDraft === undefined ? <h3>{block.title}</h3> : (
+            <input
+              ref={titleInputRef}
+              className="bd-block-title-editor nodrag nopan"
+              aria-label={`Rename ${block.title}`}
+              value={titleDraft}
+              required
+              onChange={(event) => {
+                event.currentTarget.setCustomValidity("");
+                setTitleDraft(event.target.value);
+              }}
+              onKeyDown={onTitleKeyDown}
+              onBlur={() => {
+                if (suppressTitleBlurCommitRef.current) {
+                  suppressTitleBlurCommitRef.current = false;
+                  return;
+                }
+                finishTitleEdit(true);
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+              onDoubleClick={(event) => event.stopPropagation()}
+            />
+          )}
           <span>{block.process ?? block.kind}</span>
         </div>
         {block.layout.pinned && <Pin className="bd-pin-indicator" size={11} aria-label="Authored position" />}

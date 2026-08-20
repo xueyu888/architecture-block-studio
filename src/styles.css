@@ -1508,6 +1508,23 @@ button { color: inherit; }
 
 .bd-block-heading { min-width: 0; flex: 1; display: flex; align-items: baseline; gap: 7px; }
 .bd-block-heading h3 { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; line-height: 1; letter-spacing: -0.01em; }
+.bd-block-title-editor {
+  min-width: 56px;
+  width: min(190px, 72%);
+  height: 20px;
+  margin: -5px 0;
+  padding: 2px 5px;
+  border: 1px solid var(--selection);
+  border-radius: 3px;
+  outline: 2px solid color-mix(in srgb, var(--selection) 24%, transparent);
+  background: var(--surface-raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+.bd-block-title-editor:invalid { border-color: var(--error); outline-color: color-mix(in srgb, var(--error) 24%, transparent); }
 .bd-block-heading span { min-width: 0; overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; font-size: 8px; text-transform: uppercase; }
 .bd-block-symbol { flex: 0 0 auto; color: var(--block-color); }
 .bd-pin-indicator { flex: 0 0 auto; color: #69746e; transform: rotate(-24deg); }

@@ -95,6 +95,29 @@ describe("public design operations", () => {
     });
   });
 
+  test("renames one module without copying its remaining properties", () => {
+    const document = connectedDesign();
+    const renamed = applyDesignOperation(document, {
+      type: "node/rename",
+      levelId: "system",
+      nodeId: "source",
+      title: "  Renamed Source  ",
+    });
+
+    expect(document.levels[0].nodes[0].title).toBe("Source");
+    expect(renamed.levels[0].nodes[0]).toEqual({
+      ...document.levels[0].nodes[0],
+      title: "Renamed Source",
+    });
+    expect(() => applyDesignOperation(document, {
+      type: "node/rename",
+      levelId: "system",
+      nodeId: "source",
+      title: "   ",
+    })).toThrow();
+    expect(document.levels[0].nodes[0].title).toBe("Source");
+  });
+
   test("moves a module selection as one validated document operation", () => {
     const document = connectedDesign();
     const moved = applyDesignOperation(document, {

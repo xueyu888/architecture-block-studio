@@ -57,7 +57,10 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 - 从端口拉线或拖动既有线路端点时，画布会实时标出起点、合法候选与非法目标，并显示端口法向的正交预览；一次拖拽只注册一次静态障碍，坐标变化立即求解，完全相同的短时请求才安全复用。按 **Esc**、移出画布或落到非法端口都会完整销毁预览会话，不改 JSON、不污染 Undo / Redo。
 - 选中接口后可从 **Design、命令面板或 Inspector** 打开 `Reconnect Interface`，仅用键盘重新选择源 / 目标端口；端点未变化时不会产生历史，真正变化后会清除旧端点拥有的手工路线，并完整进入 Undo / Redo 与保存链。
 - 画布不显示线中标签；端口承担局部识别，点击连线后由 Inspector 展示完整合同。
+- 选中模块后按 **F2**，或直接双击卡片 Header 中的标题，即可原位改名；**Enter / 失焦**提交一次可撤销文档编辑，**Escape**取消且不产生历史。Properties、Hierarchy、保存 JSON 和代码审查视图都从同一个模块标题事实重新派生。
 - 通过 Undo / Redo、事务性加载和 dirty 状态保护编辑过程。
+
+![Windows 桌面画布内直接编辑模块标题](docs/screenshots/windows-inline-title-editing.png)
 
 ![双层展开后的场景级正交布线局部](docs/screenshots/scene-routing-core-detail.png)
 

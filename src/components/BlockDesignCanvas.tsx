@@ -286,6 +286,7 @@ interface CanvasInnerProps {
   onOpenContextMenu: (intent: CanvasContextMenuIntent) => boolean;
   onDismissContextMenu: () => void;
   onToggleHierarchy: (levelId: string) => void;
+  onRenameNode: (levelId: string, nodeId: string, title: string) => boolean;
   onMoveNodes: (moves: readonly NodeMove[]) => boolean;
   onCloneNodes: (moves: readonly NodeMove[]) => boolean;
   onResizeNode: (
@@ -514,6 +515,7 @@ const CanvasInner = memo(function CanvasInner({
   onOpenContextMenu,
   onDismissContextMenu,
   onToggleHierarchy,
+  onRenameNode,
   onMoveNodes,
   onCloneNodes,
   onResizeNode,
@@ -524,6 +526,8 @@ const CanvasInner = memo(function CanvasInner({
 }: CanvasInnerProps) {
   const { fitBounds, fitView, getViewport, screenToFlowPosition, setViewport, zoomIn, zoomOut, zoomTo } = useReactFlow();
   const store = useStoreApi();
+  const titleEditRevisionRef = useRef(0);
+  const [titleEditRequest, setTitleEditRequest] = useState<{ flowNodeId: string; revision: number }>();
   const viewportAutoPan = useMemo(() => createViewportAutoPanController({
     bounds: () => store.getState().domNode?.getBoundingClientRect(),
     panBy: (delta) => {
@@ -891,6 +895,17 @@ const CanvasInner = memo(function CanvasInner({
         data: {
           ...node.data,
           toggleHierarchy: onToggleHierarchy,
+          titleEditRequest: titleEditRequest?.flowNodeId === node.id ? titleEditRequest.revision : undefined,
+          acknowledgeTitleEditRequest: (revision: number) => {
+            setTitleEditRequest((current) =>
+              current?.flowNodeId === node.id && current.revision === revision ? undefined : current
+            );
+          },
+          renameNode: (title: string) => {
+            const accepted = onRenameNode(node.data.levelId, node.data.block.id, title);
+            if (accepted) setCanvasAnnouncement(`Renamed module to ${title}.`);
+            return accepted;
+          },
           canEditSelection: () => boxSelectionGestureRef.current === undefined && selectionRef.current.kind !== "multiple",
           inspectPort: (nodeId: string, port: BlockPort) =>
             selectRef.current({ kind: "port", levelId: node.data.levelId, nodeId, portId: port.id }),
@@ -925,10 +940,12 @@ const CanvasInner = memo(function CanvasInner({
       beginAlignmentGesture,
       layout.nodes,
       onResizeNode,
+      onRenameNode,
       onToggleHierarchy,
       resizeRestoreRevision,
       multiSelection,
       snapResizeGeometry,
+      titleEditRequest,
     ],
   );
   const baseNodeById = useMemo(() => new Map(baseNodes.map((node) => [node.id, node])), [baseNodes]);
@@ -1991,7 +2008,8 @@ const CanvasInner = memo(function CanvasInner({
       : item;
     commitCanvasSelection(next);
   }, [commitCanvasSelection]);
-  const onNodeDoubleClick = useCallback<NodeMouseHandler<CanvasFlowNode>>((_, node) => {
+  const onNodeDoubleClick = useCallback<NodeMouseHandler<CanvasFlowNode>>((event, node) => {
+    if (event.target instanceof Element && event.target.closest(".bd-block-heading")) return;
     if (node.data.block.hierarchy) onToggleHierarchy(node.data.block.hierarchy.childLevelId);
   }, [onToggleHierarchy]);
   const onEdgeClick = useCallback<EdgeMouseHandler<CanvasFlowEdge>>((event, edge) => {
@@ -2066,6 +2084,7 @@ const CanvasInner = memo(function CanvasInner({
   const onElementKeyDownCapture = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
+    if (target.matches("input, textarea, select, [contenteditable='true']")) return;
     const canvasRoot = store.getState().domNode;
     const containingFlowElement = target.closest<HTMLElement | SVGElement>(
       ".react-flow__node, .react-flow__edge",
@@ -2201,6 +2220,22 @@ const CanvasInner = memo(function CanvasInner({
     if (!flowId) return;
     const node = baseNodes.find((candidate) => candidate.id === flowId);
     const edge = node ? undefined : routedEdges.find((candidate) => candidate.id === flowId);
+    if (
+      node &&
+      event.key === "F2" &&
+      selectedNodeIdsRef.current.has(flowId) &&
+      node.data.canEditSelection?.() !== false
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      titleEditRevisionRef.current += 1;
+      setTitleEditRequest({
+        flowNodeId: flowId,
+        revision: titleEditRevisionRef.current,
+      });
+      setCanvasAnnouncement(`Editing title for ${node.data.block.title}. Enter commits; Escape cancels.`);
+      return;
+    }
     if (
       event.key === "Enter" &&
       ((node && selectedNodeIdsRef.current.has(flowId)) || (edge && selectedEdgeIdsRef.current.has(flowId)))
@@ -2742,6 +2777,7 @@ export function BlockDesignCanvas(props: BlockDesignCanvasProps) {
         onOpenContextMenu={props.onOpenContextMenu}
         onDismissContextMenu={props.onDismissContextMenu}
         onToggleHierarchy={props.onToggleHierarchy}
+        onRenameNode={props.onRenameNode}
         onMoveNodes={props.onMoveNodes}
         onCloneNodes={props.onCloneNodes}
         onResizeNode={props.onResizeNode}

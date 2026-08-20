@@ -73,6 +73,7 @@ export type DesignOperation =
       values: Pick<DesignLevel, "title" | "description" | "layout">;
     }
   | { type: "node/add"; levelId: string; node: BlockNode }
+  | { type: "node/rename"; levelId: string; nodeId: string; title: string }
   | {
       type: "node/update";
       levelId: string;
@@ -399,6 +400,11 @@ export function applyDesignOperation(
       const node = requireNode(requireLevel(next, operation.levelId), operation.nodeId);
       Object.assign(node, operation.values);
       node.title = node.title.trim();
+      break;
+    }
+    case "node/rename": {
+      const node = requireNode(requireLevel(next, operation.levelId), operation.nodeId);
+      node.title = operation.title.trim();
       break;
     }
     case "node/move": {

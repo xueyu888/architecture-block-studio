@@ -1063,6 +1063,11 @@ export function BlockDesignStudio({
       : { type: "nodes/move", moves }));
   }, [requireAppliedInspectorDraft, runOperation]);
 
+  const renameNode = useCallback((levelId: string, nodeId: string, title: string) => {
+    if (!requireAppliedInspectorDraft("renaming a module")) return false;
+    return Boolean(runOperation({ type: "node/rename", levelId, nodeId, title }));
+  }, [requireAppliedInspectorDraft, runOperation]);
+
   const arrangeModules = useCallback((request: ArrangementRequest) => {
     if (!arrangementSelection.available) return false;
     if (!requireAppliedInspectorDraft("arranging the selected modules")) return false;
@@ -2040,6 +2045,7 @@ export function BlockDesignStudio({
             onOpenContextMenu={openCanvasContextMenu}
             onDismissContextMenu={dismissCanvasContextMenu}
             onToggleHierarchy={toggleHierarchy}
+            onRenameNode={renameNode}
             onAddModule={openAddBlock}
             onMoveNodes={moveNodes}
             onCloneNodes={cloneDraggedModules}

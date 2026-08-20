@@ -38,6 +38,28 @@ test("launches the isolated Windows desktop shell and renders the full workbench
       ],
     });
 
+    const agentUi = window.locator('.react-flow__node[data-id="system::agent-ui"]');
+    await agentUi.click({ force: true });
+    await agentUi.focus();
+    await window.keyboard.press("F2");
+    const titleEditor = agentUi.getByRole("textbox", { name: "Rename Agent UI" });
+    await expect(titleEditor).toBeFocused();
+    await titleEditor.fill("Agent Desktop Workbench");
+    const screenshotDirectory = resolve("docs/screenshots");
+    await mkdir(screenshotDirectory, { recursive: true });
+    await window.screenshot({
+      path: resolve(screenshotDirectory, "windows-inline-title-editing.png"),
+      animations: "disabled",
+    });
+    await window.keyboard.press("Enter");
+    await expect(agentUi.locator(".bd-block-heading h3")).toHaveText("Agent Desktop Workbench");
+    await expect(window.locator(".bd-statusbar")).toContainText("Unsaved");
+    await window.keyboard.press("Control+Z");
+    await expect(agentUi.locator(".bd-block-heading h3")).toHaveText("Agent UI");
+    await expect(window.locator(".bd-statusbar")).toContainText("Saved");
+    await window.getByRole("button", { name: "Fit design" }).click({ force: true });
+    await window.waitForTimeout(320);
+
     const inputPath = join(temporaryDirectory, "opened.block-design.json");
     const outputPath = join(temporaryDirectory, "saved-as.block-design.json");
     const inputContent = await readFile(resolve("public/examples/aio-agent-runtime.block-design.json"), "utf8");
@@ -69,8 +91,6 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     expect(saved).toEqual({ status: "saved", fileName: "saved-as.block-design.json" });
     expect(await readFile(outputPath, "utf8")).toBe(opened.content);
 
-    const screenshotDirectory = resolve("docs/screenshots");
-    await mkdir(screenshotDirectory, { recursive: true });
     await window.screenshot({
       path: resolve(screenshotDirectory, "windows-desktop-app.png"),
       animations: "disabled",

@@ -1124,6 +1124,72 @@ test("loads the bundled v2 design without DRC or viewport failures", async ({ pa
   expect(overflow).toEqual([0, 0]);
 });
 
+test("renames a module directly on the canvas as one recoverable document edit", async ({ page, browserName }) => {
+  const node = flowNode(page, "system::agent-ui");
+  const inspector = page.getByRole("region", { name: "Properties" });
+  await node.click({ force: true });
+  await node.focus();
+
+  await page.keyboard.press("F2");
+  let titleEditor = node.getByRole("textbox", { name: "Rename Agent UI" });
+  await expect(titleEditor).toBeFocused();
+  await expect(titleEditor).toHaveValue("Agent UI");
+  await titleEditor.fill("Cancelled canvas title");
+  await page.keyboard.press("Escape");
+  await expect(titleEditor).toHaveCount(0);
+  await expect(node.locator(".bd-block-heading h3")).toHaveText("Agent UI");
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
+
+  await node.focus();
+  await page.keyboard.press("F2");
+  titleEditor = node.getByRole("textbox", { name: "Rename Agent UI" });
+  await titleEditor.fill("Agent Workbench");
+  if (process.env.CAPTURE_INLINE_TITLE_EDITING === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/inline-title-editing.png");
+  }
+  await page.keyboard.press("Enter");
+  await waitForEditorIdle(page);
+  await expect(titleEditor).toHaveCount(0);
+  await expect(node.locator(".bd-block-heading h3")).toHaveText("Agent Workbench");
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("Agent Workbench");
+  await expect(inspector.getByLabel("Title", { exact: true })).toHaveValue("Agent Workbench");
+  await expect(page.locator(".bd-canvas-announcement")).toHaveText("Renamed module to Agent Workbench.");
+  await expect(page.locator(".bd-statusbar")).toContainText("Unsaved");
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(node.locator(".bd-block-heading h3")).toHaveText("Agent UI");
+  await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("Agent UI");
+  await page.keyboard.press("ControlOrMeta+Shift+Z");
+  await waitForEditorIdle(page);
+  await expect(node.locator(".bd-block-heading h3")).toHaveText("Agent Workbench");
+
+  await node.locator(".bd-block-heading h3").dblclick({ force: true });
+  titleEditor = node.getByRole("textbox", { name: "Rename Agent Workbench" });
+  await expect(titleEditor).toBeFocused();
+  await titleEditor.fill("   ");
+  await page.keyboard.press("Enter");
+  await expect(titleEditor).toBeVisible();
+  await expect(titleEditor).toHaveJSProperty("validationMessage", "Module title is required.");
+  await page.keyboard.press("Escape");
+  await expect(node.locator(".bd-block-heading h3")).toHaveText("Agent Workbench");
+
+  await inspector.getByLabel("Title", { exact: true }).fill("Inspector draft");
+  await expect(inspector.getByText("UNAPPLIED", { exact: true })).toBeVisible();
+  await node.focus();
+  await page.keyboard.press("F2");
+  titleEditor = node.getByRole("textbox", { name: "Rename Agent Workbench" });
+  await titleEditor.fill("Rejected canvas title");
+  await page.keyboard.press("Enter");
+  await expect(titleEditor).toBeFocused();
+  await expect(page.locator(".bd-command-error")).toContainText(
+    "Apply or discard the current Inspector changes before renaming a module.",
+  );
+  await page.keyboard.press("Escape");
+  await expect(node.locator(".bd-block-heading h3")).toHaveText("Agent Workbench");
+  await expect(inspector.getByLabel("Title", { exact: true })).toHaveValue("Inspector draft");
+});
+
 test("keeps the compact desktop workbench operable without panel or route obstruction", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await toolbarButton(page, "适应窗口").click({ force: true });

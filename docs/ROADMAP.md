@@ -2,7 +2,7 @@
 
 ## 当前成熟度
 
-当前版本为 **0.2 Windows 桌面基础版**：核心本地编辑闭环、层级聚焦、依赖审查、专业图形操作、DRC、Schema 迁移、canonical JSON 文件流、大图路由门禁与压力观测已经成立。Iteration 102 新增安全 Electron 壳、受限 preload、原生 Open / Save / Save As / Export、原子文件替换、关闭保护、Windows x64 NSIS 安装包和 tag 发布流水线；renderer 的 66 个受管源码文件继续生成五层架构 JSON 并双向闭合 27 条 import。崩溃恢复、历史容量策略、固定 CI 性能预算、商业代码签名与更高阶审查工作流仍未达到生产级。
+当前版本为 **0.2 Windows 桌面基础版**：核心本地编辑闭环、层级聚焦、依赖审查、专业图形操作、DRC、Schema 迁移、canonical JSON 文件流、大图路由门禁与压力观测已经成立。Iteration 102 新增安全 Electron 壳、原生文件闭环、Windows x64 NSIS 安装包和 tag 发布流水线；Iteration 103 再让模块标题从“只能去 Properties 修改”进入 Windows 画布直接编辑，F2 或双击标题启动临时会话，Enter / 失焦提交一次文档操作，Escape 零写入。renderer 的 66 个受管源码文件继续生成五层架构 JSON 并双向闭合 27 条 import。崩溃恢复、历史容量策略、固定 CI 性能预算、商业代码签名与更高阶审查工作流仍未达到生产级。
 
 路线图记录真实完成的迭代，不用计划数量冒充执行数量。长期目标可以拆成 100 个小步，但每一行都必须对应实际代码、验证或文档证据。
 
@@ -36,6 +36,7 @@ P0 未收敛前不扩展协作或服务端事实源。源码分析作为适配�
 | P1 | 已完成 | 无鼠标核心旅程 | Iteration 23 已从空白设计连续完成两模块、两端口、一接口、合同、DRC、Undo / Redo 与保存；菜单 Dialog 恢复到稳定触发器；Iteration 45–47 补齐 DRC、手动布线和模块移动的连续键盘事实链 |
 | P1 | 已完成 | 端点方向与端口文字 | Iteration 63 让每条真实连接只在 JSON target 显示一个语义箭头并把 Port Handle 改为中性连接点；Iteration 64 将稳定 Handle 与四侧标签轨道拆开，端口名、Header、Owner 和线路端点不再争用同一几何空间 |
 | P1 | 已完成 | 模块尺寸直接编辑 | Iteration 66 以 `node.layout.position / width / height` 为唯一持久几何，提供单模块四边 / 四角 pointer resize、内容安全下限、Ctrl/Cmd + Shift + Arrow 精调、路由跟随、Undo / Redo、保存和草稿拒绝恢复；Iteration 98 用同一几何事实补齐同父级多模块统一八向 resize 与一次 `nodes/resize` |
+| P1 | 已完成 | 模块标题直接编辑 | Iteration 103 对照 draw.io 的 `startEditingAtCell` 动作边界，让选中模块通过 F2 或双击 Header 标题进入局部输入；临时字符串只属于当前输入会话，提交仍由 Editor 的一次具名 `node/rename` 写入唯一文档事实，Escape、空值和 Inspector 草稿冲突不会写入 |
 | P2 | 已完成 | 连线可读性与手动路由 | Iteration 7–52 建立基础正交避障与手动 route；Iteration 65 完成虚拟线段点、真实折点、端点重连和小型抓手；Iteration 71 以独立场景级多连接策略替换哈希 lane、模块对 channel、逐线 smart-edge 和事后偏移，加入层级 commodity / Gate、确定性联合目标、绕行上限、证明等级与独立验证 |
 | P2 | 进行中 | 图形直接操作 | 单线段 / 折点 / 端点编辑、模块与组 resize、框选、多选、吸附、对齐、分布、子图 Copy / Cut / Paste / Duplicate、右键菜单、层级 Enter / Exit / Home 与依赖邻域审查已沿同一文档 / Editor / Selection 合同成立；仍需继续用真实复杂架构场景对照 draw.io，不能把局部能力数量冒充同等级整体体验 |
 | P2 | 已完成 | 多尺度总览可读性 | Iteration 41 从 viewport 唯一派生 detail level；低缩放只隐藏不可读的次级文字，保留模块标题、端口名、把手和线路，放大自动恢复完整细节 |
@@ -224,9 +225,10 @@ Iteration 63–72 的实现顺序只会因 P0 或上一轮证据揭示的新根�
 | Iteration 100 | 只在人工 fixture 上证明操作能力，仍不足以证明 Studio 能可靠可视化和审查真实代码；手工维护自身架构 JSON 又会让源码与图成为两个依赖事实源 | 新增 `generate-self-architecture.mjs`：以真实源码文件和 TypeScript AST 相对 import 为事实，要求 65 个文件唯一归入 12 个责任模块，双向生成 27 条依赖并拒绝缺失、虚构、无法解析和环；JSON 只保留五层上下文与可审查合同。production build 先执行 byte-for-byte 门禁，浏览器通过现有层级、邻域、线路、Inspector 和保存链消费该示例，不新增运行时扫描器 | 175 / 175 unit（22 files / 1.70 秒）；1902-module build（Vite 7.09 秒）；Chromium 82 / 82 + Firefox 81 / 81 = 163 / 163（5.0 分钟）。真实图展开为 4 个边界 + 12 个源码模块、27 条依赖，逐线及 351 pairs 在双浏览器全部通过；Studio 邻域精确为 9 modules / 8 interfaces，卡片 resize / Undo、Sources 定位、物理选线、合同审查、保存回读通过；200 / 400 与 1000 / 2000 再通过；三张截图人工复核 | 源码与 import 是事实，适配器拥有语义模块映射，JSON 是可替换的生成投影，UI 状态与测试证据都不反向定义依赖。仍未达到 draw.io：五层嵌套只能整体展开，缺少进入 / 退出容器的层级聚焦与 breadcrumb，低缩放局部审查仍不够直接 |
 | Iteration 101 | 五层整体展开保留上下文，却把真实模块缩小到难以审查；若把当前层写进 JSON、浏览器 URL 或复用展开集合，又会制造第二份结构事实与不可恢复状态 | `BlockDesignDocument` 继续唯一拥有层级；Studio 只拥有可丢弃 `viewRootLevelId`，纯 `hierarchyLevelTrail` 派生 breadcrumb 和父级 owner，layout 只接收 `rootLevelId` 改变投影起点。Enter / Exit / Home、Escape、Hierarchy 双击、breadcrumb 与 Sources 共用导航边界，inline expansion 保持正交 | 177 / 177 unit（23 files / 1.60 秒）；1902-module build（Vite 8.47 秒）；Chromium 83 / 83 + Firefox 82 / 82 = 165 / 165（5.3 分钟）；五层连续进入 / 退出、父模块焦点、breadcrumb、Sources、草稿拒绝、保存深相等和 browser history 双浏览器通过；第 5 层 12 modules / 27 routes / 351 pairs 全审计；1000 / 2000 压力再次通过；两张截图人工复核 | 视图根、breadcrumb、Fit 与 reveal 均不进入 JSON / History / geometry。仍未达到 draw.io；产品边界已改为 Windows-only，下一轮先完成安全 Electron 壳与原生文件闭环，不再投入移动端 |
 | Iteration 102 | 浏览器下载不能提供 Windows 软件需要的原位保存、原生对话框、窗口关闭保护和安装发布；直接给 renderer Node 或路径又会破坏文件边界 | `BlockDesignDocument` / canonical serializer 继续拥有设计与磁盘内容，Editor 拥有 dirty；Electron main 只拥有窗口、一次性 open token、当前文件路径、原生 dialog 和 32 MiB JSON 原子读写，sandbox preload 只暴露 8 个具名能力。Open 校验后才绑定，Save 成功后才 `markSaved`，路径不进 JSON；仅构建 Windows x64 NSIS | 180 / 180 unit（24 files）；1903-module production build；Electron 壳、7 modules / 10 interfaces、无 Node / require、具名 bridge、原生 Open → accept → Save As 字节一致 1 / 1；Windows tag workflow 在 Windows runner 重跑类型、单元、Electron 与打包并发布 SHA-256；`windows-desktop-app.png` 人工复核工作台、端口和路线无遮挡 | 浏览器只保留开发 / 测试适配器，不是第二产品；安装包未使用商业代码签名，SmartScreen 信誉、真实安装 / 卸载人工矩阵与崩溃恢复仍待补齐。整体仍未达到 draw.io，下一轮回到图形界面与操作能力 |
+| Iteration 103 | 模块标题仍只能在右侧 Properties 修改，日常改名需要离开画布；直接让卡片 DOM 或 Inspector 草稿成为标题源又会制造双状态，Canvas 的 Escape 捕获还会把取消误解释成失焦提交 | 对照 draw.io `Actions.edit → graph.startEditingAtCell()` 的直接编辑边界，BlockNode 只拥有一次临时标题会话；Canvas 用一次性 request 启动 F2，双击仅限标题槽，保留层级卡片双击进入语义；Enter / blur 调用 Studio 守卫后只提交具名 `node/rename`，Escape 和空值零写入。原生表单按键先于 Canvas 对象导航，Inspector 草稿锁继续唯一生效 | 181 / 181 unit（24 files）；1903-module production build；Chromium 84 / 84 + Firefox 83 / 83 = 167 / 167（5.4 分钟）；五层 20 routes / 190 pairs、源码 27 / 351、偏斜 Hub 100 / 4,950、200 / 400 和 1000 / 2000 完整回归；Electron 真实窗口 1 / 1 覆盖 F2、Enter、Undo、dirty、隔离与原生文件链。`inline-title-editing.png`、`windows-inline-title-editing.png` 逐图复核 0 线路 / 端口遮挡 | 标题事实仍只在 `BlockDesignDocument`；输入值、F2 request、焦点和 live announcement 均可丢弃，不进 JSON / History。整体仍未达到 draw.io；连接文字直编、画布指定位置插入 / 粘贴、更多桌面手势和长期人工体验仍需继续迭代 |
 
 ## 下一轮
 
-**Iteration 103 — Windows 桌面上的图形操作复评与下一项根因修正。**
+**Iteration 104 — Windows 画布中的位置化插入与粘贴复评。**
 
-在已发布 Windows 壳内重走模块创建、连接、密集线路、手工线路、resize、多选、层级进入和代码审查旅程，继续与 draw.io 的公开实现和真实操作对照。先以逐线视觉证据选择一个通用根因，再沿现有 `BlockDesignDocument → Editor → layout / routing → Canvas` 单向链完成最小闭环；不为个别截图加特判，也不投入移动端、网页产品或其他桌面系统。
+对照 draw.io `pasteHere` 与画布指针位置合同，复核当前 Add Module、Paste 和 Duplicate 是否让用户明确决定新对象落点。若仓库事实确认根因，必须让目标画布坐标只作为一次操作输入，由既有片段 / Editor 合同计算合法无碰撞位置；不能把右键位置写成隐藏文档状态，也不能为某个示例加定位特判。继续在 Windows 壳、双浏览器、五层和偏斜高连接场景验证，不投入移动端、网页产品或其他桌面系统。

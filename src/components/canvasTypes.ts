@@ -6,6 +6,9 @@ import type { RouteJump, RoutePoint, RoutingStatus } from "../routing";
 export interface CanvasBlockNodeData extends LayoutBlockNodeData {
   toggleHierarchy: (levelId: string) => void;
   inspectPort: (nodeId: string, port: BlockPort) => void;
+  renameNode?: (title: string) => boolean;
+  titleEditRequest?: number;
+  acknowledgeTitleEditRequest?: (revision: number) => void;
   beginResize?: () => void;
   previewResize?: (geometry: NodeResizeGeometry, disableSnap: boolean) => void;
   resizeNode?: (geometry: NodeResizeGeometry, disableSnap: boolean) => boolean;
