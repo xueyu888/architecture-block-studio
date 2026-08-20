@@ -220,6 +220,20 @@ async function clickWithPointer(page: Page, locator: Locator): Promise<void> {
   await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
 }
 
+async function rightClickLocator(
+  page: Page,
+  locator: Locator,
+  position?: { x: number; y: number },
+): Promise<void> {
+  const box = await locator.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.click(
+    box!.x + (position?.x ?? box!.width - 12),
+    box!.y + (position?.y ?? Math.min(42, box!.height / 2)),
+    { button: "right" },
+  );
+}
+
 async function altSelectIntersectingNode(page: Page, target: Locator): Promise<void> {
   const saveState = page.locator(".bd-statusbar span").nth(1);
   const saveStateBefore = await saveState.textContent();
@@ -616,7 +630,7 @@ async function transformOf(node: Locator): Promise<string> {
   return node.evaluate((element) => (element as HTMLElement).style.transform);
 }
 
-async function clickReachableEdgePoint(page: Page, edge: Locator): Promise<void> {
+async function reachableEdgePoint(edge: Locator): Promise<{ x: number; y: number }> {
   const point = await edge.evaluate((group) => {
     const interaction = group.querySelector<SVGPathElement>(".react-flow__edge-interaction");
     const matrix = interaction?.getScreenCTM();
@@ -632,6 +646,11 @@ async function clickReachableEdgePoint(page: Page, edge: Locator): Promise<void>
     return null;
   });
   expect(point).not.toBeNull();
+  return point!;
+}
+
+async function clickReachableEdgePoint(page: Page, edge: Locator): Promise<void> {
+  const point = await reachableEdgePoint(edge);
   await page.mouse.click(point!.x, point!.y);
 }
 
@@ -2651,6 +2670,14 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
   };
   await assertCompleteAudit();
 
+  await page.locator('.bd-tree-select[data-level-id="system"][data-node-id="hub"]').click({ force: true });
+  await page.waitForTimeout(300);
+  await rightClickLocator(page, flowNode(page, "system::hub"));
+  await expect(page.getByRole("menu", { name: "Module actions" })).toBeVisible();
+  await expect(page.locator(".bd-react-flow")).toHaveAttribute("data-context-gesture-outcome", "menu");
+  await assertCompleteAudit();
+  await page.keyboard.press("Escape");
+
   const firstSparseLeafButton = page.locator(
     '.bd-tree-select[data-level-id="system"][data-node-id="satellite-left-00"]',
   );
@@ -2903,6 +2930,19 @@ test("expands five hierarchy layers and audits every visible route and pair", as
     orphanJumps: [],
   });
   expect(audit.routeIds).toHaveLength(20);
+
+  await rightClickLocator(page, diagramNode(page, "level-5", "target-00"));
+  await expect(page.getByRole("menu", { name: "Module actions" })).toBeVisible();
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 20,
+    auditedPairCount: 190,
+    expectedPairCount: 190,
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  await page.keyboard.press("Escape");
 
   await page.locator(
     '.bd-tree-select[data-level-id="level-5"][data-node-id="target-00"]',
@@ -3279,6 +3319,15 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   metrics.selectModuleViewportMotionDurationMs = selectionTiming.viewportMotionDurationMs;
   metrics.selectModuleViewportTransformChanges = selectionTiming.viewportTransformChanges;
   metrics.selectModuleViewportMaxTransformGapMs = selectionTiming.viewportMaxTransformGapMs;
+  const contextMenuStarted = performance.now();
+  await rightClickLocator(page, selectedFlowNode);
+  const performanceContextMenu = page.getByRole("menu", { name: "Module actions" });
+  await expect(performanceContextMenu).toBeVisible();
+  await expect(performanceContextMenu.getByRole("menuitem", { name: /^Duplicate/ })).toBeVisible();
+  metrics.openModuleContextMenuMs = Math.round(performance.now() - contextMenuStarted);
+  await page.keyboard.press("Escape");
+  await expect(performanceContextMenu).toHaveCount(0);
+  await expect(selectedFlowNode).toHaveClass(/selected/);
   const directNeighborhoodViewport = await canvasViewportTransform(page);
   const directNeighborhoodStarted = performance.now();
   await runMenuCommand(page, "Edit", /^Select Direct Neighborhood/);
@@ -6380,6 +6429,118 @@ test("keeps selection, Space pan, button pan, wheel pan, and modifier zoom ortho
   await expect(page.locator(".bd-canvas-pan-mode")).toHaveCount(0);
   await page.keyboard.up("Space");
   await moduleFilter.fill("");
+});
+
+test("keeps object context actions and right-button canvas pan mutually exclusive", async ({ page, browserName }) => {
+  const canvas = page.locator(".bd-react-flow");
+  const agent = flowNode(page, "system::agent-ui");
+  const project = flowNode(page, "system::project");
+
+  await rightClickLocator(page, agent);
+  const moduleMenu = page.getByRole("menu", { name: "Module actions" });
+  await expect(moduleMenu).toBeVisible();
+  await expect(canvas).toHaveAttribute("data-context-gesture-outcome", "menu");
+  await expect(agent).toHaveClass(/selected/);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("Agent UI");
+  await expect(moduleMenu.getByRole("menuitem")).toHaveCount(9);
+  await expect(moduleMenu.getByRole("menuitem", { name: /^Create Child Design/ }))
+    .not.toHaveAttribute("aria-disabled", "true");
+  const menuBounds = await moduleMenu.boundingBox();
+  expect(menuBounds).not.toBeNull();
+  expect(menuBounds!.x).toBeGreaterThanOrEqual(8);
+  expect(menuBounds!.y).toBeGreaterThanOrEqual(8);
+  expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width - 8);
+  expect(menuBounds!.y + menuBounds!.height).toBeLessThanOrEqual(page.viewportSize()!.height - 8);
+  expect(await textContrastIssues(page, ".bd-context-menu")).toEqual([]);
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    microSegments: [],
+    sharedRoutes: [],
+  });
+  if (process.env.CAPTURE_CONTEXT_MENU === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/object-context-menu.png");
+  }
+
+  await moduleMenu.getByRole("menuitem", { name: /^Duplicate/ }).click();
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(8);
+  await expect(moduleMenu).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(7);
+
+  await agent.focus();
+  await page.keyboard.press("Shift+F10");
+  await expect(moduleMenu).toBeVisible();
+  await expect(moduleMenu.getByRole("menuitem").first()).toBeFocused();
+  await page.keyboard.press("End");
+  await expect(moduleMenu.getByRole("menuitem").last()).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(moduleMenu.getByRole("menuitem").first()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(moduleMenu).toHaveCount(0);
+  await expect(agent).toBeFocused();
+
+  await project.click({ force: true, modifiers: ["ControlOrMeta"] });
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
+  await rightClickLocator(page, agent);
+  const selectionMenu = page.getByRole("menu", { name: "Selected diagram objects actions" });
+  await expect(selectionMenu).toHaveAttribute("data-context-selection-count", "2");
+  await expect(selectionMenu.getByRole("menuitem", { name: "Align Left", exact: true })).toBeVisible();
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
+  await page.keyboard.press("Escape");
+
+  const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
+  const edgePoint = await reachableEdgePoint(edge);
+  await page.mouse.click(edgePoint.x, edgePoint.y, { button: "right" });
+  const interfaceMenu = page.getByRole("menu", { name: "Interface actions" });
+  await expect(interfaceMenu).toBeVisible();
+  await expect(edge).toHaveClass(/selected/);
+  await expect(page.locator(".bd-inspector-title h2")).toHaveText("Session Command RPC");
+  await expect(interfaceMenu.getByRole("menuitem")).toHaveCount(3);
+  await page.keyboard.press("Escape");
+
+  await agent.click({ force: true });
+  const inspector = page.getByRole("region", { name: "Properties" });
+  await inspector.getByLabel("Title", { exact: true }).fill("Agent UI draft");
+  const projectBounds = await project.boundingBox();
+  expect(projectBounds).not.toBeNull();
+  const rejectedContextPromise = page.waitForEvent("dialog");
+  const rejectedContextClick = page.mouse.click(
+    projectBounds!.x + projectBounds!.width - 12,
+    projectBounds!.y + 36,
+    { button: "right" },
+  );
+  const rejectedContextDialog = await rejectedContextPromise;
+  expect(rejectedContextDialog.message()).toContain("Discard unapplied Inspector changes");
+  await rejectedContextDialog.dismiss();
+  await rejectedContextClick;
+  await expect(page.locator(".bd-context-menu")).toHaveCount(0);
+  await expect(agent).toHaveClass(/selected/);
+  await expect(inspector.getByLabel("Title", { exact: true })).toHaveValue("Agent UI draft");
+  await inspector.getByLabel("Title", { exact: true }).fill("Agent UI");
+
+  const agentBounds = await agent.boundingBox();
+  expect(agentBounds).not.toBeNull();
+  const beforeRightPan = await canvasTransform(page);
+  const panStart = {
+    x: agentBounds!.x + agentBounds!.width / 2,
+    y: agentBounds!.y + Math.min(54, agentBounds!.height / 2),
+  };
+  await page.mouse.move(panStart.x, panStart.y);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(panStart.x + 48, panStart.y + 32, { steps: 8 });
+  await page.mouse.up({ button: "right" });
+  await expect(page.locator(".bd-context-menu")).toHaveCount(0);
+  await expect(canvas).toHaveAttribute("data-context-gesture-outcome", "pan");
+  const afterRightPan = await canvasTransform(page);
+  expect(afterRightPan.x).toBeCloseTo(beforeRightPan.x + 48, 1);
+  expect(afterRightPan.y).toBeCloseTo(beforeRightPan.y + 32, 1);
+  await expect(page.locator(".bd-statusbar")).toContainText("Saved");
 });
 
 test("keeps a dragged module under a stationary viewport-edge pointer", async ({ page }) => {

@@ -95,6 +95,7 @@ import {
 } from "./ConnectionGestureLayer";
 import { canvasDetailLevel, type CanvasDetailLevel } from "./canvasDetail";
 import {
+  CANVAS_CLICK_TOLERANCE_PX,
   canvasBoundsSelectBounds,
   canvasBoundsSelectRoute,
   canvasClientBounds,
@@ -104,10 +105,12 @@ import {
   nextCanvasPointHitTarget,
   nextCanvasTraversalTarget,
   reconcileCanvasSelection,
+  selectionForCanvasContext,
   type CanvasBoundsSelectionMode,
   type CanvasPointHitTarget,
   type CanvasTraversalTarget,
 } from "./canvasSelection";
+import type { CanvasContextMenuIntent } from "./contextMenuModel";
 import type { CanvasFlowEdge, CanvasFlowNode, RouteHandleFocusTarget } from "./canvasTypes";
 import { InterfaceEdgeComponent } from "./InterfaceEdge";
 import { Tooltip } from "./Tooltip";
@@ -145,7 +148,6 @@ interface RoutingCanvasProjection {
 const routingResultCache = new WeakMap<object, RoutingCanvasProjection>();
 const ALIGNMENT_TOLERANCE_PX = 6;
 const ALIGNMENT_VIEWPORT_MARGIN_PX = 80;
-const ALT_CLICK_TOLERANCE_PX = 5;
 const EDGE_POINTER_TOLERANCE_PX = 14;
 const NODE_VISUAL_LAYER_BASE = 1_000;
 const CONNECTION_TARGET_MARKER: EdgeMarker = {
@@ -281,6 +283,8 @@ interface CanvasInnerProps {
   revealSelectionRequest: number;
   routeRevision: number;
   onSelect: (selection: SelectionRef) => boolean;
+  onOpenContextMenu: (intent: CanvasContextMenuIntent) => boolean;
+  onDismissContextMenu: () => void;
   onToggleHierarchy: (levelId: string) => void;
   onMoveNodes: (moves: readonly NodeMove[]) => boolean;
   onCloneNodes: (moves: readonly NodeMove[]) => boolean;
@@ -450,6 +454,13 @@ interface AltClickGesture {
   moved: boolean;
 }
 
+interface ContextClickGesture {
+  pointerId: number;
+  start: { x: number; y: number };
+  last: { x: number; y: number };
+  moved: boolean;
+}
+
 function hasToggleModifier(event: Pick<MouseEvent, "shiftKey" | "ctrlKey" | "metaKey">): boolean {
   return event.shiftKey || event.ctrlKey || event.metaKey;
 }
@@ -499,6 +510,8 @@ const CanvasInner = memo(function CanvasInner({
   revealSelectionRequest,
   routeRevision,
   onSelect,
+  onOpenContextMenu,
+  onDismissContextMenu,
   onToggleHierarchy,
   onMoveNodes,
   onCloneNodes,
@@ -567,6 +580,7 @@ const CanvasInner = memo(function CanvasInner({
   } | undefined>(undefined);
   const boxSelectionGestureRef = useRef<BoxSelectionGesture | undefined>(undefined);
   const altClickGestureRef = useRef<AltClickGesture | undefined>(undefined);
+  const contextClickGestureRef = useRef<ContextClickGesture | undefined>(undefined);
   const suppressAltClickRef = useRef(false);
   const resizePreviewRef = useRef<ResizePreview | undefined>(undefined);
   const connectionGestureRef = useRef<ActiveConnectionGesture | undefined>(connectionGesture);
@@ -665,7 +679,35 @@ const CanvasInner = memo(function CanvasInner({
     if (altClickGesture?.pointerId === event.pointerId && !altClickGesture.moved) {
       const deltaX = event.clientX - altClickGesture.start.x;
       const deltaY = event.clientY - altClickGesture.start.y;
-      altClickGesture.moved = Math.hypot(deltaX, deltaY) > ALT_CLICK_TOLERANCE_PX;
+      altClickGesture.moved = Math.hypot(deltaX, deltaY) > CANVAS_CLICK_TOLERANCE_PX;
+    }
+    const contextClickGesture = contextClickGestureRef.current;
+    if (contextClickGesture?.pointerId === event.pointerId) {
+      if (!contextClickGesture.moved) {
+        const deltaX = event.clientX - contextClickGesture.start.x;
+        const deltaY = event.clientY - contextClickGesture.start.y;
+        contextClickGesture.moved = Math.hypot(deltaX, deltaY) > CANVAS_CLICK_TOLERANCE_PX;
+      }
+      if (contextClickGesture.moved) {
+        const last = contextClickGesture.last ?? contextClickGesture.start;
+        const delta = {
+          x: event.clientX - last.x,
+          y: event.clientY - last.y,
+        };
+        contextClickGesture.last = { x: event.clientX, y: event.clientY };
+        const state = store.getState();
+        const root = state.domNode;
+        if (root) root.dataset.rightPanActive = "true";
+        if ((delta.x !== 0 || delta.y !== 0) && state.panZoom) {
+          const next = {
+            x: state.transform[0] + delta.x,
+            y: state.transform[1] + delta.y,
+            zoom: state.transform[2],
+          };
+          state.panZoom.syncViewport(next);
+          store.setState({ transform: [next.x, next.y, next.zoom] });
+        }
+      }
     }
     const gesture = boxSelectionGestureRef.current;
     if (gesture) {
@@ -673,12 +715,13 @@ const CanvasInner = memo(function CanvasInner({
       if (event.altKey) gesture.mode = "intersecting";
       gesture.autoPan.update({ clientX: event.clientX, clientY: event.clientY });
     }
-  }, [interruptViewportNavigation]);
+  }, [interruptViewportNavigation, store]);
   const onCanvasPointerDownCapture = useCallback((event: ReactPointerEvent) => {
     // A direct gesture owns the viewport immediately. Freeze even when a
     // third-party navigation promise has already reported completion: Firefox
     // can still deliver a final interpolated frame after that promise settles.
     interruptViewportNavigation(true);
+    onDismissContextMenu();
     const target = event.target instanceof Element ? event.target : undefined;
     const directPaneGesture = target?.classList.contains("react-flow__pane") ?? false;
     const forcedSelectionGesture = Boolean(event.altKey && target && !target.closest(".nokey"));
@@ -690,6 +733,15 @@ const CanvasInner = memo(function CanvasInner({
         }
       : undefined;
     suppressAltClickRef.current = false;
+    contextClickGestureRef.current = event.button === 2 && event.isPrimary
+      ? {
+          pointerId: event.pointerId,
+          start: { x: event.clientX, y: event.clientY },
+          last: { x: event.clientX, y: event.clientY },
+          moved: false,
+        }
+      : undefined;
+    if (contextClickGestureRef.current) event.currentTarget.setPointerCapture(event.pointerId);
     if (event.button === 0 && event.isPrimary && (directPaneGesture || forcedSelectionGesture)) {
       boxSelectionStartRef.current = {
         x: event.clientX,
@@ -699,7 +751,7 @@ const CanvasInner = memo(function CanvasInner({
     } else {
       boxSelectionStartRef.current = undefined;
     }
-  }, [interruptViewportNavigation]);
+  }, [interruptViewportNavigation, onDismissContextMenu]);
   const beginAlignmentGesture = useCallback((
     nodeId: string,
     excludedNodeIds: ReadonlySet<string> = new Set([nodeId]),
@@ -1812,7 +1864,56 @@ const CanvasInner = memo(function CanvasInner({
       return item ? [{ target, item }] : [];
     });
   }, [baseNodes, routedEdges, store]);
+  const requestCanvasContextMenu = useCallback((
+    target: DiagramSelectionRef,
+    anchor: { x: number; y: number },
+    focusFirst: boolean,
+  ) => {
+    const nextSelection = selectionForCanvasContext(selectionRef.current, target);
+    const accepted = onOpenContextMenu({
+      anchor,
+      target,
+      selection: nextSelection,
+      focusFirst,
+    });
+    if (accepted) {
+      setCanvasAnnouncement(
+        nextSelection.kind === "multiple"
+          ? `Opened actions for ${nextSelection.items.length} selected diagram objects.`
+          : target.kind === "node"
+            ? "Opened module actions."
+            : "Opened interface actions.",
+      );
+    }
+    return accepted;
+  }, [onOpenContextMenu]);
   const onCanvasPointerUpCapture = useCallback((event: ReactPointerEvent) => {
+    const contextGesture = contextClickGestureRef.current;
+    if (contextGesture?.pointerId === event.pointerId) {
+      contextClickGestureRef.current = undefined;
+      const root = store.getState().domNode;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      if (root) delete root.dataset.rightPanActive;
+      if (contextGesture.moved) {
+        if (root) root.dataset.contextGestureOutcome = "pan";
+        return;
+      }
+      const top = canvasPointHitSelections({ x: event.clientX, y: event.clientY })[0];
+      if (!top) {
+        if (root) root.dataset.contextGestureOutcome = "empty";
+        return;
+      }
+      event.preventDefault();
+      const accepted = requestCanvasContextMenu(
+        top.item,
+        { x: event.clientX + 1, y: event.clientY + 1 },
+        false,
+      );
+      if (root) root.dataset.contextGestureOutcome = accepted ? "menu" : "rejected";
+      return;
+    }
     const gesture = altClickGestureRef.current;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
     altClickGestureRef.current = undefined;
@@ -1856,7 +1957,7 @@ const CanvasInner = memo(function CanvasInner({
         ? `Selected object ${index + 1} of ${hits.length} under the pointer.`
         : "Selected the diagram object under the pointer.",
     );
-  }, [canvasPointHitSelections, commitCanvasSelection, entryLevelId]);
+  }, [canvasPointHitSelections, commitCanvasSelection, entryLevelId, requestCanvasContextMenu, store]);
   const onCanvasClickCapture = useCallback((event: ReactMouseEvent) => {
     if (!suppressAltClickRef.current) return;
     suppressAltClickRef.current = false;
@@ -1865,10 +1966,19 @@ const CanvasInner = memo(function CanvasInner({
   }, []);
   const onCanvasPointerCancelCapture = useCallback(() => {
     altClickGestureRef.current = undefined;
+    contextClickGestureRef.current = undefined;
     suppressAltClickRef.current = false;
     boxSelectionGestureRef.current?.autoPan.stop();
     boxSelectionGestureRef.current = undefined;
+    const root = store.getState().domNode;
+    if (root) delete root.dataset.rightPanActive;
+  }, [store]);
+  const onCanvasContextMenuCapture = useCallback((event: ReactMouseEvent) => {
+    event.preventDefault();
   }, []);
+  const onCanvasViewportMoveStart = useCallback(() => {
+    onDismissContextMenu();
+  }, [onDismissContextMenu]);
   const onNodeClick = useCallback<NodeMouseHandler<CanvasFlowNode>>((event, node) => {
     const item: DiagramSelectionRef = {
       kind: "node",
@@ -1961,6 +2071,28 @@ const CanvasInner = memo(function CanvasInner({
     );
     const flowElementFocused = target === containingFlowElement;
     const canvasRootFocused = target === canvasRoot || target.classList.contains("bd-react-flow");
+    if (
+      flowElementFocused &&
+      (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey))
+    ) {
+      const flowId = containingFlowElement.getAttribute("data-id");
+      const node = flowId ? baseNodes.find((candidate) => candidate.id === flowId) : undefined;
+      const edge = flowId && !node ? routedEdges.find((candidate) => candidate.id === flowId) : undefined;
+      const next: DiagramSelectionRef | undefined = node
+        ? { kind: "node", levelId: node.data.levelId, nodeId: node.data.block.id }
+        : edge?.data
+          ? { kind: "connection", levelId: edge.data.levelId, connectionId: edge.data.connection.id }
+          : undefined;
+      if (!next) return;
+      const bounds = containingFlowElement.getBoundingClientRect();
+      event.preventDefault();
+      event.stopPropagation();
+      requestCanvasContextMenu(next, {
+        x: node ? bounds.right - 12 : bounds.left + bounds.width / 2,
+        y: node ? bounds.top + Math.min(42, bounds.height / 2) : bounds.top + bounds.height / 2,
+      }, true);
+      return;
+    }
     if (
       containingFlowElement &&
       !flowElementFocused &&
@@ -2175,6 +2307,7 @@ const CanvasInner = memo(function CanvasInner({
     focusCanvasSelection,
     onMoveNodes,
     onResizeNode,
+    requestCanvasContextMenu,
     routedEdges,
     store,
   ]);
@@ -2485,6 +2618,7 @@ const CanvasInner = memo(function CanvasInner({
           onPointerUpCapture={onCanvasPointerUpCapture}
           onPointerCancelCapture={onCanvasPointerCancelCapture}
           onClickCapture={onCanvasClickCapture}
+          onContextMenuCapture={onCanvasContextMenuCapture}
           onKeyDownCapture={onElementKeyDownCapture}
           onConnect={onConnect}
           onConnectStart={onConnectStart}
@@ -2494,6 +2628,7 @@ const CanvasInner = memo(function CanvasInner({
           isValidConnection={isValidConnection}
           onError={warnReactFlowError}
           onPaneClick={onPaneClick}
+          onMoveStart={onCanvasViewportMoveStart}
           tabIndex={0}
           aria-label="Architecture diagram canvas"
           connectionMode={ConnectionMode.Loose}
@@ -2506,7 +2641,7 @@ const CanvasInner = memo(function CanvasInner({
           autoPanOnNodeDrag={false}
           autoPanSpeed={CANVAS_VIEWPORT_AUTO_PAN_POLICY.maximumFrameDistancePx}
           panOnScroll
-          panOnDrag={[1, 2]}
+          panOnDrag={[1]}
           panActivationKeyCode="Space"
           zoomActivationKeyCode={["Control", "Meta"]}
           selectionOnDrag
@@ -2601,6 +2736,8 @@ export function BlockDesignCanvas(props: BlockDesignCanvasProps) {
         revealSelectionRequest={props.revealSelectionRequest}
         routeRevision={props.routeRevision}
         onSelect={props.onSelect}
+        onOpenContextMenu={props.onOpenContextMenu}
+        onDismissContextMenu={props.onDismissContextMenu}
         onToggleHierarchy={props.onToggleHierarchy}
         onMoveNodes={props.onMoveNodes}
         onCloneNodes={props.onCloneNodes}

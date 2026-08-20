@@ -283,7 +283,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 
 Zoom In、Zoom Out 与 Actual Size 由 Studio 发送具名、递增 revision 的 `CanvasViewportActionRequest`；View 菜单、Command Palette 和 `Ctrl/⌘ + / −` 不直接调用第三方图实例。Canvas 是 viewport 变换的唯一执行者，左下控件复用同一 `zoomInViewport` / `zoomOutViewport` / `actualSizeViewport`，百分比直接订阅 React Flow transform 并只作展示。Actual Size 以当前视口中心回到 1:1，不改变节点设计坐标、模块 width / height、selection、历史或导出。
 
-Canvas 明确声明互不重叠的 gesture：左键空白拖动为 selection，`panOnDrag=[middle,right]`，`panActivationKeyCode=Space` 让 Space + 左拖平移，`panOnScroll` 让普通滚轮平移，`zoomActivationKeyCode=[Control,Meta]` 让 modifier + wheel 缩放。节点 / 连线的 Space 键盘选择只阻止默认浏览器行为，不再截断事件传播，因此对象有焦点时仍可进入 Space-pan。`spacePanActive` 与 PAN MODE pill 只是按键期间的可丢弃反馈；表单、按钮、链接、Dialog 与 Menu 不进入该模式，keyup、窗口失焦或卸载都会清理。
+Canvas 明确声明互不重叠的 gesture：左键空白拖动为 selection，React Flow 的 `panOnDrag=[middle]` 只拥有中键平移；Canvas 自己用统一 5px 容差判定右键短按菜单或右拖平移。`panActivationKeyCode=Space` 让 Space + 左拖平移，`panOnScroll` 让普通滚轮平移，`zoomActivationKeyCode=[Control,Meta]` 让 modifier + wheel 缩放。节点 / 连线的 Space 键盘选择只阻止默认浏览器行为，不再截断事件传播，因此对象有焦点时仍可进入 Space-pan。`spacePanActive`、右键手势记录与 PAN MODE pill 都只是可丢弃反馈；表单、按钮、链接、Dialog 与 Menu 不进入 Space 模式，keyup、窗口失焦或卸载都会清理。
 
 平滑定位同样必须服从新的直接操作。Studio Fit、Sources / Messages / Inspector 交叉定位、MiniMap 和 Canvas 缩放 / Fit 控件都调用同一个 Canvas 导航协调器；它以 generation 标识自己发起的动画。只要 pointer 在动画期间进入画布，当前 transform 就以零时长固定，旧动画的异步完成不能重新宣称导航仍在进行。这样鼠标按下时命中的是用户眼前的模块，而不是动画继续移动后暴露的 pane。中断只结束可丢弃 viewport 动画，不改变 `SelectionRef`、设计坐标、布局或历史。
 
@@ -315,6 +315,8 @@ React Flow 的库内键盘位移被阻止后，其内建 aria-live 不再拥有�
 `StudioCommandAvailability` 是命令可用性的唯一公开合同：命令要么 `enabled: true`，要么 `enabled: false` 且必须携带 `unavailableReason`，类型层不允许产生“禁用但无解释”的状态。Studio 从当前 document、history、selection、hierarchy 和 connectable pair 一次派生该联合类型；Menu 与 Toolbar 只投影同一结果，不重新计算 eligibility。禁用命令保持不可执行，原因只用于可见菜单文案、toolbar title 与 accessible name，不进入 JSON、历史或工作区事实。
 
 `MenuBar` 只拥有桌面复合菜单的焦点、导航和激活门禁，不拥有命令 eligibility 或行为。顶层按钮和已展开菜单都支持无修饰 printable character 定位；搜索从当前焦点之后开始并环绕一次，方向键、Home / End 与字符导航都经过实际渲染的菜单项，包括 `aria-disabled` 项。禁用项因此可获得可见焦点并让辅助技术读取同一 `unavailableReason`，但 Enter、Space 与 pointer 激活都由 MenuBar 拒绝，菜单和焦点保持原位。可用项最终仍只调用 `StudioCommands.execute`；Toolbar 普通按钮继续使用原生 `disabled`，两种交互语义不互相套用。
+
+对象上下文菜单沿用同一命令边界。`contextMenuModel` 只拥有“当前模块 / 接口 / 多选应投影哪些既有 command id”的分组，以及菜单矩形相对 viewport 的纯位置约束；`CanvasContextMenu` 只拥有可丢弃的锚点、焦点循环、字符定位和关闭条件。Canvas 用共享 5 CSS px 容差独占一次右键手势：短按从真实节点 / 路线几何产生选择意图，超过容差后则由 Canvas 直接同步 viewport 平移，二者绝不同时成立；React Flow 继续独占中键平移。Studio 仍是草稿保护与 canonical selection 的唯一协调者，菜单最终只执行同一 `StudioCommands.execute`。这吸收了 draw.io [`mxPopupMenuHandler`](https://github.com/jgraph/drawio/blob/dev/src/main/webapp/mxgraph/src/handler/mxPopupMenuHandler.js#L141-L210) 的“按下记录位置、超容差取消弹窗、松手才打开”职责边界，但不复制其图模型、菜单定义或文件格式。
 
 `useDialogFocus` 是模态焦点循环、Esc 关闭和默认恢复的共享协议。命令面板执行动作时调用其 `prepareFocusHandoff`：先恢复原调用位置，再禁止卸载清理重复抢焦点，最后让被执行动作决定是否把焦点交给新 Dialog、Messages 或继续留在原位置。普通 Esc / 遮罩关闭仍走默认恢复，不需要每个 Dialog 各自查询 DOM 或复制延时逻辑。
 

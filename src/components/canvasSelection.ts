@@ -1,3 +1,10 @@
+import {
+  diagramSelectionItems,
+  diagramSelectionKey,
+  type DiagramSelectionRef,
+  type SelectionRef,
+} from "../studio/selection";
+
 export interface SelectableCanvasItem {
   id: string;
   selected?: boolean;
@@ -28,6 +35,8 @@ export interface CanvasGeometryPoint {
   x: number;
   y: number;
 }
+
+export const CANVAS_CLICK_TOLERANCE_PX = 5;
 
 export interface CanvasPointHitTarget {
   /** Unique identity of this rendered geometry instance. */
@@ -125,6 +134,20 @@ export function canvasPointHitStack(
     seen.add(target.selectionKey);
     return true;
   });
+}
+
+/**
+ * A context click inside the current diagram selection preserves the complete
+ * selection. A click outside replaces it with the top visual hit.
+ */
+export function selectionForCanvasContext(
+  selection: SelectionRef,
+  target: DiagramSelectionRef,
+): SelectionRef {
+  const targetKey = diagramSelectionKey(target);
+  return diagramSelectionItems(selection).some((item) => diagramSelectionKey(item) === targetKey)
+    ? selection
+    : target;
 }
 
 /**

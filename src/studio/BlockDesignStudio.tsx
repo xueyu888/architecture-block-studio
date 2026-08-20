@@ -53,7 +53,12 @@ import {
   type CanvasViewportAction,
   type CanvasViewportActionRequest,
 } from "../components/BlockDesignCanvas";
+import { CanvasContextMenu } from "../components/CanvasContextMenu";
 import { CommandPalette } from "../components/CommandPalette";
+import type {
+  CanvasContextMenuIntent,
+  CanvasContextMenuRequest,
+} from "../components/contextMenuModel";
 import { DockWorkspace } from "../components/DockWorkspace";
 import {
   AddBlockDialog,
@@ -129,6 +134,7 @@ import {
   connectionForSelection,
   directInterfaceSelectionExpansion,
   directNeighborhoodSelectionExpansion,
+  diagramSelectionKey,
   hierarchyLevelPath,
   diagramSelectionItems,
   levelForSelection,
@@ -260,6 +266,8 @@ export function BlockDesignStudio({
   const fitAfterLayout = useRef(true);
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [canvasContextMenu, setCanvasContextMenu] = useState<CanvasContextMenuRequest>();
+  const canvasContextMenuRevision = useRef(0);
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [saveAsDialogOpen, setSaveAsDialogOpen] = useState(false);
   const [addBlockLevelId, setAddBlockLevelId] = useState<string>();
@@ -311,6 +319,7 @@ export function BlockDesignStudio({
     setLoadError(undefined);
     setCommandError(undefined);
     setCommandNotice(undefined);
+    setCanvasContextMenu(undefined);
     pasteInsertionIndex.current = 0;
     setLoadDialogOpen(false);
     setBusy(false);
@@ -454,6 +463,26 @@ export function BlockDesignStudio({
     setRevealSelectionRequest((value) => value + 1);
     return true;
   }, [requestSelection]);
+
+  const openCanvasContextMenu = useCallback((intent: CanvasContextMenuIntent): boolean => {
+    if (!requestSelection(intent.selection)) return false;
+    canvasContextMenuRevision.current += 1;
+    setCanvasContextMenu({ ...intent, revision: canvasContextMenuRevision.current });
+    setCommandError(undefined);
+    return true;
+  }, [requestSelection]);
+
+  const dismissCanvasContextMenu = useCallback(() => setCanvasContextMenu(undefined), []);
+
+  useEffect(() => {
+    if (!canvasContextMenu) return;
+    const targetKey = diagramSelectionKey(canvasContextMenu.target);
+    const targetStillSelected = diagramSelectionItems(selection)
+      .some((item) => diagramSelectionKey(item) === targetKey);
+    if (!document || !selectionExists(document, canvasContextMenu.target) || !targetStillSelected) {
+      setCanvasContextMenu(undefined);
+    }
+  }, [canvasContextMenu, document, selection]);
 
   const requireAppliedInspectorDraft = useCallback((action: string): boolean => {
     if (!inspectorDraftDirtyRef.current) return true;
@@ -1719,6 +1748,8 @@ export function BlockDesignStudio({
             revealSelectionRequest={revealSelectionRequest}
             routeRevision={routeRevision}
             onSelect={requestSelection}
+            onOpenContextMenu={openCanvasContextMenu}
+            onDismissContextMenu={dismissCanvasContextMenu}
             onToggleHierarchy={toggleHierarchy}
             onAddModule={openAddBlock}
             onMoveNodes={moveNodes}
@@ -1786,6 +1817,14 @@ export function BlockDesignStudio({
       {commandError && <div className="bd-command-error" role="alert"><TriangleAlert size={15} /><span>{commandError}</span><button type="button" onClick={() => setCommandError(undefined)}>Dismiss</button></div>}
       {commandNotice && !commandError && <div className="bd-command-notice" role="status"><Info size={15} /><span>{commandNotice}</span><button type="button" onClick={() => setCommandNotice(undefined)}>Dismiss</button></div>}
       {dragActive && <div className="bd-drop-overlay"><FileJsonDrop /></div>}
+      {canvasContextMenu && (
+        <CanvasContextMenu
+          key={canvasContextMenu.revision}
+          request={canvasContextMenu}
+          commands={commands}
+          onClose={dismissCanvasContextMenu}
+        />
+      )}
       <CommandPalette open={commandPaletteOpen} commands={commands} onClose={() => setCommandPaletteOpen(false)} />
       <LoadDesignDialog open={loadDialogOpen} busy={busy} error={loadError} onClose={() => { setLoadDialogOpen(false); setLoadError(undefined); }} onLoadFile={(file) => void openFile(file)} onLoadUrl={(url) => void openUrl(url)} />
       <NewDesignDialog open={newDialogOpen} error={commandError} idFromTitle={(title) => suggestId(title, "design")} onClose={() => { setNewDialogOpen(false); setCommandError(undefined); }} onCreate={({ id, title }) => {

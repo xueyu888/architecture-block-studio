@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  CANVAS_CLICK_TOLERANCE_PX,
   canvasBoundsSelectBounds,
   canvasBoundsSelectRoute,
   canvasClientBounds,
@@ -9,9 +10,35 @@ import {
   nextCanvasPointHitTarget,
   nextCanvasTraversalTarget,
   reconcileCanvasSelection,
+  selectionForCanvasContext,
 } from "../../src/components/canvasSelection";
 
 describe("canvas selection projection", () => {
+  test("uses one screen-pixel click tolerance for direct canvas gestures", () => {
+    expect(CANVAS_CLICK_TOLERANCE_PX).toBe(5);
+    expect(Math.hypot(3, 4)).toBe(CANVAS_CLICK_TOLERANCE_PX);
+    expect(Math.hypot(4, 4)).toBeGreaterThan(CANVAS_CLICK_TOLERANCE_PX);
+  });
+
+  test("preserves a multi-selection only when the context target belongs to it", () => {
+    const selection = {
+      kind: "multiple" as const,
+      items: [
+        { kind: "node" as const, levelId: "root", nodeId: "a" },
+        { kind: "connection" as const, levelId: "root", connectionId: "a-b" },
+      ],
+    };
+    const selectedTarget = { kind: "node" as const, levelId: "root", nodeId: "a" };
+    const outsideTarget = { kind: "node" as const, levelId: "root", nodeId: "b" };
+
+    expect(selectionForCanvasContext(selection, selectedTarget)).toBe(selection);
+    expect(selectionForCanvasContext(selection, outsideTarget)).toEqual(outsideTarget);
+    expect(selectionForCanvasContext(
+      { kind: "port", levelId: "root", nodeId: "a", portId: "out" },
+      selectedTarget,
+    )).toEqual(selectedTarget);
+  });
+
   test("normalizes gesture endpoints without depending on intermediate rendered frames", () => {
     expect(canvasClientBounds({ x: 320, y: 180 }, { x: 40, y: 90 })).toEqual({
       left: 40,
