@@ -45,6 +45,8 @@ export const BLOCK_NODE_GEOMETRY = {
   borderWidth: 1,
   expandedBorderWidth: 2,
   portHandleSize: 10,
+  placementGrid: 32,
+  placementGap: 24,
 } as const;
 
 export function preserveNodeAspectRatio(

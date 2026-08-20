@@ -1,15 +1,20 @@
 import type { DesignFragment } from "../editor";
-import { baseNodeDimensions } from "../layout";
+import { BLOCK_NODE_GEOMETRY, baseNodeDimensions } from "../layout";
 import type { BlockNode } from "../model";
 
-export const DESIGN_FRAGMENT_PLACEMENT_GRID = 32;
-export const DESIGN_FRAGMENT_PLACEMENT_GAP = 24;
+export const DESIGN_FRAGMENT_PLACEMENT_GRID = BLOCK_NODE_GEOMETRY.placementGrid;
+export const DESIGN_FRAGMENT_PLACEMENT_GAP = BLOCK_NODE_GEOMETRY.placementGap;
 
 export interface DesignFragmentPlacementRect {
   x: number;
   y: number;
   width: number;
   height: number;
+}
+
+export interface PointPlacementPolicy {
+  gap?: number;
+  minimumOrigin?: { x: number; y: number };
 }
 
 export function designFragmentBounds(fragment: DesignFragment): DesignFragmentPlacementRect {
@@ -28,11 +33,12 @@ export function designFragmentBounds(fragment: DesignFragment): DesignFragmentPl
 function overlapsWithGap(
   candidate: DesignFragmentPlacementRect,
   occupied: DesignFragmentPlacementRect,
+  gap: number,
 ): boolean {
-  return candidate.x < occupied.x + occupied.width + DESIGN_FRAGMENT_PLACEMENT_GAP &&
-    candidate.x + candidate.width + DESIGN_FRAGMENT_PLACEMENT_GAP > occupied.x &&
-    candidate.y < occupied.y + occupied.height + DESIGN_FRAGMENT_PLACEMENT_GAP &&
-    candidate.y + candidate.height + DESIGN_FRAGMENT_PLACEMENT_GAP > occupied.y;
+  return candidate.x < occupied.x + occupied.width + gap &&
+    candidate.x + candidate.width + gap > occupied.x &&
+    candidate.y < occupied.y + occupied.height + gap &&
+    candidate.y + candidate.height + gap > occupied.y;
 }
 
 function positiveCandidates(distance: number): Array<{ x: number; y: number }> {
@@ -60,7 +66,7 @@ export function findDesignFragmentPlacement(
       x: bounds.x + offset.x,
       y: bounds.y + offset.y,
     };
-    return occupied.every((rect) => !overlapsWithGap(candidate, rect));
+    return occupied.every((rect) => !overlapsWithGap(candidate, rect, DESIGN_FRAGMENT_PLACEMENT_GAP));
   };
   for (let distance = insertionOrdinal; distance <= 256; distance += 1) {
     for (const candidate of positiveCandidates(distance)) {
@@ -101,7 +107,18 @@ function findRectPlacementAtOrigin(
   occupied: readonly DesignFragmentPlacementRect[],
   requestedOrigin: { x: number; y: number },
   subject: "Fragment" | "Module",
+  policy: PointPlacementPolicy,
 ): { x: number; y: number } {
+  const gap = policy.gap ?? DESIGN_FRAGMENT_PLACEMENT_GAP;
+  if (!Number.isFinite(gap) || gap < 0) {
+    throw new Error(`${subject} placement gap must be a finite non-negative number.`);
+  }
+  if (
+    policy.minimumOrigin &&
+    ![policy.minimumOrigin.x, policy.minimumOrigin.y].every(Number.isFinite)
+  ) {
+    throw new Error(`${subject} minimum insertion origin must contain finite coordinates.`);
+  }
   if (![requestedOrigin.x, requestedOrigin.y].every(Number.isFinite)) {
     throw new Error(`${subject} insertion point must contain finite coordinates.`);
   }
@@ -115,7 +132,11 @@ function findRectPlacementAtOrigin(
       x: bounds.x + offset.x,
       y: bounds.y + offset.y,
     };
-    return occupied.every((rect) => !overlapsWithGap(candidate, rect));
+    if (
+      policy.minimumOrigin &&
+      (candidate.x < policy.minimumOrigin.x || candidate.y < policy.minimumOrigin.y)
+    ) return false;
+    return occupied.every((rect) => !overlapsWithGap(candidate, rect, gap));
   };
   const requestedOffset = {
     x: snappedOrigin.x - bounds.x,
@@ -147,10 +168,10 @@ function findRectPlacementAtOrigin(
   const ceilGrid = (value: number) => Math.ceil(value / DESIGN_FRAGMENT_PLACEMENT_GRID) * DESIGN_FRAGMENT_PLACEMENT_GRID;
   const floorGrid = (value: number) => Math.floor(value / DESIGN_FRAGMENT_PLACEMENT_GRID) * DESIGN_FRAGMENT_PLACEMENT_GRID;
   const outerOrigins = [
-    { x: ceilGrid(occupiedBounds.maxX + DESIGN_FRAGMENT_PLACEMENT_GAP), y: snappedOrigin.y },
-    { x: floorGrid(occupiedBounds.minX - bounds.width - DESIGN_FRAGMENT_PLACEMENT_GAP), y: snappedOrigin.y },
-    { x: snappedOrigin.x, y: ceilGrid(occupiedBounds.maxY + DESIGN_FRAGMENT_PLACEMENT_GAP) },
-    { x: snappedOrigin.x, y: floorGrid(occupiedBounds.minY - bounds.height - DESIGN_FRAGMENT_PLACEMENT_GAP) },
+    { x: ceilGrid(occupiedBounds.maxX + gap), y: snappedOrigin.y },
+    { x: floorGrid(occupiedBounds.minX - bounds.width - gap), y: snappedOrigin.y },
+    { x: snappedOrigin.x, y: ceilGrid(occupiedBounds.maxY + gap) },
+    { x: snappedOrigin.x, y: floorGrid(occupiedBounds.minY - bounds.height - gap) },
   ].sort((left, right) => {
     const leftDistance = (left.x - snappedOrigin.x) ** 2 + (left.y - snappedOrigin.y) ** 2;
     const rightDistance = (right.x - snappedOrigin.x) ** 2 + (right.y - snappedOrigin.y) ** 2;
@@ -173,9 +194,10 @@ export function findDesignFragmentPlacementAtPoint(
   fragment: DesignFragment,
   occupied: readonly DesignFragmentPlacementRect[],
   point: { x: number; y: number },
+  policy: PointPlacementPolicy = {},
 ): { x: number; y: number } {
   const bounds = designFragmentBounds(fragment);
-  return findRectPlacementAtOrigin(bounds, occupied, point, "Fragment");
+  return findRectPlacementAtOrigin(bounds, occupied, point, "Fragment", policy);
 }
 
 /**
@@ -186,12 +208,13 @@ export function findBlockPlacementAtPoint(
   block: BlockNode,
   occupied: readonly DesignFragmentPlacementRect[],
   point: { x: number; y: number },
+  policy: PointPlacementPolicy = {},
 ): { x: number; y: number } {
   const dimensions = baseNodeDimensions(block);
   const bounds = { x: 0, y: 0, ...dimensions };
   const offset = findRectPlacementAtOrigin(bounds, occupied, {
     x: point.x - dimensions.width / 2,
     y: point.y - dimensions.height / 2,
-  }, "Module");
+  }, "Module", policy);
   return { x: offset.x, y: offset.y };
 }

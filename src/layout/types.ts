@@ -11,7 +11,10 @@ export interface LayoutBlockNodeData extends Record<string, unknown> {
   levelId: string;
   expanded: boolean;
   hierarchyDepth: number;
+  /** Authored position from the document or deterministic unplaced fallback. */
   designPosition: { x: number; y: number };
+  /** Collision-free top-left projected in the owning Level coordinate system. */
+  projectedPosition: { x: number; y: number };
   positionEditable: boolean;
   childLevelProjection?: LayoutChildLevelProjection;
 }

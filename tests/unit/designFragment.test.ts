@@ -192,6 +192,19 @@ describe("self-contained design fragments", () => {
     expect(findBlockPlacementAtPoint(block, occupied, point)).toEqual(avoided);
     expect(() => findBlockPlacementAtPoint(block, [], { x: Number.POSITIVE_INFINITY, y: 0 }))
       .toThrow("finite coordinates");
+
+    const nested = findBlockPlacementAtPoint(block, occupied, point, {
+      gap: 96,
+      minimumOrigin: { x: 100, y: 0 },
+    });
+    expect(nested.x).toBeGreaterThanOrEqual(100);
+    expect(nested.y).toBeGreaterThanOrEqual(0);
+    expect(
+      nested.x + 242 + 96 <= occupied[0].x ||
+      nested.x >= occupied[0].x + occupied[0].width + 96 ||
+      nested.y + 144 + 96 <= occupied[0].y ||
+      nested.y >= occupied[0].y + occupied[0].height + 96
+    ).toBe(true);
   });
 
   test("duplicates an owned hierarchy as one self-contained level tree", () => {

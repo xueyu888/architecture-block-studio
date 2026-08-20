@@ -3417,6 +3417,137 @@ test("expands five hierarchy layers and audits every visible route and pair", as
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("Layer 4 Boundary");
 });
 
+test("keeps toolbar drop preview, JSON, and rendered geometry identical at every expanded depth", async ({ page, browserName }) => {
+  test.setTimeout(120_000);
+  const document = fiveLevelRoutingDesignDocument();
+  await openDesignDialog(page);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "five-level-drop-contract.block-design.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(document)),
+  });
+  await expect(page.locator(".bd-document-title span")).toHaveText("Five-Level Routing Stress", {
+    timeout: 30_000,
+  });
+  for (let levelNumber = 1; levelNumber <= 5; levelNumber += 1) {
+    await expandHierarchy(page, `Layer ${levelNumber} Boundary`);
+  }
+
+  const placements: Array<{ levelId: string; nodeId: string; x: number; y: number }> = [];
+  for (let levelNumber = 1; levelNumber <= 5; levelNumber += 1) {
+    const levelId = `level-${levelNumber}`;
+    const anchorId = levelNumber === 5 ? "target-00" : `relay-${levelNumber}-00`;
+    const anchor = diagramNode(page, levelId, anchorId);
+    const anchorBounds = await anchor.boundingBox();
+    expect(anchorBounds, `${levelId} anchor`).not.toBeNull();
+    await beginToolbarModuleDrag(page, {
+      x: anchorBounds!.x + anchorBounds!.width / 2,
+      y: anchorBounds!.y + anchorBounds!.height / 2,
+    });
+
+    const target = page.locator(
+      `[data-module-drop-target="true"][data-level-id="${levelId}"]`,
+    );
+    const preview = page.locator(
+      `[data-module-drop-preview="true"][data-level-id="${levelId}"]`,
+    );
+    await expect(target).toBeVisible();
+    await expect(preview).toBeVisible();
+    const position = {
+      x: Number(await preview.getAttribute("data-design-x")),
+      y: Number(await preview.getAttribute("data-design-y")),
+    };
+    expect(Number.isFinite(position.x), `${levelId} preview x`).toBe(true);
+    expect(Number.isFinite(position.y), `${levelId} preview y`).toBe(true);
+    const previewBounds = await preview.boundingBox();
+    expect(previewBounds, `${levelId} preview bounds`).not.toBeNull();
+    const viewportBefore = await page.locator(".react-flow__viewport").getAttribute("style");
+
+    await page.mouse.up();
+    const nodeId = `depth-${levelNumber}-review`;
+    const dialog = page.getByRole("dialog", { name: /Add Module/ });
+    await dialog.getByLabel("Module title").fill(`Depth ${levelNumber} Review`);
+    await dialog.getByLabel("Module id").fill(nodeId);
+    await dialog.getByRole("button", { name: "Add Module", exact: true }).click();
+    await waitForEditorIdle(page);
+
+    const rendered = diagramNode(page, levelId, nodeId);
+    await expect(rendered).toHaveCount(1);
+    const block = rendered.locator(".bd-block");
+    await expect(block).toHaveAttribute("data-design-x", String(position.x));
+    await expect(block).toHaveAttribute("data-design-y", String(position.y));
+    await expect(page.locator(".react-flow__viewport")).toHaveAttribute(
+      "style",
+      viewportBefore ?? "",
+    );
+    const renderedBounds = await rendered.boundingBox();
+    expect(renderedBounds, `${levelId} rendered bounds`).not.toBeNull();
+    expect(renderedBounds!.x, `${levelId} rendered x`).toBeCloseTo(previewBounds!.x, 0);
+    expect(renderedBounds!.y, `${levelId} rendered y`).toBeCloseTo(previewBounds!.y, 0);
+    expect(renderedBounds!.width, `${levelId} rendered width`).toBeCloseTo(previewBounds!.width, 0);
+    expect(renderedBounds!.height, `${levelId} rendered height`).toBeCloseTo(previewBounds!.height, 0);
+    placements.push({ levelId, nodeId, ...position });
+  }
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await downloadPromise).path();
+  expect(savedPath).not.toBeNull();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  placements.forEach(({ levelId, nodeId, x, y }) => {
+    const level = saved.levels.find((candidate: { id: string }) => candidate.id === levelId);
+    const node = level.nodes.find((candidate: { id: string }) => candidate.id === nodeId);
+    expect(node.layout, `${levelId}/${nodeId} JSON`).toEqual({
+      position: { x, y },
+      pinned: true,
+    });
+  });
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    microSegments: [],
+    sharedRoutes: [],
+  });
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 20,
+    auditedPairCount: 190,
+    expectedPairCount: 190,
+    duplicateRouteIds: [],
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  if (process.env.CAPTURE_ADD_MODULE_HERE === "1" && browserName === "chromium") {
+    await toolbarButton(page, "适应窗口").click({ force: true });
+    await page.waitForTimeout(500);
+    await captureStudioScreenshot(page, "docs/screenshots/add-module-five-depth-contract.png");
+    await page.locator(
+      '.bd-tree-select[data-level-id="level-2"][data-node-id="layer-3"]',
+    ).click({ force: true });
+    await page.keyboard.press("ControlOrMeta+Shift+End");
+    await expect(page.locator(".bd-canvas-caption strong")).toHaveText("Layer 3");
+    await toolbarButton(page, "适应窗口").click({ force: true });
+    await page.waitForTimeout(500);
+    await captureStudioScreenshot(page, "docs/screenshots/add-module-five-depth-detail.png");
+    await page.getByRole("navigation", { name: "Diagram view hierarchy" })
+      .getByRole("button", { name: "Five-Level Routing System", exact: true })
+      .click();
+    await expect(page.locator(".bd-canvas-caption strong")).toHaveText("Five-Level Routing System");
+    await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 30_000 });
+  }
+
+  for (const placement of [...placements].reverse()) {
+    await page.keyboard.press("ControlOrMeta+Z");
+    await waitForEditorIdle(page);
+    await expect(diagramNode(page, placement.levelId, placement.nodeId)).toHaveCount(0);
+  }
+  await expect(page.locator(".react-flow__node")).toHaveCount(17);
+});
+
 test("loads the repository-derived five-depth module architecture and reviews every dependency", async ({ page, browserName }) => {
   test.setTimeout(120_000);
   await page.goto("/?design=/examples/architecture-block-studio.block-design.json");

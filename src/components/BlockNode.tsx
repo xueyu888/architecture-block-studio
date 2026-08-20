@@ -295,6 +295,10 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
       data-level-id={data.levelId}
       data-block-id={block.id}
       data-hierarchy-depth={data.hierarchyDepth}
+      data-design-x={data.designPosition.x}
+      data-design-y={data.designPosition.y}
+      data-projected-x={data.projectedPosition.x}
+      data-projected-y={data.projectedPosition.y}
       data-expanded={data.expanded ? "true" : "false"}
       data-resize-editable={data.resizeNode ? "true" : "false"}
       data-tone={block.tone}

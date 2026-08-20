@@ -110,6 +110,7 @@ import {
 } from "../io/saveDesign";
 import {
   alignSelection,
+  authoredProjectionGap,
   baseNodeDimensions,
   distributeSelection,
   layoutBlockDesign,
@@ -1061,29 +1062,51 @@ export function BlockDesignStudio({
   const occupiedModuleRects = useCallback((levelId: string) => layout.nodes
     .filter((node) => node.data.levelId === levelId)
     .map((node) => ({
-      x: node.data.designPosition.x,
-      y: node.data.designPosition.y,
+      x: node.data.projectedPosition.x,
+      y: node.data.projectedPosition.y,
       width: (node.width ?? Number(node.style?.width)) || 0,
       height: (node.height ?? Number(node.style?.height)) || 0,
     })), [layout.nodes]);
+
+  const pointPlacementPolicy = useCallback((
+    levelId: string,
+    occupied: readonly { x: number; y: number }[],
+  ) => {
+    const level = documentRef.current?.levels.find((candidate) => candidate.id === levelId);
+    if (!level) return undefined;
+    const inline = layout.nodes.some((node) => node.data.childLevelProjection?.levelId === levelId);
+    return {
+      gap: authoredProjectionGap(level, expandedLevelIds),
+      minimumOrigin: inline
+        ? {
+            x: occupied.length > 0 ? Math.min(...occupied.map((rect) => rect.x)) : 0,
+            y: occupied.length > 0 ? Math.min(...occupied.map((rect) => rect.y)) : 0,
+          }
+        : undefined,
+    };
+  }, [expandedLevelIds, layout.nodes]);
 
   const previewAddBlockAt = useCallback((
     levelId: string,
     point: { x: number; y: number },
   ) => {
     const currentDocument = documentRef.current;
+    const occupied = occupiedModuleRects(levelId);
+    const policy = pointPlacementPolicy(levelId, occupied);
     if (
       layoutBusy ||
       !currentDocument?.levels.some((level) => level.id === levelId) ||
+      policy === undefined ||
       ![point.x, point.y].every(Number.isFinite)
     ) return undefined;
     const position = findBlockPlacementAtPoint(
       MODULE_DROP_PREVIEW_BLOCK,
-      occupiedModuleRects(levelId),
+      occupied,
       point,
+      policy,
     );
     return { ...position, ...MODULE_DROP_PREVIEW_SIZE };
-  }, [layoutBusy, occupiedModuleRects]);
+  }, [layoutBusy, occupiedModuleRects, pointPlacementPolicy]);
 
   const openAddBlock = useCallback(() => {
     const currentDocument = documentRef.current;
@@ -1224,10 +1247,15 @@ export function BlockDesignStudio({
       documentRef.current?.levels.find((level) => level.id === levelId)?.nodes.map((node) => node.id) ?? [],
     );
     const occupied = occupiedModuleRects(levelId);
+    const policy = pointPlacementPolicy(levelId, occupied);
+    if (!policy) {
+      setCommandError(`Design level ${levelId} is no longer available.`);
+      return undefined;
+    }
     const offset = placement.kind === "offset"
       ? placement.offset
       : placement.kind === "point"
-        ? findDesignFragmentPlacementAtPoint(fragment, occupied, placement.point)
+        ? findDesignFragmentPlacementAtPoint(fragment, occupied, placement.point, policy)
         : findDesignFragmentPlacement(fragment, occupied, placement.ordinal);
     const next = runOperation({
       type: "fragment/insert",
@@ -1247,7 +1275,7 @@ export function BlockDesignStudio({
     ));
     if (placement.kind !== "point") setRevealSelectionRequest((value) => value + 1);
     return insertedNodeIds;
-  }, [occupiedModuleRects, runOperation]);
+  }, [occupiedModuleRects, pointPlacementPolicy, runOperation]);
 
   const copySelectedModules = useCallback(async () => {
     if (!requireAppliedInspectorDraft("copying the selected modules")) return;
@@ -2308,11 +2336,17 @@ export function BlockDesignStudio({
           if (!addBlockLevel || !addBlockRequest) return;
           try {
             const draftBlock = createBlock(values);
-            const position = addBlockRequest.placement.kind === "point"
+            const occupied = occupiedModuleRects(addBlockLevel.id);
+            const policy = pointPlacementPolicy(addBlockLevel.id, occupied);
+            if (addBlockRequest.placement.kind === "point" && !policy) {
+              throw new Error(`Design level ${addBlockLevel.id} is no longer available.`);
+            }
+            const position = addBlockRequest.placement.kind === "point" && policy
               ? findBlockPlacementAtPoint(
                   draftBlock,
-                  occupiedModuleRects(addBlockLevel.id),
+                  occupied,
                   addBlockRequest.placement.point,
+                  policy,
                 )
               : undefined;
             const block = position ? createBlock({ ...values, position }) : draftBlock;

@@ -395,6 +395,10 @@ Canvas 把命中点转换为目标 Level 设计坐标后，Studio 的 `previewAd
 
 该职责划分参考 draw.io [`mxDragSource.dragOver / mouseUp`](https://github.com/jgraph/drawio/blob/dev/src/main/webapp/mxgraph/src/util/mxDragSource.js#L628-L706) 让同一个 `currentDropTarget / currentPoint` 驱动高亮、预览和最终 drop，以及 [`Sidebar.createDropHandler`](https://github.com/jgraph/drawio/blob/dev/src/main/webapp/js/grapheditor/Sidebar.js#L3742-L3899) 的“验证目标 → 对齐 drop point → 一次 import → 选择并按需 reveal”；本项目保留模块对话框、五层 Level、文档 Schema 和无碰撞 placement 的独立业务合同。
 
+层级展开只是工作区投影，不是自动布局命令。`node.layout.position` 始终是模块设计坐标的唯一事实；Layout 只额外发布只读 `projectedPosition`，用确定性、正方向、追加稳定的碰撞投影给展开容器留出空间，不写回文档。已有模块先投影，后来新增的模块只能寻找其右侧或下方第一个满足净空的网格位置，因此不会反向推动已有卡片；含可见展开子层的 Level 使用 `level.layout.spacing + placementGap` 作为投影净空，其余 Level 保持普通 `placementGap`。子层存在负坐标内容时，owner 外框只为完整包住内容而偏移，保存坐标不变；根 Level 仍允许无限设计坐标。内联 Level 的 point placement 以当前投影最小原点为下界，preview、确认提交和重新投影共用同一 policy，所以用户看到的卡片矩形、最终 client bounds 与保存 JSON 在五层任一深度保持同构。
+
+这个边界对应 draw.io [`Sidebar.createDropHandler`](https://github.com/jgraph/drawio/blob/a1f615b7f5a5237da71de2ce2f057b5fa70b0aeb/src/main/webapp/js/grapheditor/Sidebar.js#L3742-L3908) 的“一次 import”，以及 [`mxGraph.cellsAdded`](https://github.com/jgraph/drawio/blob/a1f615b7f5a5237da71de2ce2f057b5fa70b0aeb/src/main/webapp/mxgraph/src/view/mxGraph.js#L4835-L4954) 只在明确父级坐标系内加入图元的职责；自动排列只在显式 layout manager 返回布局时发生，而不是由容器展开隐式触发，见 [`mxLayoutManager.getLayout`](https://github.com/jgraph/drawio/blob/a1f615b7f5a5237da71de2ce2f057b5fa70b0aeb/src/main/webapp/mxgraph/src/view/mxLayoutManager.js#L227-L291)。本项目的 `Regenerate Layout` 是唯一显式 automatic 入口。
+
 `useDialogFocus` 是模态焦点循环、Esc 关闭和默认恢复的共享协议。命令面板执行动作时调用其 `prepareFocusHandoff`：先恢复原调用位置，再禁止卸载清理重复抢焦点，最后让被执行动作决定是否把焦点交给新 Dialog、Messages 或继续留在原位置。普通 Esc / 遮罩关闭仍走默认恢复，不需要每个 Dialog 各自查询 DOM 或复制延时逻辑。
 
 默认 Hierarchy 先由 `projectHierarchyRows` 按文档顺序和当前展开集合生成完整的 document / level / node 行投影；搜索和接口浏览器同样始终从完整文档派生有序结果与总数。三类列表只按 40 行批次把结果渐进挂入 DOM，接近滚动底部时继续加载。批次窗口是可丢弃展示状态，不截断结果、不改变排序、不重置选择，也不生成第二份模块或接口事实；展开只改变完整行投影，不能把已经滚动加载的窗口弹回顶部。

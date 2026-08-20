@@ -7,6 +7,7 @@ import type {
   DesignLevel,
   PortSide,
 } from "../model";
+import { DESIGN_GRID_SIZE } from "./alignmentGuides";
 import { BLOCK_NODE_GEOMETRY, baseNodeDimensions, type NodeDimensions } from "./nodeGeometry";
 import type { LayoutFlowEdge, LayoutFlowNode, LayoutResult } from "./types";
 
@@ -32,6 +33,8 @@ interface Bounds extends Dimensions {
 
 interface PositionedNode extends Dimensions {
   node: BlockNode;
+  designX: number;
+  designY: number;
   x: number;
   y: number;
   expanded: boolean;
@@ -43,6 +46,24 @@ interface ComposedLevel {
   edges: LayoutFlowEdge[];
   bounds: Bounds;
   directNodeIds: Map<string, string>;
+}
+
+interface PlacementRect extends Dimensions {
+  x: number;
+  y: number;
+}
+
+export function authoredProjectionGap(
+  level: DesignLevel,
+  expandedLevelIds: ReadonlySet<string>,
+): number {
+  const hasExpandedChild = level.nodes.some((node) => {
+    const childLevelId = node.hierarchy?.childLevelId;
+    return Boolean(childLevelId && expandedLevelIds.has(childLevelId));
+  });
+  return hasExpandedChild
+    ? level.layout.spacing + BLOCK_NODE_GEOMETRY.placementGap
+    : BLOCK_NODE_GEOMETRY.placementGap;
 }
 
 export type PlacementMode = "authored" | "automatic";
@@ -116,6 +137,64 @@ function boundsOf(nodes: PositionedNode[]): Bounds {
   const maxX = Math.max(...nodes.map((node) => node.x + node.width));
   const maxY = Math.max(...nodes.map((node) => node.y + node.height));
   return { minX, minY, width: maxX - minX, height: maxY - minY };
+}
+
+function placementRectsOverlap(
+  candidate: PlacementRect,
+  occupied: PlacementRect,
+  gap: number,
+): boolean {
+  return candidate.x < occupied.x + occupied.width + gap &&
+    candidate.x + candidate.width + gap > occupied.x &&
+    candidate.y < occupied.y + occupied.height + gap &&
+    candidate.y + candidate.height + gap > occupied.y;
+}
+
+/**
+ * Projects authored rectangles into one collision-free Level view. Existing
+ * projections are append-stable: a later node never moves an earlier node,
+ * and a requested position that already clears the projection stays exact.
+ * Positive-axis displacement also keeps an expanded owner's top-left stable
+ * when only its own right/bottom extent grows.
+ */
+function collisionFreeAuthoredPositions(
+  level: DesignLevel,
+  dimensions: ReadonlyMap<string, Dimensions>,
+  requested: ReadonlyMap<string, { x: number; y: number }>,
+  gap: number,
+): Map<string, { x: number; y: number }> {
+  const projected = new Map<string, { x: number; y: number }>();
+  const occupied: PlacementRect[] = [];
+  const gridCeil = (value: number, grid: number) =>
+    Math.max(0, Math.ceil(value / grid) * grid);
+
+  level.nodes.forEach((node) => {
+    const origin = requested.get(node.id) ?? { x: 0, y: 0 };
+    const size = dimensions.get(node.id) ?? baseNodeDimensions(node);
+    const xOffsets = new Set<number>([0]);
+    const yOffsets = new Set<number>([0]);
+    occupied.forEach((rect) => {
+      xOffsets.add(gridCeil(rect.x + rect.width + gap - origin.x, DESIGN_GRID_SIZE.x));
+      yOffsets.add(gridCeil(rect.y + rect.height + gap - origin.y, DESIGN_GRID_SIZE.y));
+    });
+    const candidates = [...xOffsets].flatMap((x) =>
+      [...yOffsets].map((y) => ({ x: origin.x + x, y: origin.y + y, dx: x, dy: y }))
+    ).sort((left, right) =>
+      left.dx * left.dx + left.dy * left.dy - (right.dx * right.dx + right.dy * right.dy) ||
+      (level.layout.direction === "DOWN" || level.layout.direction === "UP"
+        ? right.dy - left.dy || right.dx - left.dx
+        : right.dx - left.dx || right.dy - left.dy)
+    );
+    const position = candidates.find((candidate) => occupied.every((rect) =>
+      !placementRectsOverlap({ ...candidate, ...size }, rect, gap)
+    ));
+    if (!position) {
+      throw new Error(`Cannot project collision-free authored geometry for ${level.id}/${node.id}.`);
+    }
+    projected.set(node.id, { x: position.x, y: position.y });
+    occupied.push({ x: position.x, y: position.y, ...size });
+  });
+  return projected;
 }
 
 function fallbackNodeOrder(level: DesignLevel): BlockNode[] {
@@ -375,20 +454,45 @@ async function composeLevel(
     );
   });
 
-  const useAutomaticPlacement =
-    options.placementMode === "automatic" || children.size > 0;
-  const positions = useAutomaticPlacement
+  // Expansion is a workspace projection, not a layout command. Keeping the
+  // placement mode explicit preserves one Level coordinate system for
+  // pointer previews, authored JSON, and the post-commit canvas projection.
+  const useAutomaticPlacement = options.placementMode === "automatic";
+  const designPositions = useAutomaticPlacement
     ? await automaticPositions(level, dimensions)
     : authoredPositions(level, dimensions);
+  const requestedPositions = new Map(level.nodes.map((node) => {
+    const designPosition = designPositions.get(node.id) ?? { x: 0, y: 0 };
+    const child = children.get(node.id);
+    return [node.id, !useAutomaticPlacement && child
+      ? {
+          x: designPosition.x + Math.min(0, child.bounds.minX),
+          y: designPosition.y + Math.min(0, child.bounds.minY),
+        }
+      : designPosition] as const;
+  }));
+  const projectedPositions = !useAutomaticPlacement && children.size > 0
+    ? collisionFreeAuthoredPositions(
+        level,
+        dimensions,
+        requestedPositions,
+        authoredProjectionGap(level, options.expandedLevelIds),
+      )
+    : requestedPositions;
   const positioned: PositionedNode[] = level.nodes.map((node) => {
     const dimension = dimensions.get(node.id) ?? baseNodeDimensions(node);
-    const position = positions.get(node.id) ?? { x: 0, y: 0 };
+    const designPosition = designPositions.get(node.id) ?? { x: 0, y: 0 };
+    const child = children.get(node.id);
+    const position = projectedPositions.get(node.id) ??
+      requestedPositions.get(node.id) ?? designPosition;
     return {
       node,
       ...dimension,
+      designX: designPosition.x,
+      designY: designPosition.y,
       ...position,
-      expanded: children.has(node.id),
-      child: children.get(node.id),
+      expanded: Boolean(child),
+      child,
     };
   });
   const bounds = boundsOf(positioned);
@@ -437,7 +541,8 @@ async function composeLevel(
         levelId: level.id,
         expanded: item.expanded,
         hierarchyDepth,
-        designPosition: { x: item.x, y: item.y },
+        designPosition: { x: item.designX, y: item.designY },
+        projectedPosition: { x: item.x, y: item.y },
         positionEditable: !useAutomaticPlacement,
         childLevelProjection,
       },

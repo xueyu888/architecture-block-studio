@@ -5,7 +5,8 @@ import {
   createBlock,
   createDesignLevel,
 } from "../../src/editor";
-import { layoutBlockDesign } from "../../src/layout";
+import { authoredProjectionGap, layoutBlockDesign } from "../../src/layout";
+import { fiveLevelRoutingDesignDocument } from "../fixtures/fiveLevelRoutingDesign";
 import { hierarchicalDesign } from "./designFixture";
 
 describe("hierarchy view root projection", () => {
@@ -55,6 +56,156 @@ describe("hierarchy view root projection", () => {
       designOrigin: { x: 72, y: 68 },
       dropBounds: { x: 2, y: 32, width: 382, height: 232 },
     });
+  });
+
+  it("keeps one authored coordinate system through five expanded hierarchy layers", async () => {
+    const document = fiveLevelRoutingDesignDocument();
+    const layout = await layoutBlockDesign(document, {
+      expandedLevelIds: new Set(["level-1", "level-2", "level-3", "level-4", "level-5"]),
+      placementMode: "authored",
+      rootLevelId: "system",
+    });
+
+    for (const level of document.levels) {
+      for (const node of level.nodes) {
+        const projections = layout.nodes.filter((candidate) =>
+          candidate.data.levelId === level.id && candidate.data.block.id === node.id
+        );
+        expect(projections, `${level.id}/${node.id}`).toHaveLength(1);
+        expect(projections[0].data.designPosition, `${level.id}/${node.id}`).toEqual(
+          node.layout.position,
+        );
+        expect(projections[0].data.positionEditable, `${level.id}/${node.id}`).toBe(true);
+      }
+    }
+  });
+
+  it("does not let expansion override a newly authored position in an ancestor Level", async () => {
+    const source = fiveLevelRoutingDesignDocument();
+    const requestedPosition = { x: 10_000, y: 224 };
+    const document = applyDesignOperation(source, {
+      type: "node/add",
+      levelId: "level-2",
+      node: createBlock({
+        id: "review-gate",
+        title: "Review Gate",
+        position: requestedPosition,
+      }),
+    });
+    const layout = await layoutBlockDesign(document, {
+      expandedLevelIds: new Set(["level-1", "level-2", "level-3", "level-4", "level-5"]),
+      placementMode: "authored",
+      rootLevelId: "system",
+    });
+    const projection = layout.nodes.find((candidate) =>
+      candidate.data.levelId === "level-2" && candidate.data.block.id === "review-gate"
+    );
+    const owner = layout.nodes.find((candidate) =>
+      candidate.data.childLevelProjection?.levelId === "level-2"
+    );
+    const designOrigin = owner?.data.childLevelProjection?.designOrigin;
+
+    expect(projection?.data.designPosition).toEqual(requestedPosition);
+    expect(designOrigin).toBeDefined();
+    expect(projection?.position).toEqual({
+      x: requestedPosition.x + designOrigin!.x,
+      y: requestedPosition.y + designOrigin!.y,
+    });
+    expect(projection?.data.positionEditable).toBe(true);
+  });
+
+  it("encloses negative authored geometry without changing document coordinates", async () => {
+    let beforeDocument = hierarchicalDesign();
+    beforeDocument = applyDesignOperation(beforeDocument, {
+      type: "node/move",
+      levelId: "parent-internal",
+      nodeId: "child",
+      position: { x: 160, y: 96 },
+    });
+    const before = await layoutBlockDesign(beforeDocument, {
+      expandedLevelIds: new Set(["parent-internal"]),
+      placementMode: "authored",
+      rootLevelId: "system",
+    });
+    const beforeOwner = before.nodes.find((node) => node.data.block.id === "parent");
+    const beforeChild = before.nodes.find((node) => node.data.block.id === "child");
+
+    const afterDocument = applyDesignOperation(beforeDocument, {
+      type: "node/add",
+      levelId: "parent-internal",
+      node: createBlock({
+        id: "negative-review",
+        title: "Negative Review",
+        position: { x: -64, y: -32 },
+      }),
+    });
+    const after = await layoutBlockDesign(afterDocument, {
+      expandedLevelIds: new Set(["parent-internal"]),
+      placementMode: "authored",
+      rootLevelId: "system",
+    });
+    const afterOwner = after.nodes.find((node) => node.data.block.id === "parent");
+    const afterChild = after.nodes.find((node) => node.data.block.id === "child");
+    const afterNegative = after.nodes.find((node) => node.data.block.id === "negative-review");
+
+    const absoluteOrigin = (owner: NonNullable<typeof beforeOwner>) => ({
+      x: owner.position.x + owner.data.childLevelProjection!.designOrigin.x,
+      y: owner.position.y + owner.data.childLevelProjection!.designOrigin.y,
+    });
+    const absoluteChild = (
+      owner: NonNullable<typeof beforeOwner>,
+      child: NonNullable<typeof beforeChild>,
+    ) => ({ x: owner.position.x + child.position.x, y: owner.position.y + child.position.y });
+
+    expect(absoluteOrigin(beforeOwner!)).toEqual({ x: -88, y: -28 });
+    expect(absoluteOrigin(afterOwner!)).toEqual({ x: 72, y: 68 });
+    expect(absoluteChild(beforeOwner!, beforeChild!)).toEqual({ x: 72, y: 68 });
+    expect(absoluteChild(afterOwner!, afterChild!)).toEqual({ x: 232, y: 164 });
+    expect(afterNegative?.data.designPosition).toEqual({ x: -64, y: -32 });
+    expect(absoluteChild(afterOwner!, afterNegative!)).toEqual({ x: 8, y: 36 });
+    expect(afterOwner?.data.designPosition).toEqual(beforeOwner?.data.designPosition);
+    expect(afterOwner?.position).toEqual({ x: -64, y: -32 });
+  });
+
+  it("projects expanded authored siblings without overlap and keeps later inserts append-stable", async () => {
+    let document = hierarchicalDesign();
+    document = applyDesignOperation(document, {
+      type: "node/add",
+      levelId: "system",
+      node: createBlock({ id: "sibling", title: "Sibling", position: { x: 100, y: 0 } }),
+    });
+    const options = {
+      expandedLevelIds: new Set(["parent-internal"]),
+      placementMode: "authored" as const,
+      rootLevelId: "system",
+    };
+    const before = await layoutBlockDesign(document, options);
+    const beforeParent = before.nodes.find((node) => node.data.block.id === "parent")!;
+    const beforeSibling = before.nodes.find((node) => node.data.block.id === "sibling")!;
+    const gap = authoredProjectionGap(document.levels[0], options.expandedLevelIds);
+    const separated =
+      beforeParent.data.projectedPosition.x + beforeParent.width! + gap <= beforeSibling.data.projectedPosition.x ||
+      beforeSibling.data.projectedPosition.x + beforeSibling.width! + gap <= beforeParent.data.projectedPosition.x ||
+      beforeParent.data.projectedPosition.y + beforeParent.height! + gap <= beforeSibling.data.projectedPosition.y ||
+      beforeSibling.data.projectedPosition.y + beforeSibling.height! + gap <= beforeParent.data.projectedPosition.y;
+    expect(separated).toBe(true);
+    expect(beforeSibling.data.projectedPosition).not.toEqual(beforeSibling.data.designPosition);
+
+    const appendedPosition = { x: 2_000, y: 0 };
+    const appended = applyDesignOperation(document, {
+      type: "node/add",
+      levelId: "system",
+      node: createBlock({ id: "appended", title: "Appended", position: appendedPosition }),
+    });
+    const after = await layoutBlockDesign(appended, options);
+    const afterParent = after.nodes.find((node) => node.data.block.id === "parent")!;
+    const afterSibling = after.nodes.find((node) => node.data.block.id === "sibling")!;
+    const afterAppended = after.nodes.find((node) => node.data.block.id === "appended")!;
+
+    expect(afterParent.data.projectedPosition).toEqual(beforeParent.data.projectedPosition);
+    expect(afterSibling.data.projectedPosition).toEqual(beforeSibling.data.projectedPosition);
+    expect(afterAppended.data.designPosition).toEqual(appendedPosition);
+    expect(afterAppended.data.projectedPosition).toEqual(appendedPosition);
   });
 
   it("projects a child level as a complete graph without mutating the document entry", async () => {
