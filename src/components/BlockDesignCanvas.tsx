@@ -110,7 +110,7 @@ import {
   type CanvasPointHitTarget,
   type CanvasTraversalTarget,
 } from "./canvasSelection";
-import type { CanvasContextMenuIntent } from "./contextMenuModel";
+import type { CanvasContextMenuIntent, CanvasContextMenuTarget } from "./contextMenuModel";
 import type { CanvasFlowEdge, CanvasFlowNode, RouteHandleFocusTarget } from "./canvasTypes";
 import { InterfaceEdgeComponent } from "./InterfaceEdge";
 import { Tooltip } from "./Tooltip";
@@ -1883,13 +1883,35 @@ const CanvasInner = memo(function CanvasInner({
     });
   }, [baseNodes, routedEdges, store]);
   const requestCanvasContextMenu = useCallback((
-    target: DiagramSelectionRef,
+    target: CanvasContextMenuTarget,
     anchor: { x: number; y: number },
     focusFirst: boolean,
   ) => {
-    const nextSelection = selectionForCanvasContext(selectionRef.current, target);
+    const levelId = target.levelId;
+    const nextSelection = target.kind === "canvas"
+      ? { kind: "level" as const, levelId }
+      : selectionForCanvasContext(selectionRef.current, target);
+    const flowPoint = screenToFlowPosition(anchor);
+    const levelNode = baseNodes.find((node) => node.data.levelId === levelId);
+    const renderedLevelNode = levelNode ? store.getState().nodeLookup.get(levelNode.id) : undefined;
+    const levelOrigin = renderedLevelNode
+      ? {
+          x: renderedLevelNode.internals.positionAbsolute.x - levelNode!.data.designPosition.x,
+          y: renderedLevelNode.internals.positionAbsolute.y - levelNode!.data.designPosition.y,
+        }
+      : levelId === rootLevelId
+        ? { x: 0, y: 0 }
+        : undefined;
+    if (!levelOrigin) {
+      setCanvasAnnouncement(`Could not map the context point into design level ${levelId}.`);
+      return false;
+    }
     const accepted = onOpenContextMenu({
       anchor,
+      insertionPoint: {
+        x: flowPoint.x - levelOrigin.x,
+        y: flowPoint.y - levelOrigin.y,
+      },
       target,
       selection: nextSelection,
       focusFirst,
@@ -1898,13 +1920,15 @@ const CanvasInner = memo(function CanvasInner({
       setCanvasAnnouncement(
         nextSelection.kind === "multiple"
           ? `Opened actions for ${nextSelection.items.length} selected diagram objects.`
-          : target.kind === "node"
+          : target.kind === "canvas"
+            ? "Opened canvas actions."
+            : target.kind === "node"
             ? "Opened module actions."
             : "Opened interface actions.",
       );
     }
     return accepted;
-  }, [onOpenContextMenu]);
+  }, [baseNodes, onOpenContextMenu, rootLevelId, screenToFlowPosition, store]);
   const onCanvasPointerUpCapture = useCallback((event: ReactPointerEvent) => {
     const contextGesture = contextClickGestureRef.current;
     if (contextGesture?.pointerId === event.pointerId) {
@@ -1920,13 +1944,19 @@ const CanvasInner = memo(function CanvasInner({
       }
       const top = canvasPointHitSelections({ x: event.clientX, y: event.clientY })[0];
       if (!top) {
-        if (root) root.dataset.contextGestureOutcome = "empty";
+        event.preventDefault();
+        const accepted = requestCanvasContextMenu(
+          { kind: "canvas", levelId: rootLevelId },
+          { x: event.clientX, y: event.clientY },
+          false,
+        );
+        if (root) root.dataset.contextGestureOutcome = accepted ? "menu" : "rejected";
         return;
       }
       event.preventDefault();
       const accepted = requestCanvasContextMenu(
         top.item,
-        { x: event.clientX + 1, y: event.clientY + 1 },
+        { x: event.clientX, y: event.clientY },
         false,
       );
       if (root) root.dataset.contextGestureOutcome = accepted ? "menu" : "rejected";
@@ -2091,6 +2121,21 @@ const CanvasInner = memo(function CanvasInner({
     );
     const flowElementFocused = target === containingFlowElement;
     const canvasRootFocused = target === canvasRoot || target.classList.contains("bd-react-flow");
+    if (
+      canvasRootFocused &&
+      (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey))
+    ) {
+      const bounds = canvasRoot?.getBoundingClientRect();
+      if (!bounds) return;
+      event.preventDefault();
+      event.stopPropagation();
+      requestCanvasContextMenu(
+        { kind: "canvas", levelId: rootLevelId },
+        { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 },
+        true,
+      );
+      return;
+    }
     if (
       flowElementFocused &&
       (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey))
@@ -2344,6 +2389,7 @@ const CanvasInner = memo(function CanvasInner({
     onMoveNodes,
     onResizeNode,
     requestCanvasContextMenu,
+    rootLevelId,
     routedEdges,
     store,
   ]);

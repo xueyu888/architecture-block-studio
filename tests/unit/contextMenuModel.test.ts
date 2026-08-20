@@ -13,14 +13,26 @@ describe("canvas context menu model", () => {
     expect(contextMenuCommandGroups(node, node)).toEqual([
       ["enterHierarchy"],
       ["addPort", "addChildDesign"],
-      ["copySelection", "cutSelection", "duplicateSelection", "deleteSelection"],
+      ["copySelection", "cutSelection", "pasteHere", "duplicateSelection", "deleteSelection"],
       ["selectDirectInterfaces", "selectDirectNeighborhood"],
       ["fitSelection"],
     ]);
     expect(contextMenuCommandGroups(connection, connection)).toEqual([
-      ["reconnectConnection", "deleteSelection"],
+      ["reconnectConnection", "pasteHere", "deleteSelection"],
       ["fitSelection"],
     ]);
+  });
+
+  test("projects a canvas-only menu without treating the insertion point as selection", () => {
+    const canvas = { kind: "canvas" as const, levelId: "root" };
+    const level = { kind: "level" as const, levelId: "root" };
+
+    expect(contextMenuCommandGroups(level, canvas)).toEqual([
+      ["pasteHere"],
+      ["addBlock"],
+      ["selectAll", "fitDesign"],
+    ]);
+    expect(contextMenuAccessibleName(level, canvas)).toBe("Canvas actions");
   });
 
   test("adds arrangement only for an all-module multi-selection", () => {

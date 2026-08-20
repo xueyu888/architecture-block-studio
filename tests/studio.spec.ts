@@ -3014,6 +3014,65 @@ test("expands five hierarchy layers and audits every visible route and pair", as
   });
   await page.keyboard.press("Escape");
 
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => { throw new DOMException("Denied by test host", "NotAllowedError"); },
+      },
+    });
+  });
+  const levelFiveSource = diagramNode(page, "level-5", "target-00");
+  const levelFiveAnchor = diagramNode(page, "level-5", "target-01");
+  await levelFiveSource.click({ force: true });
+  await page.keyboard.press("ControlOrMeta+C");
+  await rightClickLocator(page, levelFiveAnchor);
+  const nestedContextMenu = page.getByRole("menu", { name: "Module actions" });
+  await expect(nestedContextMenu.getByRole("menuitem", { name: "Paste Here", exact: true }))
+    .not.toHaveAttribute("aria-disabled", "true");
+  await nestedContextMenu.getByRole("menuitem", { name: "Paste Here", exact: true }).click();
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(18);
+  await expect(diagramNode(page, "level-5", "target-00-2")).toHaveClass(/selected/);
+  await expect(page.locator(".bd-command-notice")).toContainText(
+    "Pasted 1 module at the requested canvas position into Layer 5",
+  );
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    microSegments: [],
+    sharedRoutes: [],
+  });
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 20,
+    auditedPairCount: 190,
+    expectedPairCount: 190,
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  const nestedDownloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const nestedSavedPath = await (await nestedDownloadPromise).path();
+  expect(nestedSavedPath).not.toBeNull();
+  const nestedSaved = JSON.parse(await readFile(nestedSavedPath!, "utf8"));
+  const savedLevelFive = nestedSaved.levels.find((level: { id: string }) => level.id === "level-5");
+  const pastedLevelFiveNode = savedLevelFive.nodes.find((node: { id: string }) => node.id === "target-00-2");
+  const anchorLevelFiveNode = savedLevelFive.nodes.find((node: { id: string }) => node.id === "target-01");
+  expect(pastedLevelFiveNode).toBeDefined();
+  expect(pastedLevelFiveNode.layout.position).not.toEqual(anchorLevelFiveNode.layout.position);
+  if (process.env.CAPTURE_PASTE_HERE === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/paste-here-level-five.png");
+  }
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(page.locator(".react-flow__node")).toHaveCount(17);
+  await expect(diagramNode(page, "level-5", "target-00-2")).toHaveCount(0);
+
   await page.locator(
     '.bd-tree-select[data-level-id="level-5"][data-node-id="target-00"]',
   ).click({ force: true });
@@ -6791,6 +6850,120 @@ test("keeps selection, Space pan, button pan, wheel pan, and modifier zoom ortho
   await moduleFilter.fill("");
 });
 
+test("pastes a copied module at the requested empty-canvas design point", async ({ page, browserName }) => {
+  test.setTimeout(120_000);
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => { throw new DOMException("Denied by test host", "NotAllowedError"); },
+      },
+    });
+  });
+  const source = flowNode(page, "system::agent-ui");
+  await source.click({ force: true });
+  await page.keyboard.press("ControlOrMeta+C");
+  await expect(page.locator(".bd-command-notice")).toContainText("Copied 1 module inside this workspace");
+
+  const requested = await page.evaluate(() => {
+    const canvas = document.querySelector<HTMLElement>(".bd-react-flow");
+    const viewport = document.querySelector<HTMLElement>(".react-flow__viewport");
+    const sourceNode = document.querySelector<HTMLElement>(
+      '.react-flow__node[data-id="system::agent-ui"]',
+    );
+    if (!canvas || !viewport || !sourceNode) throw new Error("Canvas geometry is unavailable.");
+    const canvasBounds = canvas.getBoundingClientRect();
+    const sourceBounds = sourceNode.getBoundingClientRect();
+    const matrix = new DOMMatrix(getComputedStyle(viewport).transform);
+    const zoom = matrix.a;
+    const occupied = [...document.querySelectorAll<HTMLElement>(".react-flow__node")]
+      .map((node) => node.getBoundingClientRect());
+    const gap = 24 * zoom;
+    for (let y = canvasBounds.bottom - 72; y >= canvasBounds.top + 72; y -= 28) {
+      for (let x = canvasBounds.right - 80; x >= canvasBounds.left + 80; x -= 28) {
+        const design = {
+          x: Math.round(((x - canvasBounds.left - matrix.e) / zoom) / 32) * 32,
+          y: Math.round(((y - canvasBounds.top - matrix.f) / zoom) / 32) * 32,
+        };
+        const rendered = {
+          left: canvasBounds.left + matrix.e + design.x * zoom,
+          top: canvasBounds.top + matrix.f + design.y * zoom,
+          right: canvasBounds.left + matrix.e + design.x * zoom + sourceBounds.width,
+          bottom: canvasBounds.top + matrix.f + design.y * zoom + sourceBounds.height,
+        };
+        const collides = occupied.some((rect) =>
+          rendered.left < rect.right + gap && rendered.right + gap > rect.left &&
+          rendered.top < rect.bottom + gap && rendered.bottom + gap > rect.top);
+        const blockedAtPointer = document.elementsFromPoint(x, y).some((element) =>
+          Boolean(element.closest(
+            ".react-flow__node, .react-flow__edge, .react-flow__controls, .react-flow__minimap, .bd-canvas-detail-panel",
+          )));
+        if (!collides && !blockedAtPointer) return { client: { x, y }, design };
+      }
+    }
+    throw new Error("No clear visible Paste Here point was found.");
+  });
+
+  const canvas = page.locator(".bd-react-flow");
+  await canvas.focus();
+  await page.keyboard.press("Shift+F10");
+  const keyboardCanvasMenu = page.getByRole("menu", { name: "Canvas actions" });
+  await expect(keyboardCanvasMenu).toBeVisible();
+  await expect(keyboardCanvasMenu.getByRole("menuitem").first()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(keyboardCanvasMenu).toHaveCount(0);
+  await expect(canvas).toBeFocused();
+
+  await page.mouse.click(requested.client.x, requested.client.y, { button: "right" });
+  const canvasMenu = page.getByRole("menu", { name: "Canvas actions" });
+  await expect(canvasMenu).toBeVisible();
+  await expect(canvasMenu.getByRole("menuitem")).toHaveCount(4);
+  await expect(canvasMenu.getByRole("menuitem", { name: "Paste Here", exact: true }))
+    .not.toHaveAttribute("aria-disabled", "true");
+  expect(await textContrastIssues(page, ".bd-context-menu")).toEqual([]);
+  await canvasMenu.getByRole("menuitem", { name: "Paste Here", exact: true }).click();
+  await waitForEditorIdle(page);
+  await expect(flowNode(page, "system::agent-ui-2")).toHaveClass(/selected/);
+  await expect(page.locator(".bd-command-notice")).toContainText(
+    "Pasted 1 module at the requested canvas position into System Overview",
+  );
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const savedPath = await (await downloadPromise).path();
+  expect(savedPath).not.toBeNull();
+  const saved = JSON.parse(await readFile(savedPath!, "utf8"));
+  const system = saved.levels.find((level: { id: string }) => level.id === "system");
+  expect(system.nodes.find((node: { id: string }) => node.id === "agent-ui-2").layout.position)
+    .toEqual(requested.design);
+  expect(await geometryIssues(page)).toEqual({
+    collisions: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+    boundaryEscapes: [],
+    endpointIntrusions: [],
+    microSegments: [],
+    sharedRoutes: [],
+  });
+  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+    auditedRouteCount: 10,
+    auditedPairCount: 45,
+    expectedPairCount: 45,
+    perRouteIssues: [],
+    parallelConflicts: [],
+    unbridgedCrossings: [],
+    orphanJumps: [],
+  });
+  if (process.env.CAPTURE_PASTE_HERE === "1" && browserName === "chromium") {
+    await captureStudioScreenshot(page, "docs/screenshots/paste-here.png");
+  }
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(flowNode(page, "system::agent-ui-2")).toHaveCount(0);
+  await expect(page.locator(".react-flow__node")).toHaveCount(7);
+});
+
 test("keeps object context actions and right-button canvas pan mutually exclusive", async ({ page, browserName }) => {
   const canvas = page.locator(".bd-react-flow");
   const agent = flowNode(page, "system::agent-ui");
@@ -6802,7 +6975,7 @@ test("keeps object context actions and right-button canvas pan mutually exclusiv
   await expect(canvas).toHaveAttribute("data-context-gesture-outcome", "menu");
   await expect(agent).toHaveClass(/selected/);
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("Agent UI");
-  await expect(moduleMenu.getByRole("menuitem")).toHaveCount(10);
+  await expect(moduleMenu.getByRole("menuitem")).toHaveCount(11);
   await expect(moduleMenu.getByRole("menuitem", { name: /Enter Module/ }))
     .toHaveAttribute("aria-disabled", "true");
   await expect(moduleMenu.getByRole("menuitem", { name: /^Create Child Design/ }))
@@ -6863,7 +7036,7 @@ test("keeps object context actions and right-button canvas pan mutually exclusiv
   await expect(interfaceMenu).toBeVisible();
   await expect(edge).toHaveClass(/selected/);
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("Session Command RPC");
-  await expect(interfaceMenu.getByRole("menuitem")).toHaveCount(3);
+  await expect(interfaceMenu.getByRole("menuitem")).toHaveCount(4);
   await page.keyboard.press("Escape");
 
   await agent.click({ force: true });

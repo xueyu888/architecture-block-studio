@@ -21,6 +21,7 @@ export type StudioCommandId =
   | "copySelection"
   | "cutSelection"
   | "paste"
+  | "pasteHere"
   | "duplicateSelection"
   | "deleteSelection"
   | "alignSelectionLeft"

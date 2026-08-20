@@ -8,7 +8,9 @@ import {
 } from "../../src/editor";
 import {
   DESIGN_FRAGMENT_PLACEMENT_GRID,
+  designFragmentBounds,
   findDesignFragmentPlacement,
+  findDesignFragmentPlacementAtPoint,
 } from "../../src/studio/fragmentPlacement";
 import {
   applyHistoryOperation,
@@ -131,6 +133,49 @@ describe("self-contained design fragments", () => {
     expect(firstOffset.y % DESIGN_FRAGMENT_PLACEMENT_GRID).toBe(0);
     expect(firstOffset).not.toEqual({ x: DESIGN_FRAGMENT_PLACEMENT_GRID, y: 0 });
     expect(document.levels[0].nodes).toHaveLength(2);
+  });
+
+  test("anchors Paste Here at the snapped point and finds the nearest clear placement", () => {
+    const fragment = createDesignFragment(connectedDesign(), "system", ["source", "target"], rootPositions);
+    const bounds = designFragmentBounds(fragment);
+    const point = { x: 1000, y: 700 };
+    const exact = findDesignFragmentPlacementAtPoint(fragment, [], point);
+
+    expect({ x: bounds.x + exact.x, y: bounds.y + exact.y }).toEqual({ x: 992, y: 704 });
+
+    const occupied = [{
+      x: bounds.x + exact.x,
+      y: bounds.y + exact.y,
+      width: bounds.width,
+      height: bounds.height,
+    }];
+    const avoided = findDesignFragmentPlacementAtPoint(fragment, occupied, point);
+    expect(avoided).not.toEqual(exact);
+    expect(findDesignFragmentPlacementAtPoint(fragment, occupied, point)).toEqual(avoided);
+    const avoidedBounds = {
+      x: bounds.x + avoided.x,
+      y: bounds.y + avoided.y,
+      width: bounds.width,
+      height: bounds.height,
+    };
+    expect(
+      avoidedBounds.x + avoidedBounds.width + 24 <= occupied[0].x ||
+      avoidedBounds.x >= occupied[0].x + occupied[0].width + 24 ||
+      avoidedBounds.y + avoidedBounds.height + 24 <= occupied[0].y ||
+      avoidedBounds.y >= occupied[0].y + occupied[0].height + 24
+    ).toBe(true);
+    expect(() => findDesignFragmentPlacementAtPoint(fragment, [], { x: Number.NaN, y: 0 }))
+      .toThrow("finite coordinates");
+
+    const denseBounds = [{ x: -10_000, y: -10_000, width: 20_000, height: 20_000 }];
+    const outside = findDesignFragmentPlacementAtPoint(fragment, denseBounds, { x: 0, y: 0 });
+    const outsideOrigin = { x: bounds.x + outside.x, y: bounds.y + outside.y };
+    expect(
+      outsideOrigin.x >= 10_000 + 24 ||
+      outsideOrigin.x + bounds.width + 24 <= -10_000 ||
+      outsideOrigin.y >= 10_000 + 24 ||
+      outsideOrigin.y + bounds.height + 24 <= -10_000
+    ).toBe(true);
   });
 
   test("duplicates an owned hierarchy as one self-contained level tree", () => {

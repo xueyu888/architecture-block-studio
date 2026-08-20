@@ -1,10 +1,15 @@
 import type { StudioCommandId } from "../studio/commands";
 import { diagramSelectionItems, type DiagramSelectionRef, type SelectionRef } from "../studio/selection";
 
+export type CanvasContextMenuTarget =
+  | DiagramSelectionRef
+  | { kind: "canvas"; levelId: string };
+
 export interface CanvasContextMenuRequest {
   revision: number;
   anchor: { x: number; y: number };
-  target: DiagramSelectionRef;
+  insertionPoint: { x: number; y: number };
+  target: CanvasContextMenuTarget;
   selection: SelectionRef;
   focusFirst: boolean;
 }
@@ -24,14 +29,20 @@ export interface ContextMenuSize {
 const NODE_COMMAND_GROUPS: readonly (readonly StudioCommandId[])[] = [
   ["enterHierarchy"],
   ["addPort", "addChildDesign"],
-  ["copySelection", "cutSelection", "duplicateSelection", "deleteSelection"],
+  ["copySelection", "cutSelection", "pasteHere", "duplicateSelection", "deleteSelection"],
   ["selectDirectInterfaces", "selectDirectNeighborhood"],
   ["fitSelection"],
 ];
 
 const CONNECTION_COMMAND_GROUPS: readonly (readonly StudioCommandId[])[] = [
-  ["reconnectConnection", "deleteSelection"],
+  ["reconnectConnection", "pasteHere", "deleteSelection"],
   ["fitSelection"],
+];
+
+const CANVAS_COMMAND_GROUPS: readonly (readonly StudioCommandId[])[] = [
+  ["pasteHere"],
+  ["addBlock"],
+  ["selectAll", "fitDesign"],
 ];
 
 const MULTIPLE_EDIT_COMMANDS: readonly StudioCommandId[] = [
@@ -68,8 +79,9 @@ const MULTIPLE_DEPENDENCY_COMMANDS: readonly StudioCommandId[] = [
  */
 export function contextMenuCommandGroups(
   selection: SelectionRef,
-  target: DiagramSelectionRef,
+  target: CanvasContextMenuTarget,
 ): readonly (readonly StudioCommandId[])[] {
+  if (target.kind === "canvas") return CANVAS_COMMAND_GROUPS;
   const selectedItems = diagramSelectionItems(selection);
   if (selectedItems.length <= 1) {
     return target.kind === "node" ? NODE_COMMAND_GROUPS : CONNECTION_COMMAND_GROUPS;
@@ -84,8 +96,9 @@ export function contextMenuCommandGroups(
 
 export function contextMenuAccessibleName(
   selection: SelectionRef,
-  target: DiagramSelectionRef,
+  target: CanvasContextMenuTarget,
 ): string {
+  if (target.kind === "canvas") return "Canvas actions";
   if (diagramSelectionItems(selection).length > 1) return "Selected diagram objects actions";
   return target.kind === "node" ? "Module actions" : "Interface actions";
 }

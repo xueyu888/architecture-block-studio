@@ -57,6 +57,32 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     await window.keyboard.press("Control+Z");
     await expect(agentUi.locator(".bd-block-heading h3")).toHaveText("Agent UI");
     await expect(window.locator(".bd-statusbar")).toContainText("Saved");
+
+    await agentUi.click({ force: true });
+    await window.keyboard.press("Control+C");
+    const project = window.locator('.react-flow__node[data-id="system::project"]');
+    const projectBounds = await project.boundingBox();
+    expect(projectBounds).not.toBeNull();
+    await window.mouse.click(
+      projectBounds!.x + projectBounds!.width - 12,
+      projectBounds!.y + Math.min(42, projectBounds!.height / 2),
+      { button: "right" },
+    );
+    const moduleMenu = window.getByRole("menu", { name: "Module actions" });
+    await expect(moduleMenu).toBeVisible();
+    await moduleMenu.getByRole("menuitem", { name: "Paste Here", exact: true }).click();
+    await expect(window.locator(".react-flow__node")).toHaveCount(8);
+    await expect(window.locator('.react-flow__node[data-id="system::agent-ui-2"]')).toHaveClass(/selected/);
+    await expect(window.locator(".bd-command-notice")).toContainText(
+      "Pasted 1 module at the requested canvas position into System Overview",
+    );
+    await window.screenshot({
+      path: resolve(screenshotDirectory, "windows-paste-here.png"),
+      animations: "disabled",
+    });
+    await window.keyboard.press("Control+Z");
+    await expect(window.locator(".react-flow__node")).toHaveCount(7);
+    await expect(window.locator(".bd-statusbar")).toContainText("Saved");
     await window.getByRole("button", { name: "Fit design" }).click({ force: true });
     await window.waitForTimeout(320);
 

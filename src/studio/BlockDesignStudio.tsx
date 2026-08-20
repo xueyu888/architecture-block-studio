@@ -132,7 +132,10 @@ import {
   type DirectConnectionDirection,
 } from "../model";
 import type { StudioCommandAvailability, StudioCommands } from "./commands";
-import { findDesignFragmentPlacement } from "./fragmentPlacement";
+import {
+  findDesignFragmentPlacement,
+  findDesignFragmentPlacementAtPoint,
+} from "./fragmentPlacement";
 import {
   connectionForSelection,
   directInterfaceSelectionExpansion,
@@ -214,6 +217,11 @@ type ArrangementSelection =
 type ArrangementRequest =
   | { kind: "align"; alignment: SelectionAlignment }
   | { kind: "distribute"; direction: SelectionDistribution };
+
+type FragmentInsertionPlacement =
+  | { kind: "cascade"; ordinal: number }
+  | { kind: "offset"; offset: { x: number; y: number } }
+  | { kind: "point"; point: { x: number; y: number } };
 
 type ConnectionEndpointDialogRequest =
   | { kind: "create"; levelId: string }
@@ -566,6 +574,13 @@ export function BlockDesignStudio({
 
   useEffect(() => {
     if (!canvasContextMenu) return;
+    if (canvasContextMenu.target.kind === "canvas") {
+      const levelExists = document?.levels.some((level) => level.id === canvasContextMenu.target.levelId);
+      if (!levelExists || selection.kind !== "level" || selection.levelId !== canvasContextMenu.target.levelId) {
+        setCanvasContextMenu(undefined);
+      }
+      return;
+    }
     const targetKey = diagramSelectionKey(canvasContextMenu.target);
     const targetStillSelected = diagramSelectionItems(selection)
       .some((item) => diagramSelectionKey(item) === targetKey);
@@ -1127,24 +1142,24 @@ export function BlockDesignStudio({
   const insertFragment = useCallback((
     fragment: DesignFragment,
     levelId: string,
-    insertionIndex: number,
-    explicitOffset?: { x: number; y: number },
+    placement: FragmentInsertionPlacement,
   ): readonly string[] | undefined => {
     const before = new Set(
       documentRef.current?.levels.find((level) => level.id === levelId)?.nodes.map((node) => node.id) ?? [],
     );
-    const offset = explicitOffset ?? findDesignFragmentPlacement(
-      fragment,
-      layout.nodes
-        .filter((node) => node.data.levelId === levelId)
-        .map((node) => ({
-          x: node.data.designPosition.x,
-          y: node.data.designPosition.y,
-          width: (node.width ?? Number(node.style?.width)) || 0,
-          height: (node.height ?? Number(node.style?.height)) || 0,
-        })),
-      insertionIndex,
-    );
+    const occupied = layout.nodes
+      .filter((node) => node.data.levelId === levelId)
+      .map((node) => ({
+        x: node.data.designPosition.x,
+        y: node.data.designPosition.y,
+        width: (node.width ?? Number(node.style?.width)) || 0,
+        height: (node.height ?? Number(node.style?.height)) || 0,
+      }));
+    const offset = placement.kind === "offset"
+      ? placement.offset
+      : placement.kind === "point"
+        ? findDesignFragmentPlacementAtPoint(fragment, occupied, placement.point)
+        : findDesignFragmentPlacement(fragment, occupied, placement.ordinal);
     const next = runOperation({
       type: "fragment/insert",
       levelId,
@@ -1203,11 +1218,21 @@ export function BlockDesignStudio({
     });
   }, [establishDesignClipboard, fragmentSelection, requireAppliedInspectorDraft, runOperation, selectedFragment]);
 
-  const pasteDesignFragment = useCallback(async () => {
+  const pasteDesignFragment = useCallback(async (target?: {
+    levelId: string;
+    point: { x: number; y: number };
+  }) => {
     if (!requireAppliedInspectorDraft("pasting modules")) return;
     const currentDocument = documentRef.current;
     if (!currentDocument) return;
-    const targetLevel = levelForSelection(currentDocument, selectionRef.current);
+    const targetLevel = target
+      ? currentDocument.levels.find((level) => level.id === target.levelId)
+      : levelForSelection(currentDocument, selectionRef.current);
+    if (!targetLevel) {
+      setCommandNotice(undefined);
+      setCommandError(`Design level ${target?.levelId ?? "(missing)"} is no longer available.`);
+      return;
+    }
     let fragment = designClipboard;
     if (!fragment) {
       try {
@@ -1226,17 +1251,29 @@ export function BlockDesignStudio({
       }
     }
     const insertionIndex = pasteInsertionIndex.current + 1;
-    const insertedNodeIds = insertFragment(fragment, targetLevel.id, insertionIndex);
+    const insertedNodeIds = insertFragment(
+      fragment,
+      targetLevel.id,
+      target
+        ? { kind: "point", point: target.point }
+        : { kind: "cascade", ordinal: insertionIndex },
+    );
     if (!insertedNodeIds) return;
-    pasteInsertionIndex.current = insertionIndex;
-    setCommandNotice(`Pasted ${insertedNodeIds.length} ${insertedNodeIds.length === 1 ? "module" : "modules"} into ${targetLevel.title}.`);
+    pasteInsertionIndex.current = target ? 0 : insertionIndex;
+    setCommandNotice(
+      `Pasted ${insertedNodeIds.length} ${insertedNodeIds.length === 1 ? "module" : "modules"}` +
+      `${target ? " at the requested canvas position" : ""} into ${targetLevel.title}.`,
+    );
   }, [designClipboard, insertFragment, requireAppliedInspectorDraft]);
 
   const duplicateSelectedModules = useCallback(() => {
     if (!requireAppliedInspectorDraft("duplicating the selected modules")) return;
     const fragment = selectedFragment();
     if (!fragment || !fragmentSelection.available) return;
-    const insertedNodeIds = insertFragment(fragment, fragmentSelection.levelId, 1);
+    const insertedNodeIds = insertFragment(fragment, fragmentSelection.levelId, {
+      kind: "cascade",
+      ordinal: 1,
+    });
     if (!insertedNodeIds) return;
     setCommandNotice(`Duplicated ${insertedNodeIds.length} ${insertedNodeIds.length === 1 ? "module" : "modules"}.`);
   }, [fragmentSelection, insertFragment, requireAppliedInspectorDraft, selectedFragment]);
@@ -1270,7 +1307,7 @@ export function BlockDesignStudio({
         moves.map((move) => move.nodeId),
         sourcePositions,
       );
-      const insertedNodeIds = insertFragment(fragment, levelId, 1, offset);
+      const insertedNodeIds = insertFragment(fragment, levelId, { kind: "offset", offset });
       if (!insertedNodeIds) return false;
       setCommandError(undefined);
       setCommandNotice(`Cloned ${insertedNodeIds.length} ${insertedNodeIds.length === 1 ? "module" : "modules"} at the dragged position.`);
@@ -1450,6 +1487,10 @@ export function BlockDesignStudio({
   const pasteUnavailableReason = fragmentCommandBlockReason ?? (
     layoutBusy ? "Wait for the diagram layout to finish." : "Open or create a design first."
   );
+  const canPasteHere = canPaste && Boolean(canvasContextMenu);
+  const pasteHereUnavailableReason = canvasContextMenu
+    ? pasteUnavailableReason
+    : "Open the canvas context menu at the requested insertion point first.";
   const commands = useMemo<StudioCommands>(() => ({
     newDesign: {
       id: "newDesign", label: "New Design...", toolbarTitle: "新建设计", icon: FilePlus2, enabled: true,
@@ -1605,6 +1646,17 @@ export function BlockDesignStudio({
       id: "paste", label: "Paste", shortcut: "Ctrl/⌘ V", icon: ClipboardPaste,
       ...commandAvailability(canPaste, pasteUnavailableReason),
       execute: () => { void pasteDesignFragment(); },
+    },
+    pasteHere: {
+      id: "pasteHere", label: "Paste Here", showInPalette: false, icon: ClipboardPaste,
+      ...commandAvailability(canPasteHere, pasteHereUnavailableReason),
+      execute: () => {
+        if (!canvasContextMenu) return;
+        void pasteDesignFragment({
+          levelId: canvasContextMenu.target.levelId,
+          point: canvasContextMenu.insertionPoint,
+        });
+      },
     },
     duplicateSelection: {
       id: "duplicateSelection", label: "Duplicate", shortcut: "Ctrl/⌘ D", icon: CopyPlus,
@@ -1785,7 +1837,9 @@ export function BlockDesignStudio({
     canExitHierarchy,
     canHomeHierarchy,
     canPaste,
+    canPasteHere,
     canReconnectConnection,
+    canvasContextMenu,
     copySelectedModules,
     cutSelectedModules,
     copyUnavailableReason,
@@ -1825,6 +1879,7 @@ export function BlockDesignStudio({
     outgoingNeighborhoodExpansion,
     outgoingNeighborhoodUnavailableReason,
     pasteDesignFragment,
+    pasteHereUnavailableReason,
     pasteUnavailableReason,
     redoDesign,
     reconnectUnavailableReason,

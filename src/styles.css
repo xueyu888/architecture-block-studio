@@ -342,8 +342,8 @@ button { color: inherit; }
 }
 
 @keyframes bd-context-menu-in {
-  from { opacity: 0; transform: translateY(-2px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { transform: translateY(-2px); }
+  to { transform: translateY(0); }
 }
 
 .bd-toolbar {
