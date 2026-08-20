@@ -2,7 +2,7 @@
   "schemaVersion": "2.1",
   "id": "architecture-block-studio.source-architecture.v1",
   "title": "Architecture Block Studio — Source Architecture",
-  "summary": "Generated from 68 managed source files and 27 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
+  "summary": "Generated from 69 managed source files and 27 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
   "entryLevelId": "product-boundary",
   "sourceRef": {
     "label": "architecture-block-studio",
@@ -784,7 +784,7 @@
               "architectureGroupId": "geometry",
               "hierarchyDepth": "5",
               "sourcePaths": "src/layout/",
-              "sourceFileCount": "8"
+              "sourceFileCount": "9"
             }
           },
           "layout": {

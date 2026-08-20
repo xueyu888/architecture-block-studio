@@ -5,7 +5,12 @@ import {
   createBlock,
   createDesignLevel,
 } from "../../src/editor";
-import { authoredProjectionGap, layoutBlockDesign } from "../../src/layout";
+import {
+  authoredProjectionGap,
+  layoutBlockDesign,
+  levelMovementLimits,
+  nodeResizeStartLimits,
+} from "../../src/layout";
 import { fiveLevelRoutingDesignDocument } from "../fixtures/fiveLevelRoutingDesign";
 import { hierarchicalDesign } from "./designFixture";
 
@@ -23,6 +28,7 @@ describe("hierarchy view root projection", () => {
       title: "Parent Internal",
       hierarchyDepth: 1,
       designOrigin: { x: 72, y: 68 },
+      coordinateOrigin: { x: 0, y: 0 },
       dropBounds: { x: 2, y: 32, width: 382, height: 232 },
     });
   });
@@ -54,6 +60,7 @@ describe("hierarchy view root projection", () => {
       title: "Empty Level",
       hierarchyDepth: 1,
       designOrigin: { x: 72, y: 68 },
+      coordinateOrigin: { x: 0, y: 0 },
       dropBounds: { x: 2, y: 32, width: 382, height: 232 },
     });
   });
@@ -157,14 +164,24 @@ describe("hierarchy view root projection", () => {
       child: NonNullable<typeof beforeChild>,
     ) => ({ x: owner.position.x + child.position.x, y: owner.position.y + child.position.y });
 
-    expect(absoluteOrigin(beforeOwner!)).toEqual({ x: -88, y: -28 });
+    expect(absoluteOrigin(beforeOwner!)).toEqual({ x: 72, y: 68 });
     expect(absoluteOrigin(afterOwner!)).toEqual({ x: 72, y: 68 });
-    expect(absoluteChild(beforeOwner!, beforeChild!)).toEqual({ x: 72, y: 68 });
+    expect(absoluteChild(beforeOwner!, beforeChild!)).toEqual({ x: 232, y: 164 });
     expect(absoluteChild(afterOwner!, afterChild!)).toEqual({ x: 232, y: 164 });
     expect(afterNegative?.data.designPosition).toEqual({ x: -64, y: -32 });
     expect(absoluteChild(afterOwner!, afterNegative!)).toEqual({ x: 8, y: 36 });
     expect(afterOwner?.data.designPosition).toEqual(beforeOwner?.data.designPosition);
     expect(afterOwner?.position).toEqual({ x: -64, y: -32 });
+
+    const negativeLimits = levelMovementLimits(after.nodes, new Set([afterNegative!.id]));
+    expect(negativeLimits).toEqual({
+      minimum: { x: 0, y: 0 },
+      maximum: { x: 0, y: 0 },
+    });
+    expect(nodeResizeStartLimits(afterNegative!, after.nodes, new Set([afterNegative!.id]))).toEqual({
+      minimum: { x: 72, y: 68 },
+      maximum: { x: 72, y: 68 },
+    });
   });
 
   it("projects expanded authored siblings without overlap and keeps later inserts append-stable", async () => {

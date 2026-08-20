@@ -49,6 +49,27 @@ function scene(legs: RoutingLeg[], obstacles: RoutingObstacle[] = []): RoutingSc
   return { obstacles: [sourceObstacle, targetObstacle, ...obstacles], legs, gates: [] };
 }
 
+function translatedScene(input: RoutingScene, x: number, y: number): RoutingScene {
+  const point = (value: { x: number; y: number }) => ({ x: value.x + x, y: value.y + y });
+  const bounds = (value: { left: number; right: number; top: number; bottom: number }) => ({
+    left: value.left + x,
+    right: value.right + x,
+    top: value.top + y,
+    bottom: value.bottom + y,
+  });
+  return {
+    obstacles: input.obstacles.map((obstacle) => ({ ...obstacle, bounds: bounds(obstacle.bounds) })),
+    legs: input.legs.map((candidate) => ({
+      ...candidate,
+      source: { ...candidate.source, point: point(candidate.source.point) },
+      target: { ...candidate.target, point: point(candidate.target.point) },
+      routingBounds: candidate.routingBounds ? bounds(candidate.routingBounds) : undefined,
+      lockedPoints: candidate.lockedPoints?.map(point),
+    })),
+    gates: input.gates.map((gate) => ({ ...gate, point: point(gate.point) })),
+  };
+}
+
 function skewedHubScene(perSide: number): RoutingScene {
   const hub: RoutingObstacle = {
     id: "hub",
@@ -339,6 +360,25 @@ describe("standalone scene router", () => {
     expect(second.certificate).toEqual(first.certificate);
   });
 
+  test("keeps route choice invariant when the complete scene is translated", () => {
+    const input = scene([
+      leg("first", "first"),
+      { ...leg("second", "second"), source: endpoint({ x: 0, y: 8 }, "right", sourceObstacle.id, "source-node::out-2") },
+    ], [{ id: "detour", kind: "module", bounds: { left: 40, right: 60, top: -8, bottom: 26 } }]);
+    const offset = { x: 2_320, y: -1_440 };
+    const original = solveRoutingScene(input);
+    const translated = solveRoutingScene(translatedScene(input, offset.x, offset.y));
+
+    expect(translated.status).toBe(original.status);
+    expect(translated.certificate.objective).toEqual(original.certificate.objective);
+    for (const [legId, route] of original.routes) {
+      expect(translated.routes.get(legId)?.points.map((point) => ({
+        x: point.x - offset.x,
+        y: point.y - offset.y,
+      }))).toEqual(route.points);
+    }
+  });
+
   test("plans every visible leg in the real double-expanded reference design without shared capacity", async () => {
     const document = parseBlockDesignDocument(JSON.parse(readFileSync(
       new URL("../../public/examples/aio-agent-runtime.block-design.json", import.meta.url),
@@ -361,6 +401,39 @@ describe("standalone scene router", () => {
       status: "Feasible",
       routes: input.legs.length,
       legs: input.legs.length,
+      objective: { capacityViolations: 0 },
+      diagnostics: [],
+    });
+  }, 10_000);
+
+  test("plans every source dependency through the complete authored hierarchy projection", async () => {
+    const document = parseBlockDesignDocument(JSON.parse(readFileSync(
+      new URL("../../public/examples/architecture-block-studio.block-design.json", import.meta.url),
+      "utf8",
+    )));
+    const layout = await layoutBlockDesign(document, {
+      expandedLevelIds: new Set([
+        "browser-runtime",
+        "workbench-composition",
+        "source-architecture",
+        "runtime-modules",
+      ]),
+      placementMode: "authored",
+      rootLevelId: "product-boundary",
+    });
+    const input = createRoutingSceneFromLayout(layout.nodes, layout.edges);
+    const result = solveRoutingScene(input, routingPolicyForScene(input));
+
+    expect({
+      status: result.status,
+      routes: result.routes.size,
+      legs: input.legs.length,
+      objective: result.certificate.objective,
+      diagnostics: result.diagnostics,
+    }).toMatchObject({
+      status: "Feasible",
+      routes: 27,
+      legs: 27,
       objective: { capacityViolations: 0 },
       diagnostics: [],
     });

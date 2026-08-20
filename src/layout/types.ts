@@ -25,6 +25,8 @@ export interface LayoutChildLevelProjection {
   hierarchyDepth: number;
   /** Child design origin in the expanded owner node's local flow coordinates. */
   designOrigin: { x: number; y: number };
+  /** Stable minimum authored coordinate for direct manipulation in this projection. */
+  coordinateOrigin: { x: number; y: number };
   /** Visible child-design drop surface in the owner node's local flow coordinates. */
   dropBounds: { x: number; y: number; width: number; height: number };
 }

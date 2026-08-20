@@ -1,3 +1,4 @@
+import { constrainResizeRectToOrigin, type CoordinateStartLimits } from "./levelGeometry";
 import { preserveNodeAspectRatio, type NodeResizeDirection, type NodeResizeLimits, type NodeResizeRect } from "./nodeGeometry";
 
 export interface SelectionResizeItem extends NodeResizeRect, NodeResizeLimits {
@@ -77,9 +78,42 @@ function constrainedGroup(
   direction: NodeResizeDirection,
   limits: NodeResizeLimits,
   preserveAspectRatio: boolean,
+  startLimits?: CoordinateStartLimits,
 ): NodeResizeRect {
   if (preserveAspectRatio) {
-    return preserveNodeAspectRatio(original, requested, direction, limits);
+    const preserved = preserveNodeAspectRatio(original, requested, direction, limits);
+    if (!startLimits || (
+      preserved.x >= startLimits.minimum.x && preserved.y >= startLimits.minimum.y &&
+      preserved.x <= (startLimits.maximum?.x ?? Number.POSITIVE_INFINITY) &&
+      preserved.y <= (startLimits.maximum?.y ?? Number.POSITIVE_INFINITY)
+    )) {
+      return preserved;
+    }
+    const maximumScaleX = direction.x < 0
+      ? (original.x + original.width - startLimits.minimum.x) / original.width
+      : Number.POSITIVE_INFINITY;
+    const maximumScaleY = direction.y < 0
+      ? (original.y + original.height - startLimits.minimum.y) / original.height
+      : Number.POSITIVE_INFINITY;
+    const minimumScaleX = direction.x < 0 && startLimits.maximum
+      ? (original.x + original.width - startLimits.maximum.x) / original.width
+      : Number.NEGATIVE_INFINITY;
+    const minimumScaleY = direction.y < 0 && startLimits.maximum
+      ? (original.y + original.height - startLimits.maximum.y) / original.height
+      : Number.NEGATIVE_INFINITY;
+    const scale = Math.max(
+      minimumScaleX,
+      minimumScaleY,
+      Math.min(preserved.width / original.width, maximumScaleX, maximumScaleY),
+    );
+    const width = original.width * scale;
+    const height = original.height * scale;
+    return {
+      x: direction.x < 0 ? original.x + original.width - width : original.x,
+      y: direction.y < 0 ? original.y + original.height - height : original.y,
+      width,
+      height,
+    };
   }
   const width = direction.x === 0
     ? original.width
@@ -87,12 +121,13 @@ function constrainedGroup(
   const height = direction.y === 0
     ? original.height
     : clamp(requested.height, limits.minHeight, limits.maxHeight);
-  return {
+  const group = {
     x: direction.x < 0 ? original.x + original.width - width : original.x,
     y: direction.y < 0 ? original.y + original.height - height : original.y,
     width,
     height,
   };
+  return startLimits ? constrainResizeRectToOrigin(group, startLimits) : group;
 }
 
 export function requestedSelectionResizeRect(
@@ -112,13 +147,14 @@ export function resizeSelectionGroup(
   requested: NodeResizeRect,
   direction: NodeResizeDirection,
   preserveAspectRatio = false,
+  startLimits?: CoordinateStartLimits,
 ): SelectionResizeResult {
   const original = selectionResizeBounds(items);
   if (![requested.x, requested.y, requested.width, requested.height].every(Number.isFinite)) {
     throw new RangeError("Requested group resize geometry must be finite.");
   }
   const limits = selectionResizeLimits(items, original);
-  const group = constrainedGroup(original, requested, direction, limits, preserveAspectRatio);
+  const group = constrainedGroup(original, requested, direction, limits, preserveAspectRatio, startLimits);
   const scaleX = group.width / original.width;
   const scaleY = group.height / original.height;
   return {

@@ -216,6 +216,17 @@ export function routeSignature(points: readonly RoutePoint[]): string {
   return compactOrthogonalPoints([...points]).map(pointKey).join(";");
 }
 
+/** Stable route ordering that is independent of the scene's absolute origin. */
+export function relativeRouteSignature(
+  points: readonly RoutePoint[],
+  origin: RoutePoint = points[0] ?? { x: 0, y: 0 },
+): string {
+  return routeSignature(points.map((point) => ({
+    x: point.x - origin.x,
+    y: point.y - origin.y,
+  })));
+}
+
 export function stableTextHash(value: string): string {
   let hash = 0x811c9dc5;
   for (const character of value) {

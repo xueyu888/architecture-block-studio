@@ -3265,6 +3265,18 @@ test("expands five hierarchy layers and audits every visible route and pair", as
     expect(box!.width).toBeGreaterThan(nestedBefore[index]!.width + 10);
     expect(box!.height).toBeCloseTo(nestedBefore[index]!.height, 0);
   });
+  const nestedResizeDownload = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+S");
+  const nestedResizeSavedPath = await (await nestedResizeDownload).path();
+  expect(nestedResizeSavedPath).not.toBeNull();
+  const nestedResizeSaved = JSON.parse(await readFile(nestedResizeSavedPath!, "utf8"));
+  const resizedSavedLevelFive = nestedResizeSaved.levels.find((level: { id: string }) => level.id === "level-5");
+  const authoredLevelFive = document.levels.find((level) => level.id === "level-5")!;
+  for (const nodeId of ["target-00", "target-01"]) {
+    const authored = authoredLevelFive.nodes.find((node) => node.id === nodeId)!;
+    const saved = resizedSavedLevelFive.nodes.find((node: { id: string }) => node.id === nodeId);
+    expect(saved.layout.position).toEqual(authored.layout.position);
+  }
   expect(await exhaustiveRouteAudit(page)).toMatchObject({
     auditedRouteCount: 20,
     auditedPairCount: 190,
@@ -3274,6 +3286,13 @@ test("expands five hierarchy layers and audits every visible route and pair", as
     unbridgedCrossings: [],
     orphanJumps: [],
   });
+  if (process.env.CAPTURE_LEVEL_COORDINATE === "1" && browserName === "chromium") {
+    await page.keyboard.press("ControlOrMeta+Shift+H");
+    await page.waitForTimeout(500);
+    await captureStudioScreenshot(page, "docs/screenshots/five-level-coordinate-resize.png");
+    await toolbarButton(page, "适应窗口").click({ force: true });
+    await page.waitForTimeout(500);
+  }
   await page.keyboard.press("ControlOrMeta+Z");
   await waitForEditorIdle(page);
   await expect(nestedGroupResizer).toBeVisible();

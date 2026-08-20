@@ -122,6 +122,27 @@ flowchart LR
 
 模块尺寸编辑复用同一几何 Owner。`minimumNodeDimensions` 从四侧端口和内容区计算可读下限，Canvas 只把这个纯结果投影为四边 / 四角 resize 限制；最大值来自节点几何合同，pointer 网格、键盘移动 / resize 步长和背景点阵共同消费 `DESIGN_GRID_SIZE`。Shift pointer resize 由纯 `preserveNodeAspectRatio` 以 gesture 起始矩形、抓手方向和同一尺寸上下限求解，固定对侧角或对侧边中心；比例不进入文档，并优先于兄弟尺寸吸附。多选时，`selectionResizeBounds / selectionResizeLimits / resizeSelectionGroup` 只接受同父级、同 Level、具有唯一可编辑投影的模块，以一个冻结的组包围框计算全组可行 scale，再用同一仿射变换更新每个成员的位置和尺寸。已有外部 JSON 若暂时超出当前上下限仍可被选中，但只允许朝合法范围变化，不能因显示组选区而抛错。Canvas 只拥有可丢弃预览，松手后发出一次位置加尺寸意图；Editor 的 `node/resize` 或 `nodes/resize` 才原子写入 `node.layout.position / width / height / pinned`。左边或上边缩放会同时改变锚点和尺寸，因此不能只写 width / height，否则视觉边界与持久几何会漂移。展开的 hierarchy 容器尺寸由子图边界派生，跨父级选择没有共同坐标系，两者都不提供组选区 resize 把手。
 
+内联 Level 的坐标原点同样属于 Layout 契约，但不是新的持久事实。`layoutBlockDesign` 从 authored bounds 发布 `coordinateOrigin = min(0, authoredMin)`：非负设计固定为 `(0,0)`，负坐标旧文件保留既有最小值；`designOrigin` 只把该坐标系投影到展开 owner 的 local flow space。`layout/levelGeometry` 是 move / resize 边界的纯 Owner：它把同一组选中模块收敛成一个共同 delta，把左 / 上 resize 收敛成一个 start-edge 区间，并在负原点 owner 全部参与手势时锁住该轴。Canvas 只负责从 Layout 节点构造约束、生成临时预览并把 flow delta 换回 authored delta；Alt、网格、参考线和 auto-pan 都不能修改边界。Editor 仍只接收最终 `node/move`、`nodes/move`、`node/resize` 或 `nodes/resize`，拒绝 / Escape / blur 恢复文档投影且零写入。
+
+```text
+BlockDesignDocument (authored position / size)
+          │
+          ▼
+layoutBlockDesign ──► stable coordinateOrigin + disposable flow projection
+          │                                      │
+          ▼                                      ▼
+ levelGeometry constraint ◄── raw pointer / Alt / keyboard / group handle
+          │                                      │
+          └────────► disposable Canvas preview ──┘
+                                      │ one authored delta batch
+                                      ▼
+                              Atomic Editor operation
+                                      │
+                                      └──► BlockDesignDocument
+```
+
+路由不参与坐标决策，只消费重新派生的 absolute frames。等价场景整体平移时，可见图 arc、候选审美排序和验证证书必须使用相对 source 的 route signature；绝对坐标仍用于碰撞与绘制，但不得成为等成本线路的隐式选择依据。这样父容器因右 / 下内容增长而平移或扩展时，只改变最终 SVG 坐标，不会凭空选择另一条拓扑路线。
+
 网格、对齐与等距辅助线沿用同一几何链，但都不拥有设计事实。Canvas 在 move / resize 开始时冻结父级坐标原点，并只收集同一父级、当前视口附近的模块矩形，把 6 CSS px 容差换算为设计坐标；多选移动与多选缩放都先从全部成员冻结一个组包围框，pointer 只改变这个统一 subject。`layout/alignmentGuides` 在每个移动轴上先从正交轴真实重叠、与主体保持正间距的候选中确定最近前后邻居；若原始 pointer 几何已经接近“主体位于两邻居之间等距”或“主体延续相邻两模块间距”，就以同一个 `snapMovingRect` 返回唯一 correction 和恰好两段无文字间距括号。该轴未命中等距时才选择最近边缘 / 中心，仍未命中才按父级相对 `DESIGN_GRID_SIZE` 取整；单选与组选区 resize 共用 `snapResizingRect` 的位置、同宽 / 同高和网格优先级。等距优先于冲突对齐，候选按距离、关系类型和稳定 id 排序，不能因遍历顺序产生跳动。React Flow 的全局 `snapToGrid` 已关闭，不能在纯策略之前偷偷生成第二份几何。`AlignmentGuideLayer` 只渲染当前 gesture 的临时直线、尺寸或等距括号；间距值只用于几何断言，不渲染成会遮挡线路的标签。松手后仍只提交既有 `node/move`、`nodes/move`、`fragment/insert`、`node/resize` 或 `nodes/resize`；先以 pointerdown 建立直接 move / resize，再按住 Alt 时，同时跳过等距、对齐和网格，原样使用用户预览。Alt 在 pointerdown 前成立则属于选择协议并强制起框。跨父级混选、无正交重叠、只有单侧一个候选、吸附超出尺寸上下限或 Editor 拒绝提交时，不猜坐标、不建立补偿状态，Canvas 回到文档投影。
 
 ```text

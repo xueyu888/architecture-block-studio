@@ -51,7 +51,11 @@ import {
   BLOCK_NODE_GEOMETRY,
   DESIGN_GRID_SIZE,
   alignmentRectBounds,
+  constrainCoordinateDelta,
+  constrainResizeRectToOrigin,
+  levelMovementLimits,
   minimumNodeDimensions,
+  nodeResizeStartLimits,
   requestedSelectionResizeRect,
   resizeSelectionGroup,
   selectionResizeBounds,
@@ -60,6 +64,8 @@ import {
   snapResizingRect,
   type AlignmentGuide,
   type AlignmentRect,
+  type CoordinateDeltaLimits,
+  type CoordinateStartLimits,
   type LayoutFlowNode,
   type LayoutResult,
   type ResizeLimits,
@@ -362,6 +368,8 @@ interface AlignmentGesture {
   tolerance: number;
   grid: { x: number; y: number; originX: number; originY: number };
   limits: ResizeLimits;
+  movementLimits?: CoordinateDeltaLimits;
+  resizeStartLimits?: CoordinateStartLimits;
 }
 
 interface ResizePreview {
@@ -374,11 +382,16 @@ interface SelectionResizeContext {
   levelId: string;
   parentId?: string;
   parentOffset: { x: number; y: number };
-  items: readonly (SelectionResizeItem & { levelId: string; nodeId: string })[];
+  items: readonly (SelectionResizeItem & {
+    levelId: string;
+    nodeId: string;
+    designPosition: { x: number; y: number };
+  })[];
   group: NodeResizeRect;
   limits: ResizeLimits;
   candidates: readonly AlignmentRect[];
   tolerance: number;
+  startLimits?: CoordinateStartLimits;
 }
 
 interface SelectionResizePreview {
@@ -465,6 +478,12 @@ function offsetAlignmentGuides(
       ? { ...guide, from: guide.from + offset.x, to: guide.to + offset.x, cross: guide.cross + offset.y }
       : { ...guide, from: guide.from + offset.y, to: guide.to + offset.y, cross: guide.cross + offset.x };
   });
+}
+
+function guideUsesAxis(guide: AlignmentGuide, axis: "x" | "y"): boolean {
+  return guide.kind === "size"
+    ? guide.axis === (axis === "x" ? "width" : "height")
+    : guide.axis === axis;
 }
 
 interface BoxSelectionGesture {
@@ -890,6 +909,8 @@ const CanvasInner = memo(function CanvasInner({
         maxWidth: BLOCK_NODE_GEOMETRY.maximumWidth,
         maxHeight: BLOCK_NODE_GEOMETRY.maximumHeight,
       },
+      movementLimits: levelMovementLimits(layout.nodes, excludedNodeIds),
+      resizeStartLimits: nodeResizeStartLimits(layoutSubject, layout.nodes, excludedNodeIds),
     };
     alignmentGestureRef.current = gesture;
     resizePreviewRef.current = undefined;
@@ -904,7 +925,7 @@ const CanvasInner = memo(function CanvasInner({
     const gesture = alignmentGestureRef.current?.nodeId === node.id
       ? alignmentGestureRef.current
       : beginAlignmentGesture(node.id);
-    if (!gesture || disableSnap) {
+    if (!gesture) {
       resizePreviewRef.current = undefined;
       setAlignmentGuides([]);
       return geometry;
@@ -916,23 +937,36 @@ const CanvasInner = memo(function CanvasInner({
       width: geometry.size.width,
       height: geometry.size.height,
     };
-    const snapped = snapResizingRect(
-      gesture.original,
-      preview,
-      gesture.candidates,
-      gesture.tolerance,
-      gesture.limits,
-      gesture.grid,
-    );
+    const snapped = disableSnap
+      ? { rect: preview, guides: [] as AlignmentGuide[] }
+      : snapResizingRect(
+          gesture.original,
+          preview,
+          gesture.candidates,
+          gesture.tolerance,
+          gesture.limits,
+          gesture.grid,
+        );
+    const localRect = {
+      x: gesture.originalLocalPosition.x + snapped.rect.x - gesture.original.x,
+      y: gesture.originalLocalPosition.y + snapped.rect.y - gesture.original.y,
+      width: snapped.rect.width,
+      height: snapped.rect.height,
+    };
+    const constrained = gesture.resizeStartLimits
+      ? constrainResizeRectToOrigin(localRect, gesture.resizeStartLimits)
+      : localRect;
+    const clampedX = constrained.x !== localRect.x;
+    const clampedY = constrained.y !== localRect.y;
+    const guides = snapped.guides.filter((guide) => (
+      !(clampedX && guideUsesAxis(guide, "x")) && !(clampedY && guideUsesAxis(guide, "y"))
+    ));
     resizePreviewRef.current = {
       nodeId: node.id,
-      position: {
-        x: gesture.originalLocalPosition.x + snapped.rect.x - gesture.original.x,
-        y: gesture.originalLocalPosition.y + snapped.rect.y - gesture.original.y,
-      },
-      size: { width: snapped.rect.width, height: snapped.rect.height },
+      position: { x: constrained.x, y: constrained.y },
+      size: { width: constrained.width, height: constrained.height },
     };
-    setAlignmentGuides(snapped.guides);
+    setAlignmentGuides(guides);
     return {
       position: resizePreviewRef.current.position,
       size: resizePreviewRef.current.size,
@@ -1186,6 +1220,7 @@ const CanvasInner = memo(function CanvasInner({
         id: node.id,
         levelId: node.data.levelId,
         nodeId: node.data.block.id,
+        designPosition: { ...node.data.designPosition },
         x: node.position.x,
         y: node.position.y,
         width,
@@ -1209,6 +1244,27 @@ const CanvasInner = memo(function CanvasInner({
       ancestorId = ancestor.parentId;
     }
     const group = selectionResizeBounds(items);
+    const editedNodeIds = new Set(concrete.map((node) => node.id));
+    const nodeStartLimits = concrete
+      .map((node) => nodeResizeStartLimits(node, layout.nodes, editedNodeIds))
+      .filter((limits): limits is CoordinateStartLimits => Boolean(limits));
+    const movementLimits = levelMovementLimits(layout.nodes, editedNodeIds);
+    const startLimits = nodeStartLimits.length === concrete.length
+      ? {
+          minimum: {
+            x: Math.max(...nodeStartLimits.map((limits) => limits.minimum.x)),
+            y: Math.max(...nodeStartLimits.map((limits) => limits.minimum.y)),
+          },
+          maximum: movementLimits && (
+            movementLimits.maximum?.x === 0 || movementLimits.maximum?.y === 0
+          )
+            ? {
+                x: movementLimits.maximum.x === 0 ? group.x : Number.MAX_SAFE_INTEGER,
+                y: movementLimits.maximum.y === 0 ? group.y : Number.MAX_SAFE_INTEGER,
+              }
+            : undefined,
+        }
+      : undefined;
     const candidates = baseNodes.flatMap((node): AlignmentRect[] => {
       if (selectedNodeIdsRef.current.has(node.id) || node.parentId !== parentId || node.hidden) return [];
       const width = (node.width ?? Number(node.style?.width)) || 0;
@@ -1226,8 +1282,9 @@ const CanvasInner = memo(function CanvasInner({
       limits: selectionResizeLimits(items, group),
       candidates,
       tolerance: ALIGNMENT_TOLERANCE_PX / store.getState().transform[2],
+      startLimits,
     };
-  }, [baseNodeById, baseNodes, selectedDiagramItems, selectedNodeIds, store]);
+  }, [baseNodeById, baseNodes, layout.nodes, selectedDiagramItems, selectedNodeIds, store]);
   const [selectionRestoreRevision, setSelectionRestoreRevision] = useState(0);
   const handledRevealSelectionRequest = useRef(0);
   const handledFitSelectionRequest = useRef(0);
@@ -1282,6 +1339,7 @@ const CanvasInner = memo(function CanvasInner({
       requested,
       gesture.direction,
       gesture.modifiers.shiftKey,
+      gesture.context.startLimits,
     );
     if (!gesture.modifiers.altKey && !gesture.modifiers.shiftKey) {
       const snapped = snapResizingRect(
@@ -1292,7 +1350,13 @@ const CanvasInner = memo(function CanvasInner({
         gesture.context.limits,
         DESIGN_GRID_SIZE,
       );
-      resolved = resizeSelectionGroup(gesture.context.items, snapped.rect, gesture.direction);
+      resolved = resizeSelectionGroup(
+        gesture.context.items,
+        snapped.rect,
+        gesture.direction,
+        false,
+        gesture.context.startLimits,
+      );
       setAlignmentGuides(offsetAlignmentGuides(snapped.guides, gesture.context.parentOffset));
     } else {
       setAlignmentGuides([]);
@@ -1320,7 +1384,10 @@ const CanvasInner = memo(function CanvasInner({
       return source ? [{
         levelId: source.levelId,
         nodeId: source.nodeId,
-        position: item.position,
+        position: {
+          x: source.designPosition.x + item.position.x - source.x,
+          y: source.designPosition.y + item.position.y - source.y,
+        },
         size: item.size,
       }] : [];
     });
@@ -1345,6 +1412,8 @@ const CanvasInner = memo(function CanvasInner({
       selectionResizeContext.items,
       selectionResizeContext.group,
       direction,
+      false,
+      selectionResizeContext.startLimits,
     );
     const gesture: SelectionResizeGesture = {
       pointerId: event.pointerId,
@@ -2516,6 +2585,11 @@ const CanvasInner = memo(function CanvasInner({
     if (node && keyboardDelta && !event.shiftKey && node.data.positionEditable && selectedNodeIdsRef.current.has(flowId)) {
       event.preventDefault();
       event.stopPropagation();
+      const movementLimits = levelMovementLimits(layout.nodes, selectedNodeIdsRef.current);
+      const resolvedDelta = movementLimits
+        ? constrainCoordinateDelta(keyboardDelta, movementLimits).delta
+        : keyboardDelta;
+      if (resolvedDelta.x === 0 && resolvedDelta.y === 0) return;
       const moves = new Map<string, NodeMove>();
       baseNodes.forEach((candidate) => {
         if (!candidate.data.positionEditable || !selectedNodeIdsRef.current.has(candidate.id)) return;
@@ -2524,8 +2598,8 @@ const CanvasInner = memo(function CanvasInner({
           levelId: candidate.data.levelId,
           nodeId: candidate.data.block.id,
           position: {
-            x: candidate.data.designPosition.x + keyboardDelta.x,
-            y: candidate.data.designPosition.y + keyboardDelta.y,
+            x: candidate.data.designPosition.x + resolvedDelta.x,
+            y: candidate.data.designPosition.y + resolvedDelta.y,
           },
         });
       });
@@ -2558,6 +2632,7 @@ const CanvasInner = memo(function CanvasInner({
     canvasKeyboardTraversal,
     commitCanvasSelection,
     focusCanvasSelection,
+    layout.nodes,
     onMoveNodes,
     onResizeNode,
     requestCanvasContextMenu,
@@ -2666,7 +2741,7 @@ const CanvasInner = memo(function CanvasInner({
     const gesture = alignmentGestureRef.current?.nodeId === node.id
       ? alignmentGestureRef.current
       : beginAlignmentGesture(node.id);
-    if (!gesture || disableSnap) {
+    if (!gesture) {
       setAlignmentGuides([]);
       return { position: node.position, guides: [] as AlignmentGuide[] };
     }
@@ -2675,14 +2750,37 @@ const CanvasInner = memo(function CanvasInner({
       x: gesture.original.x + node.position.x - gesture.originalLocalPosition.x,
       y: gesture.original.y + node.position.y - gesture.originalLocalPosition.y,
     };
-    const snapped = snapMovingRect(preview, gesture.candidates, gesture.tolerance, gesture.grid);
-    setAlignmentGuides(snapped.guides);
+    const snapped = disableSnap
+      ? { rect: preview, guides: [] as AlignmentGuide[] }
+      : snapMovingRect(preview, gesture.candidates, gesture.tolerance, gesture.grid);
+    const snappedPosition = {
+      x: node.position.x + snapped.rect.x - preview.x,
+      y: node.position.y + snapped.rect.y - preview.y,
+    };
+    const constrained = gesture.movementLimits
+      ? constrainCoordinateDelta({
+          x: snappedPosition.x - gesture.originalLocalPosition.x,
+          y: snappedPosition.y - gesture.originalLocalPosition.y,
+        }, gesture.movementLimits)
+      : {
+          delta: {
+            x: snappedPosition.x - gesture.originalLocalPosition.x,
+            y: snappedPosition.y - gesture.originalLocalPosition.y,
+          },
+          clampedX: false,
+          clampedY: false,
+        };
+    const guides = snapped.guides.filter((guide) => (
+      !(constrained.clampedX && guideUsesAxis(guide, "x")) &&
+      !(constrained.clampedY && guideUsesAxis(guide, "y"))
+    ));
+    setAlignmentGuides(guides);
     return {
       position: {
-        x: node.position.x + snapped.rect.x - preview.x,
-        y: node.position.y + snapped.rect.y - preview.y,
+        x: gesture.originalLocalPosition.x + constrained.delta.x,
+        y: gesture.originalLocalPosition.y + constrained.delta.y,
       },
-      guides: snapped.guides,
+      guides,
     };
   }, [beginAlignmentGesture]);
   const replayNodeDragPointer = useCallback((pointer: { clientX: number; clientY: number }) => {

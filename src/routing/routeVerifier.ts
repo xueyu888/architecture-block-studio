@@ -9,8 +9,8 @@ import {
   routeHasReversal,
   routeRespectsFacingMonotonicity,
   routeLength,
+  relativeRouteSignature,
   routeSegments,
-  routeSignature,
   samePoint,
   segmentIntersectsRectInterior,
   segmentOverlapLength,
@@ -247,7 +247,10 @@ export function verifyRoutingResult(
 
   objective.signature = [...routes.values()]
     .sort((left, right) => left.legId.localeCompare(right.legId))
-    .map((route) => `${route.legId}:${routeSignature(route.points)}`)
+    .map((route) => `${route.legId}:${relativeRouteSignature(
+      route.points,
+      legsById.get(route.legId)?.source.point,
+    )}`)
     .join("|");
   // Keep certificates compact while preserving a stable total-order tie-break.
   objective.signature = stableTextHash(objective.signature);

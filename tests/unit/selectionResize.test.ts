@@ -139,4 +139,26 @@ describe("selection group resize", () => {
     expect(() => resizeSelectionGroup([items[0], { ...items[1], id: "compact" }], result.group, { x: 1, y: 1 }))
       .toThrow("unique identity");
   });
+
+  test("keeps left and top resize handles inside one stable Level origin", () => {
+    const expanded = resizeSelectionGroup(
+      items,
+      { x: -400, y: -320, width: 1_080, height: 760 },
+      { x: -1, y: -1 },
+      false,
+      { minimum: { x: 40, y: 32 } },
+    );
+    expect(expanded.group).toEqual({ x: 40, y: 32, width: 640, height: 408 });
+
+    const aspect = resizeSelectionGroup(
+      items,
+      { x: -400, y: -320, width: 1_080, height: 760 },
+      { x: -1, y: -1 },
+      true,
+      { minimum: { x: 40, y: 32 } },
+    );
+    expect(aspect.group.x).toBeGreaterThanOrEqual(40);
+    expect(aspect.group.y).toBeGreaterThanOrEqual(32);
+    expect(aspect.group.width / 580).toBeCloseTo(aspect.group.height / 360);
+  });
 });

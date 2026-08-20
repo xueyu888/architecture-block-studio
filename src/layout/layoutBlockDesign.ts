@@ -132,10 +132,12 @@ function boundsOf(nodes: PositionedNode[]): Bounds {
       height: BLOCK_NODE_GEOMETRY.defaultHeight,
     };
   }
-  const minX = Math.min(...nodes.map((node) => node.x));
-  const minY = Math.min(...nodes.map((node) => node.y));
+  const contentMinX = Math.min(...nodes.map((node) => node.x));
+  const contentMinY = Math.min(...nodes.map((node) => node.y));
   const maxX = Math.max(...nodes.map((node) => node.x + node.width));
   const maxY = Math.max(...nodes.map((node) => node.y + node.height));
+  const minX = Math.min(0, contentMinX);
+  const minY = Math.min(0, contentMinY);
   return { minX, minY, width: maxX - minX, height: maxY - minY };
 }
 
@@ -517,6 +519,10 @@ async function composeLevel(
             x: CONTAINER_PADDING_X - item.child.bounds.minX,
             y: CONTAINER_PADDING_TOP - item.child.bounds.minY,
           },
+          coordinateOrigin: {
+            x: item.child.bounds.minX,
+            y: item.child.bounds.minY,
+          },
           dropBounds: {
             x: BLOCK_NODE_GEOMETRY.expandedBorderWidth,
             y: BLOCK_NODE_GEOMETRY.headerHeight,
@@ -534,7 +540,7 @@ async function composeLevel(
       style: { width: item.width, height: item.height },
       parentId: parentFlowId,
       extent: parentFlowId ? "parent" : undefined,
-      expandParent: false,
+      expandParent: Boolean(parentFlowId),
       zIndex: item.expanded ? hierarchyDepth : hierarchyDepth + 2,
       data: {
         block: item.node,

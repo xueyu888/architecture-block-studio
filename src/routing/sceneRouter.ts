@@ -11,6 +11,7 @@ import {
   routeHasSelfIntersection,
   routeRespectsFacingMonotonicity,
   routeLength,
+  relativeRouteSignature,
   routeSegments,
   routeSignature,
   type RouteSegment,
@@ -310,7 +311,7 @@ function aestheticRouteSignature(points: readonly RoutePoint[], leg: RoutingLeg,
   const imbalance = Math.round(Math.abs(sourceRun - targetRun) * policy.coordinateScale)
     .toString()
     .padStart(12, "0");
-  return `${imbalance}:${routeSignature(points)}`;
+  return `${imbalance}:${relativeRouteSignature(points, leg.source.point)}`;
 }
 
 function pointWithinBounds(point: RoutePoint, bounds: RoutingRect | undefined): boolean {
@@ -372,7 +373,7 @@ function buildVisibilityGraph(
       orthogonalVariants(vertices[leftIndex], vertices[rightIndex])
         .map((points) => compactOrthogonalPoints(points))
         .filter((points) => points.every((point) => pointWithinBounds(point, leg.routingBounds)) && pathIsClear(points, obstacles))
-        .sort((left, right) => routeSignature(left).localeCompare(routeSignature(right)))
+        .sort((left, right) => relativeRouteSignature(left).localeCompare(relativeRouteSignature(right)))
         .forEach((points) => {
           const segments = routeSegments(points);
           const metrics = {
@@ -381,12 +382,17 @@ function buildVisibilityGraph(
             bends: routeBends(points),
             shortSegments: shortSegmentCount(points, policy.minimumSegmentLength),
           };
-          arcs.get(leftIndex)!.push({ to: rightIndex, points, signature: routeSignature(points), ...metrics });
+          arcs.get(leftIndex)!.push({
+            to: rightIndex,
+            points,
+            signature: relativeRouteSignature(points),
+            ...metrics,
+          });
           const reversed = [...points].reverse();
           arcs.get(rightIndex)!.push({
             to: leftIndex,
             points: reversed,
-            signature: routeSignature(reversed),
+            signature: relativeRouteSignature(reversed),
             ...metrics,
             segments: [...segments].reverse().map((segment) => ({ ...segment, a: segment.b, b: segment.a })),
           });
