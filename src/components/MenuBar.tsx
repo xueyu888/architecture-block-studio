@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, History } from "lucide-react";
+import { useStudioLocale } from "../i18n/StudioLocale";
+import type { StudioMessageKey } from "../i18n/catalog";
 import type { SourceRef } from "../model";
+import type { RecentDesignSummary } from "../io/desktopBridge";
 import type { StudioCommand, StudioCommandId, StudioCommands } from "../studio/commands";
 
 type MenuId = "file" | "edit" | "design" | "arrange" | "view";
@@ -20,13 +23,13 @@ function printableCharacter(event: {
 
 const MENU_DEFINITIONS: Array<{
   id: MenuId;
-  label: string;
+  labelKey: StudioMessageKey;
   commandIds: StudioCommandId[];
 }> = [
-  { id: "file", label: "File", commandIds: ["newDesign", "openDesign", "save", "saveAs", "exportJson"] },
+  { id: "file", labelKey: "menu.file", commandIds: ["newDesign", "openDesign", "save", "saveAs", "exportJson"] },
   {
     id: "edit",
-    label: "Edit",
+    labelKey: "menu.edit",
     commandIds: [
       "undo",
       "redo",
@@ -47,10 +50,10 @@ const MENU_DEFINITIONS: Array<{
       "deleteSelection",
     ],
   },
-  { id: "design", label: "Design", commandIds: ["addBlock", "addPort", "addConnection", "reconnectConnection", "addChildDesign", "regenerateLayout", "optimizeRouting", "validateDesign"] },
+  { id: "design", labelKey: "menu.design", commandIds: ["addBlock", "addPort", "addConnection", "reconnectConnection", "addChildDesign", "regenerateLayout", "optimizeRouting", "validateDesign"] },
   {
     id: "arrange",
-    label: "Arrange",
+    labelKey: "menu.arrange",
     commandIds: [
       "alignSelectionLeft",
       "alignSelectionCenter",
@@ -64,7 +67,7 @@ const MENU_DEFINITIONS: Array<{
   },
   {
     id: "view",
-    label: "View",
+    labelKey: "menu.view",
     commandIds: [
       "enterHierarchy",
       "exitHierarchy",
@@ -96,6 +99,8 @@ function Menu({
   onNavigateMenu,
   onNavigateTrigger,
   onNavigateTriggerByCharacter,
+  recentDesigns,
+  onOpenRecent,
 }: {
   id: MenuId;
   label: string;
@@ -108,7 +113,10 @@ function Menu({
   onNavigateMenu: (id: MenuId, direction: -1 | 1) => void;
   onNavigateTrigger: (id: MenuId, direction: -1 | 1) => void;
   onNavigateTriggerByCharacter: (id: MenuId, character: string) => void;
+  recentDesigns?: readonly RecentDesignSummary[];
+  onOpenRecent?: (id: string) => void;
 }) {
+  const { t } = useStudioLocale();
   const open = activeMenu === id;
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -236,6 +244,60 @@ function Menu({
               {command.shortcut && <kbd>{command.shortcut}</kbd>}
             </button>
           ))}
+          {id === "file" && recentDesigns && (
+            <>
+              <div className="bd-menu-separator" role="separator" />
+              <div className="bd-menu-section-label">{t("menu.recent")}</div>
+              {recentDesigns.length === 0 ? (
+                <div className="bd-menu-empty">{t("menu.noRecent")}</div>
+              ) : recentDesigns.map((recent, index) => (
+                <button
+                  key={recent.id}
+                  ref={(element) => { itemRefs.current[commands.length + index] = element; }}
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  className="bd-menu-recent-item"
+                  title={recent.folderPath}
+                  aria-label={t("menu.openRecent", { name: recent.fileName })}
+                  onClick={() => {
+                    document.getElementById(`bd-menu-trigger-${id}`)?.focus();
+                    onClose(id, false);
+                    onOpenRecent?.(recent.id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                      event.preventDefault();
+                      moveItemFocus(event.currentTarget, event.key === "ArrowUp" ? -1 : 1);
+                    } else if (event.key === "Home" || event.key === "End") {
+                      event.preventDefault();
+                      focusItem(event.key === "Home" ? "first" : "last");
+                    } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                      event.preventDefault();
+                      onNavigateMenu(id, event.key === "ArrowLeft" ? -1 : 1);
+                    } else if (event.key === "Escape") {
+                      event.preventDefault();
+                      onClose(id, true);
+                    } else if (event.key === "Tab") {
+                      onClose(id, false);
+                    } else {
+                      const character = printableCharacter(event);
+                      if (character) {
+                        event.preventDefault();
+                        moveItemFocusByCharacter(event.currentTarget, character);
+                      }
+                    }
+                  }}
+                >
+                  <History size={13} aria-hidden="true" />
+                  <span className="bd-menu-item-copy">
+                    <span>{recent.fileName}</span>
+                    <small>{recent.folderPath}</small>
+                  </span>
+                </button>
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -245,10 +307,15 @@ function Menu({
 export function MenuBar({
   sourceRef,
   commands,
+  recentDesigns,
+  onOpenRecent,
 }: {
   sourceRef?: SourceRef;
   commands: StudioCommands;
+  recentDesigns?: readonly RecentDesignSummary[];
+  onOpenRecent?: (id: string) => void;
 }) {
+  const { t } = useStudioLocale();
   const [activeMenu, setActiveMenu] = useState<MenuId>();
   const [focusRequest, setFocusRequest] = useState<{ id: MenuId; target: MenuFocusTarget }>();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -299,7 +366,7 @@ export function MenuBar({
       const start = menuIndex(id);
       for (let distance = 1; distance <= MENU_DEFINITIONS.length; distance += 1) {
         const candidate = MENU_DEFINITIONS[(start + distance) % MENU_DEFINITIONS.length];
-        if (candidate.label.toLocaleLowerCase().startsWith(character)) {
+        if (t(candidate.labelKey).toLocaleLowerCase().startsWith(character)) {
           setActiveMenu(undefined);
           setFocusRequest(undefined);
           triggerRefs.current.get(candidate.id)?.focus();
@@ -307,6 +374,8 @@ export function MenuBar({
         }
       }
     },
+    recentDesigns,
+    onOpenRecent,
   };
 
   return (
@@ -316,7 +385,7 @@ export function MenuBar({
           {...menuProps}
           key={menu.id}
           id={menu.id}
-          label={menu.label}
+          label={t(menu.labelKey)}
           commands={menu.commandIds.map((commandId) => commands[commandId])}
           focusTarget={focusRequest?.id === menu.id ? focusRequest.target : undefined}
           triggerRef={(element) => {

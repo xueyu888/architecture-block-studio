@@ -14,6 +14,7 @@ import type {
   PortDirection,
   PortSide,
 } from "../model";
+import { useStudioLocale } from "../i18n/StudioLocale";
 import { useDialogFocus } from "./useDialogFocus";
 
 function DialogShell({
@@ -35,6 +36,7 @@ function DialogShell({
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const { t } = useStudioLocale();
   const dialogRef = useRef<HTMLFormElement>(null);
   useDialogFocus({ open, dialogRef, onClose });
   if (!open) return null;
@@ -47,7 +49,7 @@ function DialogShell({
         <div className="bd-editor-dialog-fields">{children}</div>
         {error && <p className="bd-editor-error" role="alert">{error}</p>}
         <footer>
-          <button type="button" onClick={onClose}>Cancel</button>
+          <button type="button" onClick={onClose}>{t("common.cancel")}</button>
           <button type="submit" className="is-primary" disabled={submitDisabled}>{submitLabel}</button>
         </footer>
       </form>
@@ -131,6 +133,7 @@ export function NewDesignDialog({
   onClose: () => void;
   onCreate: (values: { id: string; title: string }) => void;
 }) {
+  const { t } = useStudioLocale();
   const draft = useLinkedIdentifier({
     open,
     initialName: "Untitled Architecture",
@@ -138,12 +141,12 @@ export function NewDesignDialog({
     idFromName: idFromTitle,
   });
   return (
-    <DialogShell open={open} title="New Design" submitLabel="Create" error={error} onClose={onClose} onSubmit={(event) => {
+    <DialogShell open={open} title={t("dialog.newDesign")} submitLabel={t("dialog.create")} error={error} onClose={onClose} onSubmit={(event) => {
       event.preventDefault();
       onCreate({ id: draft.id.trim(), title: draft.name.trim() });
     }}>
-      <TextField label="Design title" value={draft.name} onChange={draft.changeName} required autoFocus />
-      <TextField label="Design id" value={draft.id} onChange={draft.changeId} required />
+      <TextField label={t("dialog.designTitle")} value={draft.name} onChange={draft.changeName} required autoFocus />
+      <TextField label={t("dialog.designId")} value={draft.id} onChange={draft.changeId} required />
     </DialogShell>
   );
 }
@@ -165,6 +168,7 @@ export function AddBlockDialog({
   onClose: () => void;
   onCreate: (values: { id: string; title: string; owner: string }) => void;
 }) {
+  const { t } = useStudioLocale();
   const draft = useLinkedIdentifier({
     open,
     initialName: "New Module",
@@ -177,13 +181,13 @@ export function AddBlockDialog({
     setOwner("");
   }, [open]);
   return (
-    <DialogShell open={open} title={`Add Module to ${levelTitle}`} submitLabel="Add Module" error={error} onClose={onClose} onSubmit={(event) => {
+    <DialogShell open={open} title={t("dialog.addModuleTo", { title: levelTitle })} submitLabel={t("dialog.addModule")} error={error} onClose={onClose} onSubmit={(event) => {
       event.preventDefault();
       onCreate({ id: draft.id.trim(), title: draft.name.trim(), owner: owner.trim() });
     }}>
-      <TextField label="Module title" value={draft.name} onChange={draft.changeName} required autoFocus />
-      <TextField label="Module id" value={draft.id} onChange={draft.changeId} required />
-      <TextField label="Owner" value={owner} onChange={setOwner} placeholder="Optional" />
+      <TextField label={t("dialog.moduleTitle")} value={draft.name} onChange={draft.changeName} required autoFocus />
+      <TextField label={t("dialog.moduleId")} value={draft.id} onChange={draft.changeId} required />
+      <TextField label={t("dialog.owner")} value={owner} onChange={setOwner} placeholder={t("common.optional")} />
     </DialogShell>
   );
 }
@@ -212,6 +216,7 @@ export function AddPortDialog({
     required: boolean;
   }) => void;
 }) {
+  const { t } = useStudioLocale();
   const draft = useLinkedIdentifier({
     open,
     initialName: "port",
@@ -230,22 +235,22 @@ export function AddPortDialog({
     setRequired(true);
   }, [open]);
   return (
-    <DialogShell open={open} title={`Add Port to ${blockTitle}`} submitLabel="Add Port" error={error} onClose={onClose} onSubmit={(event) => {
+    <DialogShell open={open} title={t("dialog.addPortTo", { title: blockTitle })} submitLabel={t("dialog.addPort")} error={error} onClose={onClose} onSubmit={(event) => {
       event.preventDefault();
       onCreate({ id: draft.id.trim(), label: draft.name.trim(), direction, side, dataType: dataType.trim(), required });
     }}>
-      <TextField label="Port label" value={draft.name} onChange={draft.changeName} required autoFocus />
-      <TextField label="Port id" value={draft.id} onChange={draft.changeId} required />
+      <TextField label={t("dialog.portLabel")} value={draft.name} onChange={draft.changeName} required autoFocus />
+      <TextField label={t("dialog.portId")} value={draft.id} onChange={draft.changeId} required />
       <div className="bd-form-row">
-        <label className="bd-form-field"><span>Direction</span><select value={direction} onChange={(event) => setDirection(event.target.value as PortDirection)}>
-          <option value="input">Input</option><option value="output">Output</option><option value="bidirectional">Bidirectional</option>
+        <label className="bd-form-field"><span>{t("dialog.direction")}</span><select value={direction} onChange={(event) => setDirection(event.target.value as PortDirection)}>
+          <option value="input">{t("dialog.input")}</option><option value="output">{t("dialog.output")}</option><option value="bidirectional">{t("dialog.bidirectional")}</option>
         </select></label>
-        <label className="bd-form-field"><span>Side</span><select value={side} onChange={(event) => setSide(event.target.value as PortSide)}>
-          <option value="left">Left</option><option value="right">Right</option><option value="top">Top</option><option value="bottom">Bottom</option>
+        <label className="bd-form-field"><span>{t("dialog.side")}</span><select value={side} onChange={(event) => setSide(event.target.value as PortSide)}>
+          <option value="left">{t("dialog.left")}</option><option value="right">{t("dialog.right")}</option><option value="top">{t("dialog.top")}</option><option value="bottom">{t("dialog.bottom")}</option>
         </select></label>
       </div>
-      <TextField label="Data type" value={dataType} onChange={setDataType} placeholder="Optional" />
-      <label className="bd-check-field"><input type="checkbox" checked={required} onChange={(event) => setRequired(event.target.checked)} /><span>Required connection</span></label>
+      <TextField label={t("dialog.dataType")} value={dataType} onChange={setDataType} placeholder={t("common.optional")} />
+      <label className="bd-check-field"><input type="checkbox" checked={required} onChange={(event) => setRequired(event.target.checked)} /><span>{t("dialog.required")}</span></label>
     </DialogShell>
   );
 }
@@ -267,6 +272,7 @@ export function AddChildDesignDialog({
   onClose: () => void;
   onCreate: (values: { id: string; title: string }) => void;
 }) {
+  const { t } = useStudioLocale();
   const draft = useLinkedIdentifier({
     open,
     initialName: `${blockTitle} Internals`,
@@ -274,12 +280,12 @@ export function AddChildDesignDialog({
     idFromName: idFromTitle,
   });
   return (
-    <DialogShell open={open} title={`Create Child Design for ${blockTitle}`} submitLabel="Create Child Design" error={error} onClose={onClose} onSubmit={(event) => {
+    <DialogShell open={open} title={t("dialog.createChildFor", { title: blockTitle })} submitLabel={t("dialog.createChild")} error={error} onClose={onClose} onSubmit={(event) => {
       event.preventDefault();
       onCreate({ id: draft.id.trim(), title: draft.name.trim() });
     }}>
-      <TextField label="Child design title" value={draft.name} onChange={draft.changeName} required autoFocus />
-      <TextField label="Child level id" value={draft.id} onChange={draft.changeId} required />
+      <TextField label={t("dialog.childTitle")} value={draft.name} onChange={draft.changeName} required autoFocus />
+      <TextField label={t("dialog.childId")} value={draft.id} onChange={draft.changeId} required />
     </DialogShell>
   );
 }
@@ -322,6 +328,7 @@ export function SelectConnectionEndpointsDialog({
   onClose: () => void;
   onContinue: (connection: NormalizedConnectionEndpoints) => void;
 }) {
+  const { t } = useStudioLocale();
   const sourceOptions = useMemo(() => level ? listConnectionSourceEndpoints(level) : [], [level]);
   const [sourceKey, setSourceKey] = useState("");
   const [targetKey, setTargetKey] = useState("");
@@ -367,8 +374,8 @@ export function SelectConnectionEndpointsDialog({
   return (
     <DialogShell
       open={Boolean(level)}
-      title={mode.kind === "reconnect" ? "Reconnect Interface" : "Connect Ports"}
-      submitLabel={mode.kind === "reconnect" ? "Reconnect" : "Continue"}
+      title={t(mode.kind === "reconnect" ? "dialog.reconnect" : "dialog.connectPorts")}
+      submitLabel={t(mode.kind === "reconnect" ? "dialog.reconnectAction" : "dialog.continue")}
       submitDisabled={!normalized || !endpointsChanged}
       error={error}
       onClose={onClose}
@@ -381,13 +388,13 @@ export function SelectConnectionEndpointsDialog({
         {reconnectHint ?? `Choose two ports in ${level?.title}. The next step defines their shared interface contract.`}
       </p>
       <label className="bd-form-field">
-        <span>Source port</span>
+        <span>{t("dialog.sourcePort")}</span>
         <select value={sourceKey} data-autofocus="true" onChange={(event) => setSourceKey(event.target.value)} required>
           {sourceOptions.map((endpoint) => <option key={endpointKey(endpoint)} value={endpointKey(endpoint)}>{endpointLabel(endpoint)}</option>)}
         </select>
       </label>
       <label className="bd-form-field">
-        <span>Target port</span>
+        <span>{t("dialog.targetPort")}</span>
         <select value={target ? targetKey : ""} onChange={(event) => setTargetKey(event.target.value)} required>
           {availableTargets.map((endpoint) => <option key={endpointKey(endpoint)} value={endpointKey(endpoint)}>{endpointLabel(endpoint)}</option>)}
         </select>
@@ -407,6 +414,7 @@ export function CreateConnectionDialog({
   onClose: () => void;
   onCreate: (values: { connectionId: string; interfaceId: string; title: string; kind: InterfaceKind; owner: string }) => void;
 }) {
+  const { t } = useStudioLocale();
   const [connectionId, setConnectionId] = useState("");
   const [interfaceId, setInterfaceId] = useState("");
   const [title, setTitle] = useState("");
@@ -421,21 +429,21 @@ export function CreateConnectionDialog({
     setOwner("");
   }, [pending]);
   return (
-    <DialogShell open={Boolean(pending)} title="Create Typed Interface" submitLabel="Create Connection" error={error} onClose={onClose} onSubmit={(event) => {
+    <DialogShell open={Boolean(pending)} title={t("dialog.createTyped")} submitLabel={t("dialog.createConnection")} error={error} onClose={onClose} onSubmit={(event) => {
       event.preventDefault();
       onCreate({ connectionId: connectionId.trim(), interfaceId: interfaceId.trim(), title: title.trim(), kind, owner: owner.trim() });
     }}>
       {pending && <p className="bd-dialog-route"><code>{pending.source.nodeId}.{pending.source.portId}</code><span>→</span><code>{pending.target.nodeId}.{pending.target.portId}</code></p>}
-      <TextField label="Interface title" value={title} onChange={setTitle} required autoFocus />
+      <TextField label={t("dialog.interfaceTitle")} value={title} onChange={setTitle} required autoFocus />
       <div className="bd-form-row">
-        <TextField label="Connection id" value={connectionId} onChange={setConnectionId} required />
-        <TextField label="Interface id" value={interfaceId} onChange={setInterfaceId} required />
+        <TextField label={t("dialog.connectionId")} value={connectionId} onChange={setConnectionId} required />
+        <TextField label={t("dialog.interfaceId")} value={interfaceId} onChange={setInterfaceId} required />
       </div>
       <div className="bd-form-row">
-        <label className="bd-form-field"><span>Interface type</span><select value={kind} onChange={(event) => setKind(event.target.value as InterfaceKind)}>
+        <label className="bd-form-field"><span>{t("dialog.interfaceType")}</span><select value={kind} onChange={(event) => setKind(event.target.value as InterfaceKind)}>
           <option value="rpc">RPC</option><option value="dto">DTO</option><option value="port">Port</option><option value="integration">Integration</option><option value="internal">Internal</option><option value="event">Event</option><option value="stream">Stream</option>
         </select></label>
-        <TextField label="Owner" value={owner} onChange={setOwner} required />
+        <TextField label={t("dialog.owner")} value={owner} onChange={setOwner} required />
       </div>
     </DialogShell>
   );
@@ -454,16 +462,17 @@ export function SaveDesignDialog({
   onClose: () => void;
   onSave: (fileName: string) => void;
 }) {
+  const { t } = useStudioLocale();
   const [fileName, setFileName] = useState(initialFileName);
   useLayoutEffect(() => {
     if (open) setFileName(initialFileName);
   }, [initialFileName, open]);
   return (
-    <DialogShell open={open} title="Save Design As" submitLabel="Save" error={error} onClose={onClose} onSubmit={(event) => {
+    <DialogShell open={open} title={t("dialog.saveAs")} submitLabel={t("dialog.save")} error={error} onClose={onClose} onSubmit={(event) => {
       event.preventDefault();
       onSave(fileName.trim());
     }}>
-      <TextField label="File name" value={fileName} onChange={setFileName} required autoFocus />
+      <TextField label={t("dialog.fileName")} value={fileName} onChange={setFileName} required autoFocus />
       <p className="bd-dialog-hint">The browser saves a portable BlockDesignDocument JSON file.</p>
     </DialogShell>
   );

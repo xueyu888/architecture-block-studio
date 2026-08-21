@@ -432,8 +432,8 @@ describe("standalone scene router", () => {
       diagnostics: result.diagnostics,
     }).toMatchObject({
       status: "Feasible",
-      routes: 27,
-      legs: 27,
+      routes: 29,
+      legs: 29,
       objective: { capacityViolations: 0 },
       diagnostics: [],
     });

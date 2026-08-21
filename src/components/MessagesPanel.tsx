@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CircleCheck, CircleX, Info, Search, ShieldCheck, TriangleAlert } from "lucide-react";
 import type { DesignIssue } from "../model";
+import { useStudioLocale } from "../i18n/StudioLocale";
 
 type SeverityFilter = "all" | DesignIssue["severity"];
 
@@ -20,6 +21,7 @@ export function MessagesPanel({
   focusRequest: number;
   onSelect: (issue: DesignIssue) => void;
 }) {
+  const { t } = useStudioLocale();
   const filterRef = useRef<HTMLInputElement>(null);
   const handledFocusRequest = useRef(0);
   const [severity, setSeverity] = useState<SeverityFilter>("all");
@@ -35,10 +37,10 @@ export function MessagesPanel({
       .some((value) => value?.toLocaleLowerCase().includes(normalizedQuery));
   }), [issues, normalizedQuery, severity]);
   const filters: Array<{ id: SeverityFilter; label: string; count: number }> = [
-    { id: "all", label: "All", count: issues.length },
-    { id: "error", label: "Errors", count: errors },
-    { id: "warning", label: "Warnings", count: warnings },
-    { id: "info", label: "Info", count: infos },
+    { id: "all", label: t("messages.all"), count: issues.length },
+    { id: "error", label: t("messages.errors"), count: errors },
+    { id: "warning", label: t("messages.warnings"), count: warnings },
+    { id: "info", label: t("messages.info"), count: infos },
   ];
   useEffect(() => {
     if (focusRequest <= handledFocusRequest.current) return;
@@ -50,20 +52,20 @@ export function MessagesPanel({
     <section className="bd-messages">
       <header className="bd-messages-header">
         <div className="bd-message-tab">
-          <ShieldCheck size={13} aria-hidden="true" /> Design Rule Check
+          <ShieldCheck size={13} aria-hidden="true" /> {t("messages.title")}
           <span className="bd-message-count bd-message-error">{errors}</span>
           <span className="bd-message-count bd-message-warning">{warnings}</span>
         </div>
       </header>
-      <div className="bd-message-filters" role="toolbar" aria-label="Design issue filters">
+      <div className="bd-message-filters" role="toolbar" aria-label={t("messages.filters")}>
         <label>
           <Search size={12} aria-hidden="true" />
           <input
             ref={filterRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            aria-label="Filter design issues"
-            placeholder="Filter code, message, or target"
+            aria-label={t("messages.filter")}
+            placeholder={t("messages.placeholder")}
           />
         </label>
         <div className="bd-message-severity">
@@ -79,7 +81,7 @@ export function MessagesPanel({
             </button>
           ))}
         </div>
-        <small>{visibleIssues.length} shown</small>
+        <small>{t("messages.shown", { count: visibleIssues.length })}</small>
       </div>
       <div className="bd-message-list">
         {visibleIssues.map((item) => (
@@ -93,12 +95,12 @@ export function MessagesPanel({
             <code>{item.code}</code>
             <span className="bd-message-description">
               <span>{item.message}</span>
-              <small className="bd-message-remediation">Next: {item.remediation}</small>
+              <small className="bd-message-remediation">{t("messages.next", { text: item.remediation })}</small>
             </span>
             <small className="bd-message-target">{[item.levelId, item.nodeId, item.portId, item.connectionId].filter(Boolean).join(" / ")}</small>
           </button>
         ))}
-        {visibleIssues.length === 0 && <p className="bd-message-empty">No matching design issues</p>}
+        {visibleIssues.length === 0 && <p className="bd-message-empty">{t("messages.empty")}</p>}
       </div>
     </section>
   );

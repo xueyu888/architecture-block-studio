@@ -2,7 +2,7 @@
   "schemaVersion": "2.2",
   "id": "architecture-block-studio.source-architecture.v1",
   "title": "Architecture Block Studio — Source Architecture",
-  "summary": "Generated from 86 managed source files and 27 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
+  "summary": "Generated from 89 managed source files and 29 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
   "entryLevelId": "product-boundary",
   "sourceRef": {
     "label": "architecture-block-studio",
@@ -131,18 +131,18 @@
     },
     "source-import.protocols": {
       "kind": "internal",
-      "title": "Command & Selection public import surface",
+      "title": "Workbench Protocols public import surface",
       "protocol": "ES module dependency",
-      "owner": "src/studio/commands.ts · selection.ts",
-      "principle": "Consumers depend on the public exports owned by Command & Selection.",
-      "purpose": "Make compile-time use of Command & Selection explicit and source-verifiable.",
+      "owner": "src/studio/commands.ts · selection.ts · src/i18n",
+      "principle": "Consumers depend on the public exports owned by Workbench Protocols.",
+      "purpose": "Make compile-time use of Workbench Protocols explicit and source-verifiable.",
       "boundary": "The edge proves a resolved relative source import, not runtime ownership or data mutation.",
       "failure": "An unresolved, undeclared, fabricated, or cyclic module dependency fails the architecture gate.",
       "sourceRef": {
-        "label": "src/studio/commands.ts · selection.ts",
+        "label": "src/studio/commands.ts · selection.ts · src/i18n",
         "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/studio/commands.ts"
       },
-      "code": "src/studio/commands.ts\nsrc/studio/selection.ts",
+      "code": "src/studio/commands.ts\nsrc/studio/selection.ts\nsrc/i18n/",
       "codeLanguage": "text",
       "attributes": {
         "architectureModuleId": "protocols",
@@ -222,7 +222,7 @@
         "label": "src/components · workbench surfaces",
         "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/components/CanvasContextMenu.tsx"
       },
-      "code": "src/components/CanvasContextMenu.tsx\nsrc/components/CommandPalette.tsx\nsrc/components/DockWorkspace.tsx\nsrc/components/EditorDialogs.tsx\nsrc/components/HierarchyTree.tsx\nsrc/components/Inspector.tsx\nsrc/components/LoadDesignDialog.tsx\nsrc/components/MenuBar.tsx\nsrc/components/MessagesPanel.tsx\nsrc/components/StudioToolbar.tsx\nsrc/components/Tooltip.tsx\nsrc/components/contextMenuModel.ts\nsrc/components/hierarchyRows.ts\nsrc/components/moduleCreationGesture.ts\nsrc/components/useDialogFocus.ts",
+      "code": "src/components/CanvasContextMenu.tsx\nsrc/components/CommandPalette.tsx\nsrc/components/DockWorkspace.tsx\nsrc/components/EditorDialogs.tsx\nsrc/components/HierarchyTree.tsx\nsrc/components/Inspector.tsx\nsrc/components/LanguageSelector.tsx\nsrc/components/LoadDesignDialog.tsx\nsrc/components/MenuBar.tsx\nsrc/components/MessagesPanel.tsx\nsrc/components/StudioToolbar.tsx\nsrc/components/Tooltip.tsx\nsrc/components/contextMenuModel.ts\nsrc/components/hierarchyRows.ts\nsrc/components/moduleCreationGesture.ts\nsrc/components/useDialogFocus.ts",
       "codeLanguage": "text",
       "attributes": {
         "architectureModuleId": "workbench",
@@ -576,7 +576,7 @@
               "direction": "input",
               "dataType": "1 import declarations",
               "required": true,
-              "offset": 0.25
+              "offset": 0.2
             },
             {
               "id": "used-by-editor",
@@ -585,7 +585,7 @@
               "direction": "input",
               "dataType": "1 import declarations",
               "required": true,
-              "offset": 0.5
+              "offset": 0.4
             },
             {
               "id": "used-by-studio",
@@ -594,7 +594,16 @@
               "direction": "input",
               "dataType": "4 import declarations",
               "required": true,
-              "offset": 0.75
+              "offset": 0.6
+            },
+            {
+              "id": "used-by-workbench",
+              "label": "Workbench",
+              "side": "right",
+              "direction": "input",
+              "dataType": "1 import declarations",
+              "required": true,
+              "offset": 0.8
             },
             {
               "id": "depends-model",
@@ -632,7 +641,7 @@
               "y": 40
             },
             "width": 286,
-            "height": 197,
+            "height": 224,
             "pinned": true
           }
         },
@@ -866,39 +875,48 @@
         },
         {
           "id": "protocols",
-          "title": "Command & Selection",
+          "title": "Workbench Protocols",
           "kind": "protocol",
           "tone": "purple",
           "process": "STUDIO PROTOCOLS",
-          "summary": "Let menus, keyboard, Canvas, Inspector, and Studio speak one interaction protocol.",
-          "owner": "src/studio/commands.ts · selection.ts",
+          "summary": "Let menus, keyboard, Canvas, Inspector, and Studio speak one interaction and language protocol.",
+          "owner": "src/studio/commands.ts · selection.ts · src/i18n",
           "ports": [
+            {
+              "id": "used-by-app",
+              "label": "App",
+              "side": "right",
+              "direction": "input",
+              "dataType": "1 import declarations",
+              "required": true,
+              "offset": 0.2
+            },
             {
               "id": "used-by-canvas",
               "label": "Canvas",
               "side": "right",
               "direction": "input",
-              "dataType": "2 import declarations",
+              "dataType": "3 import declarations",
               "required": true,
-              "offset": 0.25
+              "offset": 0.4
             },
             {
               "id": "used-by-studio",
               "label": "Studio",
               "side": "right",
               "direction": "input",
-              "dataType": "3 import declarations",
+              "dataType": "6 import declarations",
               "required": true,
-              "offset": 0.5
+              "offset": 0.6
             },
             {
               "id": "used-by-workbench",
               "label": "Workbench",
               "side": "right",
               "direction": "input",
-              "dataType": "9 import declarations",
+              "dataType": "21 import declarations",
               "required": true,
-              "offset": 0.75
+              "offset": 0.8
             },
             {
               "id": "depends-model",
@@ -911,23 +929,23 @@
             }
           ],
           "inspector": {
-            "principle": "Own the leaf contracts for command availability and canonical workspace selection.",
-            "purpose": "Let menus, keyboard, Canvas, Inspector, and Studio speak one interaction protocol.",
+            "principle": "Own the leaf contracts for command availability, canonical selection, and persisted application locale.",
+            "purpose": "Let menus, keyboard, Canvas, Inspector, and Studio speak one interaction and language protocol.",
             "boundary": "Does not render UI, execute editor mutations, or own viewport navigation.",
             "failure": "Unavailable commands carry one visible reason; invalid selections resolve without hidden cursors.",
             "sourceRef": {
-              "label": "src/studio/commands.ts · selection.ts",
+              "label": "src/studio/commands.ts · selection.ts · src/i18n",
               "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/studio/commands.ts"
             },
-            "code": "src/studio/commands.ts\nsrc/studio/selection.ts",
+            "code": "src/studio/commands.ts\nsrc/studio/selection.ts\nsrc/i18n/",
             "codeLanguage": "text",
             "attributes": {
               "architectureRole": "source-module",
               "architectureModuleId": "protocols",
               "architectureGroupId": "protocols",
               "hierarchyDepth": "5",
-              "sourcePaths": "src/studio/commands.ts\nsrc/studio/selection.ts",
-              "sourceFileCount": "2"
+              "sourcePaths": "src/studio/commands.ts\nsrc/studio/selection.ts\nsrc/i18n/",
+              "sourceFileCount": "4"
             }
           },
           "layout": {
@@ -936,7 +954,7 @@
               "y": 680
             },
             "width": 286,
-            "height": 197,
+            "height": 224,
             "pinned": true
           }
         },
@@ -963,7 +981,7 @@
               "label": "Studio",
               "side": "right",
               "direction": "input",
-              "dataType": "11 import declarations",
+              "dataType": "12 import declarations",
               "required": true,
               "offset": 0.6666666666666666
             },
@@ -974,7 +992,16 @@
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
-              "offset": 0.25
+              "offset": 0.2
+            },
+            {
+              "id": "depends-io",
+              "label": "I/O",
+              "side": "left",
+              "direction": "output",
+              "dataType": "1 import declarations",
+              "required": true,
+              "offset": 0.4
             },
             {
               "id": "depends-model",
@@ -983,16 +1010,16 @@
               "direction": "output",
               "dataType": "8 import declarations",
               "required": true,
-              "offset": 0.5
+              "offset": 0.6
             },
             {
               "id": "depends-protocols",
               "label": "Protocols",
               "side": "left",
               "direction": "output",
-              "dataType": "9 import declarations",
+              "dataType": "21 import declarations",
               "required": true,
-              "offset": 0.75
+              "offset": 0.8
             }
           ],
           "inspector": {
@@ -1004,24 +1031,24 @@
               "label": "src/components · workbench surfaces",
               "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/components/CanvasContextMenu.tsx"
             },
-            "code": "src/components/CanvasContextMenu.tsx\nsrc/components/CommandPalette.tsx\nsrc/components/DockWorkspace.tsx\nsrc/components/EditorDialogs.tsx\nsrc/components/HierarchyTree.tsx\nsrc/components/Inspector.tsx\nsrc/components/LoadDesignDialog.tsx\nsrc/components/MenuBar.tsx\nsrc/components/MessagesPanel.tsx\nsrc/components/StudioToolbar.tsx\nsrc/components/Tooltip.tsx\nsrc/components/contextMenuModel.ts\nsrc/components/hierarchyRows.ts\nsrc/components/moduleCreationGesture.ts\nsrc/components/useDialogFocus.ts",
+            "code": "src/components/CanvasContextMenu.tsx\nsrc/components/CommandPalette.tsx\nsrc/components/DockWorkspace.tsx\nsrc/components/EditorDialogs.tsx\nsrc/components/HierarchyTree.tsx\nsrc/components/Inspector.tsx\nsrc/components/LanguageSelector.tsx\nsrc/components/LoadDesignDialog.tsx\nsrc/components/MenuBar.tsx\nsrc/components/MessagesPanel.tsx\nsrc/components/StudioToolbar.tsx\nsrc/components/Tooltip.tsx\nsrc/components/contextMenuModel.ts\nsrc/components/hierarchyRows.ts\nsrc/components/moduleCreationGesture.ts\nsrc/components/useDialogFocus.ts",
             "codeLanguage": "text",
             "attributes": {
               "architectureRole": "source-module",
               "architectureModuleId": "workbench",
               "architectureGroupId": "interaction",
               "hierarchyDepth": "5",
-              "sourcePaths": "src/components/CanvasContextMenu.tsx\nsrc/components/CommandPalette.tsx\nsrc/components/DockWorkspace.tsx\nsrc/components/EditorDialogs.tsx\nsrc/components/HierarchyTree.tsx\nsrc/components/Inspector.tsx\nsrc/components/LoadDesignDialog.tsx\nsrc/components/MenuBar.tsx\nsrc/components/MessagesPanel.tsx\nsrc/components/StudioToolbar.tsx\nsrc/components/Tooltip.tsx\nsrc/components/contextMenuModel.ts\nsrc/components/hierarchyRows.ts\nsrc/components/moduleCreationGesture.ts\nsrc/components/useDialogFocus.ts",
-              "sourceFileCount": "15"
+              "sourcePaths": "src/components/CanvasContextMenu.tsx\nsrc/components/CommandPalette.tsx\nsrc/components/DockWorkspace.tsx\nsrc/components/EditorDialogs.tsx\nsrc/components/HierarchyTree.tsx\nsrc/components/Inspector.tsx\nsrc/components/LanguageSelector.tsx\nsrc/components/LoadDesignDialog.tsx\nsrc/components/MenuBar.tsx\nsrc/components/MessagesPanel.tsx\nsrc/components/StudioToolbar.tsx\nsrc/components/Tooltip.tsx\nsrc/components/contextMenuModel.ts\nsrc/components/hierarchyRows.ts\nsrc/components/moduleCreationGesture.ts\nsrc/components/useDialogFocus.ts",
+              "sourceFileCount": "16"
             }
           },
           "layout": {
             "position": {
-              "x": 680,
+              "x": 1030,
               "y": 720
             },
             "width": 286,
-            "height": 197,
+            "height": 224,
             "pinned": true
           }
         },
@@ -1075,7 +1102,7 @@
               "label": "Protocols",
               "side": "left",
               "direction": "output",
-              "dataType": "2 import declarations",
+              "dataType": "3 import declarations",
               "required": true,
               "offset": 0.5714285714285714
             },
@@ -1120,7 +1147,7 @@
           },
           "layout": {
             "position": {
-              "x": 1030,
+              "x": 1380,
               "y": 380
             },
             "width": 286,
@@ -1196,7 +1223,7 @@
               "label": "Protocols",
               "side": "left",
               "direction": "output",
-              "dataType": "3 import declarations",
+              "dataType": "6 import declarations",
               "required": true,
               "offset": 0.75
             },
@@ -1205,7 +1232,7 @@
               "label": "Workbench",
               "side": "left",
               "direction": "output",
-              "dataType": "11 import declarations",
+              "dataType": "12 import declarations",
               "required": true,
               "offset": 0.875
             }
@@ -1232,7 +1259,7 @@
           },
           "layout": {
             "position": {
-              "x": 1380,
+              "x": 1730,
               "y": 380
             },
             "width": 286,
@@ -1281,7 +1308,7 @@
           },
           "layout": {
             "position": {
-              "x": 1730,
+              "x": 2080,
               "y": 740
             },
             "width": 286,
@@ -1314,7 +1341,16 @@
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
-              "offset": 0.3333333333333333
+              "offset": 0.25
+            },
+            {
+              "id": "depends-protocols",
+              "label": "Protocols",
+              "side": "left",
+              "direction": "output",
+              "dataType": "1 import declarations",
+              "required": true,
+              "offset": 0.5
             },
             {
               "id": "depends-studio",
@@ -1323,7 +1359,7 @@
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
-              "offset": 0.6666666666666666
+              "offset": 0.75
             }
           ],
           "inspector": {
@@ -1348,11 +1384,11 @@
           },
           "layout": {
             "position": {
-              "x": 1730,
+              "x": 2080,
               "y": 380
             },
             "width": 286,
-            "height": 184,
+            "height": 197,
             "pinned": true
           }
         },
@@ -1406,7 +1442,7 @@
           },
           "layout": {
             "position": {
-              "x": 2080,
+              "x": 2430,
               "y": 380
             },
             "width": 286,
@@ -1426,6 +1462,19 @@
           },
           "target": {
             "nodeId": "io",
+            "portId": "used-by-app"
+          }
+        },
+        {
+          "id": "import-app-to-protocols",
+          "interfaceId": "source-import.protocols",
+          "label": "Application Assembly → Workbench Protocols · 1 import declaration",
+          "source": {
+            "nodeId": "app",
+            "portId": "depends-protocols"
+          },
+          "target": {
+            "nodeId": "protocols",
             "portId": "used-by-app"
           }
         },
@@ -1510,7 +1559,7 @@
         {
           "id": "import-canvas-to-protocols",
           "interfaceId": "source-import.protocols",
-          "label": "Canvas Interaction → Command & Selection · 2 import declarations",
+          "label": "Canvas Interaction → Workbench Protocols · 3 import declarations",
           "source": {
             "nodeId": "canvas",
             "portId": "depends-protocols"
@@ -1601,7 +1650,7 @@
         {
           "id": "import-protocols-to-model",
           "interfaceId": "source-import.model",
-          "label": "Command & Selection → Model Contract · 1 import declaration",
+          "label": "Workbench Protocols → Model Contract · 1 import declaration",
           "source": {
             "nodeId": "protocols",
             "portId": "depends-model"
@@ -1705,7 +1754,7 @@
         {
           "id": "import-studio-to-protocols",
           "interfaceId": "source-import.protocols",
-          "label": "Studio Orchestrator → Command & Selection · 3 import declarations",
+          "label": "Studio Orchestrator → Workbench Protocols · 6 import declarations",
           "source": {
             "nodeId": "studio",
             "portId": "depends-protocols"
@@ -1718,7 +1767,7 @@
         {
           "id": "import-studio-to-workbench",
           "interfaceId": "source-import.workbench",
-          "label": "Studio Orchestrator → Workbench Components · 11 import declarations",
+          "label": "Studio Orchestrator → Workbench Components · 12 import declarations",
           "source": {
             "nodeId": "studio",
             "portId": "depends-workbench"
@@ -1742,6 +1791,19 @@
           }
         },
         {
+          "id": "import-workbench-to-io",
+          "interfaceId": "source-import.io",
+          "label": "Workbench Components → Canonical File I/O · 1 import declaration",
+          "source": {
+            "nodeId": "workbench",
+            "portId": "depends-io"
+          },
+          "target": {
+            "nodeId": "io",
+            "portId": "used-by-workbench"
+          }
+        },
+        {
           "id": "import-workbench-to-model",
           "interfaceId": "source-import.model",
           "label": "Workbench Components → Model Contract · 8 import declarations",
@@ -1757,7 +1819,7 @@
         {
           "id": "import-workbench-to-protocols",
           "interfaceId": "source-import.protocols",
-          "label": "Workbench Components → Command & Selection · 9 import declarations",
+          "label": "Workbench Components → Workbench Protocols · 21 import declarations",
           "source": {
             "nodeId": "workbench",
             "portId": "depends-protocols"

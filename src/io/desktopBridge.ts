@@ -7,7 +7,15 @@ export type DesktopSaveMode = "save" | "saveAs" | "export";
 
 export type DesktopOpenResult =
   | { status: "canceled" }
+  | { status: "unavailable"; fileName: string }
   | { status: "opened"; token: string; fileName: string; content: string };
+
+export interface RecentDesignSummary {
+  id: string;
+  fileName: string;
+  folderPath: string;
+  openedAt: string;
+}
 
 export type DesktopSaveResult =
   | { status: "canceled" }
@@ -21,6 +29,8 @@ export interface DesktopDirtyState {
 export interface ArchitectureBlockStudioDesktopBridge {
   readonly platform: "win32";
   openDesign: () => Promise<DesktopOpenResult>;
+  listRecentDesigns: () => Promise<RecentDesignSummary[]>;
+  openRecentDesign: (id: string) => Promise<DesktopOpenResult>;
   acceptOpenedDesign: (token: string) => Promise<boolean>;
   saveDesign: (request: {
     content: string;

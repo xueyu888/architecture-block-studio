@@ -1,5 +1,7 @@
 {
   "openDesign": "desktop:open-design",
+  "listRecentDesigns": "desktop:list-recent-designs",
+  "openRecentDesign": "desktop:open-recent-design",
   "acceptOpenedDesign": "desktop:accept-opened-design",
   "saveDesign": "desktop:save-design",
   "clearFileBinding": "desktop:clear-file-binding",

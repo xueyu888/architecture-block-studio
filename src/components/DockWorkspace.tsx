@@ -5,11 +5,13 @@ import {
   themeLight,
   type DockviewApi,
   type DockviewReadyEvent,
+  type EdgeGroupPosition,
   type IDockviewHeaderActionsProps,
   type IDockviewPanelHeaderProps,
   type IDockviewPanelProps,
 } from "dockview-react";
-import { Maximize2, PictureInPicture2 } from "lucide-react";
+import { Maximize2, PanelLeftClose, PanelRightClose, PictureInPicture2 } from "lucide-react";
+import { useStudioLocale } from "../i18n/StudioLocale";
 
 const LAYOUT_STORAGE_KEY = "architecture-block-studio.workspace.v2";
 
@@ -21,6 +23,7 @@ interface DockContent {
 }
 
 const DockContentContext = createContext<DockContent | undefined>(undefined);
+const DockActionContext = createContext<((position: EdgeGroupPosition) => void) | undefined>(undefined);
 
 function useDockContent(): DockContent {
   const value = useContext(DockContentContext);
@@ -56,13 +59,31 @@ function StudioTab(props: IDockviewPanelHeaderProps) {
 }
 
 function StudioHeaderActions({ activePanel, containerApi, location }: IDockviewHeaderActionsProps) {
+  const toggleEdgeGroup = useContext(DockActionContext);
+  const { t } = useStudioLocale();
   if (!activePanel) return null;
+  const collapsiblePosition = location?.type === "edge" && (location.position === "left" || location.position === "right")
+    ? location.position
+    : undefined;
   return (
     <div className="bd-dock-header-actions">
+      {collapsiblePosition && (
+        <button
+          type="button"
+          className="bd-dock-collapse-action"
+          title={t(collapsiblePosition === "left" ? "dock.collapseLeft" : "dock.collapseRight")}
+          aria-label={t(collapsiblePosition === "left" ? "dock.collapseLeft" : "dock.collapseRight")}
+          onClick={() => toggleEdgeGroup?.(collapsiblePosition)}
+        >
+          {collapsiblePosition === "left"
+            ? <PanelLeftClose aria-hidden="true" size={14} />
+            : <PanelRightClose aria-hidden="true" size={14} />}
+        </button>
+      )}
       <button
         type="button"
-        title="Float panel"
-        aria-label={`Float ${activePanel.title ?? "panel"}`}
+        title={t("dock.float")}
+        aria-label={t("dock.floatNamed", { title: activePanel.title ?? "panel" })}
         disabled={location?.type === "floating"}
         onClick={() => containerApi.addFloatingGroup(activePanel)}
       >
@@ -70,8 +91,8 @@ function StudioHeaderActions({ activePanel, containerApi, location }: IDockviewH
       </button>
       <button
         type="button"
-        title="Maximize or restore panel"
-        aria-label={`Maximize or restore ${activePanel.title ?? "panel"}`}
+        title={t("dock.maximize")}
+        aria-label={t("dock.maximizeNamed", { title: activePanel.title ?? "panel" })}
         onClick={() => {
           if (containerApi.hasMaximizedGroup()) containerApi.exitMaximizedGroup();
           else containerApi.maximizeGroup(activePanel);
@@ -83,12 +104,25 @@ function StudioHeaderActions({ activePanel, containerApi, location }: IDockviewH
   );
 }
 
-function createDefaultLayout(api: DockviewApi): void {
+interface DockTitles {
+  diagram: string;
+  sources: string;
+  properties: string;
+  messages: string;
+}
+
+function updatePanelTitles(api: DockviewApi, titles: DockTitles): void {
+  (Object.entries(titles) as Array<[keyof DockTitles, string]>).forEach(([id, title]) => {
+    api.getPanel(id)?.setTitle(title);
+  });
+}
+
+function createDefaultLayout(api: DockviewApi, titles: DockTitles): void {
   api.clear();
   api.addPanel({
     id: "diagram",
     component: "diagram",
-    title: "Diagram",
+    title: titles.diagram,
     minimumWidth: 520,
     minimumHeight: 320,
   });
@@ -103,7 +137,7 @@ function createDefaultLayout(api: DockviewApi): void {
   api.addPanel({
     id: "sources",
     component: "sources",
-    title: "Sources",
+    title: titles.sources,
     position: { referenceGroup: sources.id },
   });
 
@@ -117,7 +151,7 @@ function createDefaultLayout(api: DockviewApi): void {
   api.addPanel({
     id: "properties",
     component: "properties",
-    title: "Properties",
+    title: titles.properties,
     position: { referenceGroup: properties.id },
   });
 
@@ -132,7 +166,7 @@ function createDefaultLayout(api: DockviewApi): void {
   api.addPanel({
     id: "messages",
     component: "messages",
-    title: "Messages / DRC",
+    title: titles.messages,
     position: { referenceGroup: messages.id },
   });
 }
@@ -141,12 +175,23 @@ export function DockWorkspace({
   content,
   resetRequest,
   onReady,
+  onToggleEdgeGroup,
 }: {
   content: DockContent;
   resetRequest: number;
   onReady: (api: DockviewApi) => void;
+  onToggleEdgeGroup: (position: EdgeGroupPosition) => void;
 }) {
+  const { locale, t } = useStudioLocale();
+  const titles: DockTitles = {
+    diagram: t("dock.diagram"),
+    sources: t("dock.sources"),
+    properties: t("dock.properties"),
+    messages: t("dock.messages"),
+  };
   const apiRef = useRef<DockviewApi | undefined>(undefined);
+  const titlesRef = useRef(titles);
+  titlesRef.current = titles;
   const defaultLayoutRef = useRef<ReturnType<DockviewApi["toJSON"]> | undefined>(undefined);
   const initialResetRequest = useRef(resetRequest);
 
@@ -154,7 +199,12 @@ export function DockWorkspace({
     if (resetRequest === initialResetRequest.current || !apiRef.current || !defaultLayoutRef.current) return;
     localStorage.removeItem(LAYOUT_STORAGE_KEY);
     apiRef.current.fromJSON(defaultLayoutRef.current);
+    updatePanelTitles(apiRef.current, titlesRef.current);
   }, [resetRequest]);
+
+  useEffect(() => {
+    if (apiRef.current) updatePanelTitles(apiRef.current, titles);
+  }, [locale]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -170,7 +220,7 @@ export function DockWorkspace({
   const handleReady = (event: DockviewReadyEvent) => {
     const { api } = event;
     apiRef.current = api;
-    createDefaultLayout(api);
+    createDefaultLayout(api, titlesRef.current);
     defaultLayoutRef.current = api.toJSON();
 
     const saved = localStorage.getItem(LAYOUT_STORAGE_KEY);
@@ -182,6 +232,7 @@ export function DockWorkspace({
         api.fromJSON(defaultLayoutRef.current);
       }
     }
+    updatePanelTitles(api, titlesRef.current);
 
     api.onDidLayoutChange(() => {
       localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(api.toJSON()));
@@ -191,14 +242,16 @@ export function DockWorkspace({
 
   return (
     <DockContentContext.Provider value={content}>
-      <DockviewReact
-        className="bd-dockview"
-        theme={themeLight}
-        components={dockComponents}
-        defaultTabComponent={StudioTab}
-        rightHeaderActionsComponent={StudioHeaderActions}
-        onReady={handleReady}
-      />
+      <DockActionContext.Provider value={onToggleEdgeGroup}>
+        <DockviewReact
+          className="bd-dockview"
+          theme={themeLight}
+          components={dockComponents}
+          defaultTabComponent={StudioTab}
+          rightHeaderActionsComponent={StudioHeaderActions}
+          onReady={handleReady}
+        />
+      </DockActionContext.Provider>
     </DockContentContext.Provider>
   );
 }

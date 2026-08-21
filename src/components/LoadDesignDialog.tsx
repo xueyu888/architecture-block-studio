@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { FileJson, Link, X } from "lucide-react";
+import { useStudioLocale } from "../i18n/StudioLocale";
 import { useDialogFocus } from "./useDialogFocus";
 
 export function LoadDesignDialog({
@@ -17,6 +18,7 @@ export function LoadDesignDialog({
   onLoadFile: (file: File) => void;
   onLoadUrl: (url: string) => void;
 }) {
+  const { t } = useStudioLocale();
   const [url, setUrl] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
@@ -28,16 +30,16 @@ export function LoadDesignDialog({
       <section ref={dialogRef} tabIndex={-1} className="bd-dialog" role="dialog" aria-modal="true" aria-labelledby="load-design-title" onMouseDown={(event) => event.stopPropagation()}>
         <header>
           <div>
-            <span>BLOCK DESIGN SOURCE</span>
-            <h2 id="load-design-title">Open Design</h2>
+            <span>{t("open.eyebrow")}</span>
+            <h2 id="load-design-title">{t("open.title")}</h2>
           </div>
-          <button type="button" className="bd-icon-button" title="Close" aria-label="Close" onClick={onClose}>
+          <button type="button" className="bd-icon-button" title={t("common.close")} aria-label={t("common.close")} onClick={onClose}>
             <X size={15} />
           </button>
         </header>
         <div className="bd-dialog-section">
-          <h3><FileJson size={15} /> Local document</h3>
-          <p>Open a BlockDesignDocument v2 JSON file. The current design stays active until parsing succeeds.</p>
+          <h3><FileJson size={15} /> {t("open.local")}</h3>
+          <p>{t("open.localHint")}</p>
           <input
             ref={inputRef}
             type="file"
@@ -49,16 +51,16 @@ export function LoadDesignDialog({
             }}
           />
           <button type="button" className="bd-command-button" data-autofocus="true" disabled={busy} onClick={() => inputRef.current?.click()}>
-            <FileJson size={15} /> Choose JSON file
+            <FileJson size={15} /> {t("open.choose")}
           </button>
         </div>
         <div className="bd-dialog-section">
           <h3><Link size={15} /> URL</h3>
-          <p>Load a same-origin or CORS-enabled HTTP(S) JSON document.</p>
+          <p>{t("open.urlHint")}</p>
           <div className="bd-url-row">
             <input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.com/design.json" />
             <button type="button" className="bd-command-button" disabled={busy || !url.trim()} onClick={() => onLoadUrl(url.trim())}>
-              Open
+              {t("open.action")}
             </button>
           </div>
         </div>

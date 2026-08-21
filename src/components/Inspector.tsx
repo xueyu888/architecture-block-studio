@@ -15,6 +15,7 @@ import type {
   PortSide,
 } from "../model";
 import type { StudioCommand } from "../studio/commands";
+import { useStudioLocale } from "../i18n/StudioLocale";
 import { selectionKey, type SelectionRef } from "../studio/selection";
 
 interface ResolvedInspection {
@@ -120,9 +121,10 @@ function MultiSelectionSummary({ document, selection, onSelect }: {
 }
 
 function CopyButton({ value }: { value: string }) {
+  const { t } = useStudioLocale();
   const [copied, setCopied] = useState(false);
   return (
-    <button type="button" className="bd-icon-button" title="Copy" aria-label="Copy" onClick={async () => {
+    <button type="button" className="bd-icon-button" title={t("inspector.copy")} aria-label={t("inspector.copy")} onClick={async () => {
       await navigator.clipboard.writeText(value);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1200);
@@ -160,6 +162,7 @@ function Field({
 }
 
 function EditorForm({ children, onSubmit, onDelete }: { children: ReactNode; onSubmit: () => void; onDelete?: () => void }) {
+  const { t } = useStudioLocale();
   return (
     <form className="bd-inspector-form" onSubmit={(event: FormEvent) => {
       event.preventDefault();
@@ -167,9 +170,9 @@ function EditorForm({ children, onSubmit, onDelete }: { children: ReactNode; onS
     }}>
       <div className="bd-inspector-form-fields">{children}</div>
       <div className="bd-inspector-actions">
-        {onDelete && <button type="button" className="is-danger" onClick={onDelete}><Trash2 size={13} /> Delete</button>}
+        {onDelete && <button type="button" className="is-danger" onClick={onDelete}><Trash2 size={13} /> {t("inspector.delete")}</button>}
         <span />
-        <button type="submit" className="is-primary">Apply Changes</button>
+        <button type="submit" className="is-primary">{t("inspector.apply")}</button>
       </div>
     </form>
   );
@@ -180,14 +183,15 @@ function useReportDraft(dirty: boolean, onDraftChange: (dirty: boolean) => void)
 }
 
 function ContractFields({ value, onChange }: { value: InspectorDefinition; onChange: (value: InspectorDefinition) => void }) {
+  const { t } = useStudioLocale();
   const update = (values: Partial<InspectorDefinition>) => onChange({ ...value, ...values });
   return (
     <fieldset className="bd-contract-fieldset">
-      <legend>Module contract</legend>
-      <Field label="Principle" value={value.principle ?? ""} onChange={(principle) => update({ principle })} multiline />
-      <Field label="Purpose" value={value.purpose} onChange={(purpose) => update({ purpose })} multiline />
-      <Field label="Boundary" value={value.boundary} onChange={(boundary) => update({ boundary })} multiline />
-      <Field label="Failure behavior" value={value.failure} onChange={(failure) => update({ failure })} multiline />
+      <legend>{t("inspector.moduleContract")}</legend>
+      <Field label={t("inspector.principle")} value={value.principle ?? ""} onChange={(principle) => update({ principle })} multiline />
+      <Field label={t("inspector.purpose")} value={value.purpose} onChange={(purpose) => update({ purpose })} multiline />
+      <Field label={t("inspector.boundary")} value={value.boundary} onChange={(boundary) => update({ boundary })} multiline />
+      <Field label={t("inspector.failure")} value={value.failure} onChange={(failure) => update({ failure })} multiline />
       <details className="bd-progressive-fields">
         <summary>Contract source</summary>
         <div>
@@ -200,14 +204,15 @@ function ContractFields({ value, onChange }: { value: InspectorDefinition; onCha
 }
 
 function DocumentEditor({ document, onOperation, onDraftChange }: { document: BlockDesignDocument; onOperation: (operation: DesignOperation) => void; onDraftChange: (dirty: boolean) => void }) {
+  const { t } = useStudioLocale();
   const [title, setTitle] = useState(document.title);
   const [summary, setSummary] = useState(document.summary);
   useReportDraft(title !== document.title || summary !== document.summary, onDraftChange);
   return (
     <EditorForm onSubmit={() => onOperation({ type: "document/update", values: { title, summary } })}>
-      <Field label="Design id"><input value={document.id} disabled /></Field>
-      <Field label="Title" value={title} onChange={setTitle} required />
-      <Field label="Summary" value={summary} onChange={setSummary} multiline />
+      <Field label={t("dialog.designId")}><input value={document.id} disabled /></Field>
+      <Field label={t("inspector.title")} value={title} onChange={setTitle} required />
+      <Field label={t("inspector.summary")} value={summary} onChange={setSummary} multiline />
       <dl className="bd-property-grid">
         <div className="bd-property-row"><dt>Schema</dt><dd>{document.schemaVersion}</dd></div>
         <div className="bd-property-row"><dt>Entry level</dt><dd>{document.entryLevelId}</dd></div>
@@ -217,6 +222,7 @@ function DocumentEditor({ document, onOperation, onDraftChange }: { document: Bl
 }
 
 function LevelEditor({ level, onOperation, onDraftChange }: { level: DesignLevel; onOperation: (operation: DesignOperation) => void; onDraftChange: (dirty: boolean) => void }) {
+  const { t } = useStudioLocale();
   const [title, setTitle] = useState(level.title);
   const [description, setDescription] = useState(level.description);
   const [direction, setDirection] = useState(level.layout.direction);
@@ -240,15 +246,15 @@ function LevelEditor({ level, onOperation, onDraftChange }: { level: DesignLevel
         layout: { direction, spacing: Math.max(1, Number(spacing)), layerSpacing: Math.max(1, Number(layerSpacing)) },
       },
     })}>
-      <Field label="Level id"><input value={level.id} disabled /></Field>
-      <Field label="Title" value={title} onChange={setTitle} required />
-      <Field label="Description" value={description} onChange={setDescription} multiline />
+      <Field label={t("inspector.levelId")}><input value={level.id} disabled /></Field>
+      <Field label={t("inspector.title")} value={title} onChange={setTitle} required />
+      <Field label={t("inspector.description")} value={description} onChange={setDescription} multiline />
       <div className="bd-inspector-form-row">
-        <Field label="Direction"><select value={direction} onChange={(event) => setDirection(event.target.value as DesignLevel["layout"]["direction"])}>
-          <option value="RIGHT">Right</option><option value="DOWN">Down</option><option value="LEFT">Left</option><option value="UP">Up</option>
+        <Field label={t("dialog.direction")}><select value={direction} onChange={(event) => setDirection(event.target.value as DesignLevel["layout"]["direction"])}>
+          <option value="RIGHT">{t("dialog.right")}</option><option value="DOWN">{t("dialog.bottom")}</option><option value="LEFT">{t("dialog.left")}</option><option value="UP">{t("dialog.top")}</option>
         </select></Field>
-        <Field label="Spacing" value={spacing} onChange={setSpacing} />
-        <Field label="Layer spacing" value={layerSpacing} onChange={setLayerSpacing} />
+        <Field label={t("inspector.spacing")} value={spacing} onChange={setSpacing} />
+        <Field label={t("inspector.layerSpacing")} value={layerSpacing} onChange={setLayerSpacing} />
       </div>
     </EditorForm>
   );
@@ -362,6 +368,7 @@ function NodeEditor({ document, level, node, onOperation, onDelete, onDraftChang
   onDraftChange: (dirty: boolean) => void;
   onSelect: (selection: SelectionRef) => void;
 }) {
+  const { t } = useStudioLocale();
   const [title, setTitle] = useState(node.title);
   const [kind, setKind] = useState(node.kind);
   const [tone, setTone] = useState(node.tone);
@@ -392,19 +399,19 @@ function NodeEditor({ document, level, node, onOperation, onDelete, onDraftChang
         inspector,
       },
     })}>
-      <Field label="Module id"><input value={node.id} disabled /></Field>
-      <Field label="Title" value={title} onChange={setTitle} required />
+      <Field label={t("dialog.moduleId")}><input value={node.id} disabled /></Field>
+      <Field label={t("inspector.title")} value={title} onChange={setTitle} required />
       <div className="bd-inspector-form-row">
-        <Field label="Owner" value={owner} onChange={setOwner} />
-        <Field label="Kind" value={kind} onChange={setKind} />
+        <Field label={t("inspector.owner")} value={owner} onChange={setOwner} />
+        <Field label={t("inspector.kind")} value={kind} onChange={setKind} />
       </div>
       <div className="bd-inspector-form-row">
-        <Field label="Tone"><select value={tone} onChange={(event) => setTone(event.target.value)}>
+        <Field label={t("inspector.tone")}><select value={tone} onChange={(event) => setTone(event.target.value)}>
           <option value="neutral">Neutral</option><option value="ui">UI</option><option value="core">Core</option><option value="tool">Tool</option><option value="platform">Platform</option><option value="plugin">Plugin</option>
         </select></Field>
-        <Field label="Process" value={process} onChange={setProcess} />
+        <Field label={t("inspector.process")} value={process} onChange={setProcess} />
       </div>
-      <Field label="Summary" value={summary} onChange={setSummary} multiline />
+      <Field label={t("inspector.summary")} value={summary} onChange={setSummary} multiline />
       <section className="bd-node-geometry" aria-label="Module geometry">
         <div>
           <span>Canvas size</span>
@@ -429,6 +436,7 @@ function PortEditor({ level, node, port, onOperation, onDelete, onDraftChange }:
   onDelete: () => void;
   onDraftChange: (dirty: boolean) => void;
 }) {
+  const { t } = useStudioLocale();
   const [label, setLabel] = useState(port.label);
   const [direction, setDirection] = useState<PortDirection>(port.direction);
   const [side, setSide] = useState<PortSide>(port.side);
@@ -450,18 +458,18 @@ function PortEditor({ level, node, port, onOperation, onDelete, onDraftChange }:
       portId: port.id,
       values: { label, direction, side, dataType: dataType.trim() || undefined, required, offset: port.offset },
     })}>
-      <Field label="Port id"><input value={port.id} disabled /></Field>
-      <Field label="Label" value={label} onChange={setLabel} required />
+      <Field label={t("dialog.portId")}><input value={port.id} disabled /></Field>
+      <Field label={t("inspector.label")} value={label} onChange={setLabel} required />
       <div className="bd-inspector-form-row">
-        <Field label="Direction"><select value={direction} onChange={(event) => setDirection(event.target.value as PortDirection)}>
-          <option value="input">Input</option><option value="output">Output</option><option value="bidirectional">Bidirectional</option>
+        <Field label={t("dialog.direction")}><select value={direction} onChange={(event) => setDirection(event.target.value as PortDirection)}>
+          <option value="input">{t("dialog.input")}</option><option value="output">{t("dialog.output")}</option><option value="bidirectional">{t("dialog.bidirectional")}</option>
         </select></Field>
-        <Field label="Side"><select value={side} onChange={(event) => setSide(event.target.value as PortSide)}>
-          <option value="left">Left</option><option value="right">Right</option><option value="top">Top</option><option value="bottom">Bottom</option>
+        <Field label={t("dialog.side")}><select value={side} onChange={(event) => setSide(event.target.value as PortSide)}>
+          <option value="left">{t("dialog.left")}</option><option value="right">{t("dialog.right")}</option><option value="top">{t("dialog.top")}</option><option value="bottom">{t("dialog.bottom")}</option>
         </select></Field>
       </div>
-      <Field label="Data type" value={dataType} onChange={setDataType} />
-      <label className="bd-check-field"><input type="checkbox" checked={required} onChange={(event) => setRequired(event.target.checked)} /><span>Required connection</span></label>
+      <Field label={t("dialog.dataType")} value={dataType} onChange={setDataType} />
+      <label className="bd-check-field"><input type="checkbox" checked={required} onChange={(event) => setRequired(event.target.checked)} /><span>{t("dialog.required")}</span></label>
     </EditorForm>
   );
 }
@@ -483,6 +491,7 @@ function ConnectionEditor({
   onDelete: () => void;
   onDraftChange: (dirty: boolean) => void;
 }) {
+  const { t } = useStudioLocale();
   const connection = level.connections.find((candidate) => candidate.id === connectionId)!;
   const [label, setLabel] = useState(connection.label ?? "");
   const [definition, setDefinition] = useState<InterfaceDefinition>(document.interfaceDefinitions[connection.interfaceId]);
@@ -499,10 +508,10 @@ function ConnectionEditor({
       values: { label: label.trim() || undefined },
       definition,
     })}>
-      <Field label="Connection id"><input value={connection.id} disabled /></Field>
-      <Field label="Interface id"><input value={connection.interfaceId} disabled /></Field>
+      <Field label={t("dialog.connectionId")}><input value={connection.id} disabled /></Field>
+      <Field label={t("dialog.interfaceId")}><input value={connection.interfaceId} disabled /></Field>
       <section className="bd-route-editor" aria-label="Connection routing">
-        <div><span>Routing</span><strong>{connection.routing ? "Manual" : "Automatic"}</strong></div>
+        <div><span>{t("inspector.routing")}</span><strong>{t(connection.routing ? "inspector.manual" : "inspector.automatic")}</strong></div>
         <p>Drag a diamond to move a segment. Manual routes also show solid bend points: drag or use Arrow keys to move; Delete or double click removes one. Drag either circular endpoint, or use Reconnect endpoints for the full keyboard path. With the connection focused, Enter enters its route handles, Tab / Shift + Tab traverses them, and Escape returns to the connection. Confirmed geometry is saved in this JSON connection.</p>
         <button
           type="button"
@@ -532,15 +541,15 @@ function ConnectionEditor({
           </button>
         )}
       </section>
-      <Field label="Connection label" value={label} onChange={setLabel} />
-      <Field label="Interface title" value={definition.title} onChange={(title) => update({ title })} required />
+      <Field label={t("inspector.connectionLabel")} value={label} onChange={setLabel} />
+      <Field label={t("dialog.interfaceTitle")} value={definition.title} onChange={(title) => update({ title })} required />
       <div className="bd-inspector-form-row">
-        <Field label="Type"><select value={definition.kind} onChange={(event) => update({ kind: event.target.value as InterfaceKind })}>
+        <Field label={t("inspector.type")}><select value={definition.kind} onChange={(event) => update({ kind: event.target.value as InterfaceKind })}>
           <option value="rpc">RPC</option><option value="dto">DTO</option><option value="port">Port</option><option value="integration">Integration</option><option value="internal">Internal</option><option value="event">Event</option><option value="stream">Stream</option>
         </select></Field>
-        <Field label="Owner" value={definition.owner} onChange={(owner) => update({ owner })} required />
+        <Field label={t("inspector.owner")} value={definition.owner} onChange={(owner) => update({ owner })} required />
       </div>
-      <Field label="Protocol" value={definition.protocol ?? ""} onChange={(protocol) => update({ protocol: protocol.trim() || undefined })} />
+      <Field label={t("inspector.protocol")} value={definition.protocol ?? ""} onChange={(protocol) => update({ protocol: protocol.trim() || undefined })} />
       <ContractFields value={definition} onChange={(value) => setDefinition({ ...definition, ...value })} />
     </EditorForm>
   );
@@ -593,6 +602,7 @@ export function Inspector({
   onDraftChange: (dirty: boolean) => void;
   onSelect: (selection: SelectionRef) => void;
 }) {
+  const { t } = useStudioLocale();
   const inspectorRef = useRef<HTMLElement>(null);
   const restoreApplyFocus = useRef(false);
   const previousReconnectFocusRequest = useRef(reconnectFocusRequest);
@@ -641,14 +651,14 @@ export function Inspector({
     >
       <div className="bd-inspector-title">
         <span className={`bd-kind-badge bd-kind-${inspected.kind.toLowerCase()}`}>{inspected.kind}</span>
-        {draftDirty && <span className="bd-inspector-draft-status" role="status">UNAPPLIED</span>}
+        {draftDirty && <span className="bd-inspector-draft-status" role="status">{t("inspector.unapplied")}</span>}
         <h2>{inspected.title}</h2>
         {inspected.route && <code>{inspected.route}</code>}
         {inspected.owner && <small>{inspected.owner}</small>}
       </div>
-      <div className="bd-tabs" role="tablist" aria-label="Inspector views">
+      <div className="bd-tabs" role="tablist" aria-label={t("inspector.views")}>
         <button type="button" role="tab" aria-selected={tab === "properties"} className={tab === "properties" ? "is-active" : ""} onClick={() => setTab("properties")}>
-          <SlidersHorizontal size={13} aria-hidden="true" /> Properties
+          <SlidersHorizontal size={13} aria-hidden="true" /> {t("inspector.properties")}
         </button>
         <button type="button" role="tab" aria-selected={tab === "json"} className={tab === "json" ? "is-active" : ""} onClick={() => setTab("json")}>
           <Braces size={13} aria-hidden="true" /> JSON
@@ -658,7 +668,7 @@ export function Inspector({
         <InspectionEditor key={`${key}:${rawJson}`} document={document} selection={selection} reconnectCommand={reconnectCommand} onOperation={onOperation} onDelete={onDelete} onDraftChange={reportDraft} onSelect={onSelect} />
       </div>
       <div className="bd-code-section bd-raw-json" hidden={tab !== "json"}>
-          <header><h3>{selection.kind === "multiple" ? "Selected source objects" : "Selected source object"}</h3><CopyButton value={rawJson} /></header>
+          <header><h3>{t(selection.kind === "multiple" ? "inspector.selectedSources" : "inspector.selectedSource")}</h3><CopyButton value={rawJson} /></header>
           <pre><code>{rawJson}</code></pre>
       </div>
     </section>

@@ -4,6 +4,8 @@ const channels = Object.freeze(__CHANNELS__);
 contextBridge.exposeInMainWorld("architectureBlockStudioDesktop", Object.freeze({
   platform: "win32",
   openDesign: () => ipcRenderer.invoke(channels.openDesign),
+  listRecentDesigns: () => ipcRenderer.invoke(channels.listRecentDesigns),
+  openRecentDesign: (id) => ipcRenderer.invoke(channels.openRecentDesign, id),
   acceptOpenedDesign: (token) => ipcRenderer.invoke(channels.acceptOpenedDesign, token),
   saveDesign: (request) => ipcRenderer.invoke(channels.saveDesign, request),
   clearFileBinding: () => ipcRenderer.invoke(channels.clearFileBinding),

@@ -1,4 +1,5 @@
 import type { StudioCommand, StudioCommandId, StudioCommands } from "../studio/commands";
+import { useStudioLocale } from "../i18n/StudioLocale";
 import { MODULE_CREATION_DRAG_TYPE } from "./moduleCreationGesture";
 import { Tooltip } from "./Tooltip";
 
@@ -62,13 +63,14 @@ export function StudioToolbar({
   onNavigateViewRoot: (levelId: string) => void;
   expandedCount: number;
 }) {
+  const { t } = useStudioLocale();
   return (
-    <div className="bd-toolbar" role="toolbar" aria-label="Architecture design tools">
-      <CommandGroup label="File" commands={commands} ids={["newDesign", "openDesign", "save"]} />
-      <CommandGroup label="History and selection" commands={commands} ids={["undo", "redo", "deleteSelection"]} />
-      <CommandGroup label="Create" commands={commands} ids={["addBlock", "addPort", "addConnection", "addChildDesign"]} />
-      <CommandGroup label="Canvas and review" commands={commands} ids={["fitDesign", "validateDesign"]} />
-      <nav className="bd-breadcrumbs" aria-label="Diagram view hierarchy">
+    <div className="bd-toolbar" role="toolbar" aria-label={t("toolbar.label")}>
+      <CommandGroup label={t("toolbar.file")} commands={commands} ids={["newDesign", "openDesign", "save"]} />
+      <CommandGroup label={t("toolbar.history")} commands={commands} ids={["undo", "redo", "deleteSelection"]} />
+      <CommandGroup label={t("toolbar.create")} commands={commands} ids={["addBlock", "addPort", "addConnection", "addChildDesign"]} />
+      <CommandGroup label={t("toolbar.review")} commands={commands} ids={["fitDesign", "validateDesign"]} />
+      <nav className="bd-breadcrumbs" aria-label={t("toolbar.hierarchy")}>
         {viewRootPath.map((level, index) => (
           <span key={level.id}>
             {index > 0 && <b aria-hidden="true">/</b>}
@@ -83,7 +85,7 @@ export function StudioToolbar({
           </span>
         ))}
       </nav>
-      <span className="bd-level-chip">{expandedCount} expanded</span>
+      <span className="bd-level-chip">{t("toolbar.expanded", { count: expandedCount })}</span>
     </div>
   );
 }

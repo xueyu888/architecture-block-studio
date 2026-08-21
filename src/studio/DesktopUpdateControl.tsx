@@ -4,17 +4,21 @@ import type {
   ArchitectureBlockStudioDesktopBridge,
   DesktopUpdateState,
 } from "../io/desktopBridge";
+import { useStudioLocale } from "../i18n/StudioLocale";
+import type { StudioMessageKey } from "../i18n/catalog";
 
-function updateLabel(state: DesktopUpdateState): string {
+type Translate = (key: StudioMessageKey, values?: Readonly<Record<string, string | number>>) => string;
+
+function updateLabel(state: DesktopUpdateState, t: Translate): string {
   switch (state.status) {
-    case "idle": return `检查更新 · v${state.currentVersion}`;
-    case "checking": return "正在检查更新…";
-    case "up-to-date": return `已是最新版 · v${state.currentVersion}`;
-    case "available": return `下载 v${state.availableVersion}`;
-    case "downloading": return `正在下载 ${Math.round(state.progressPercent ?? 0)}%`;
-    case "downloaded": return `重启并安装 v${state.availableVersion}`;
-    case "installing": return "正在启动安装…";
-    case "error": return state.availableVersion ? "重试下载" : "重试检查";
+    case "idle": return t("update.idle", { version: state.currentVersion });
+    case "checking": return t("update.checking");
+    case "up-to-date": return t("update.current", { version: state.currentVersion });
+    case "available": return t("update.available", { version: state.availableVersion ?? "" });
+    case "downloading": return t("update.downloading", { progress: Math.round(state.progressPercent ?? 0) });
+    case "downloaded": return t("update.downloaded", { version: state.availableVersion ?? "" });
+    case "installing": return t("update.installing");
+    case "error": return t(state.availableVersion ? "update.retryDownload" : "update.retryCheck");
     case "unsupported": return "";
   }
 }
@@ -22,6 +26,7 @@ function updateLabel(state: DesktopUpdateState): string {
 export function DesktopUpdateControl({ bridge }: {
   bridge?: ArchitectureBlockStudioDesktopBridge;
 }) {
+  const { t } = useStudioLocale();
   const [state, setState] = useState<DesktopUpdateState>();
   const [notice, setNotice] = useState<string>();
 
@@ -58,14 +63,14 @@ export function DesktopUpdateControl({ bridge }: {
         const result = await bridge.installUpdate();
         if (result.status === "blocked") {
           setNotice(result.reason === "unsaved-changes"
-            ? "请先保存设计并应用 Inspector 修改，再重启安装。"
-            : "更新尚未下载完成。");
+            ? t("update.saveFirst")
+            : t("update.notDownloaded"));
         }
         return;
       }
       setState(await bridge.checkForUpdates());
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "更新操作失败。");
+      setNotice(error instanceof Error ? error.message : t("update.failed"));
     }
   };
 
@@ -73,7 +78,7 @@ export function DesktopUpdateControl({ bridge }: {
     <div className={`bd-desktop-update is-${state.status}`} title={detail}>
       <button type="button" disabled={disabled} onClick={() => void runAction()}>
         {icon}
-        <span>{updateLabel(state)}</span>
+        <span>{updateLabel(state, t)}</span>
       </button>
       {state.status === "downloading" && (
         <span className="bd-desktop-update-progress" aria-hidden="true">

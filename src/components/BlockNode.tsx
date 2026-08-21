@@ -1,5 +1,5 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
-import { Box, Minus, Pin, Plus } from "lucide-react";
+import { Box, GripHorizontal, GripVertical, Minus, Pin, Plus } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   BLOCK_NODE_GEOMETRY,
@@ -16,6 +16,7 @@ import {
   type PortPlacement,
 } from "../layout";
 import type { BlockPort, PortSide } from "../model";
+import { useStudioLocale } from "../i18n/StudioLocale";
 import type { CanvasFlowNode } from "./canvasTypes";
 import { useViewportAutoPan } from "./ViewportAutoPanContext";
 import type { ViewportAutoPanGesture, ViewportAutoPanPoint } from "./viewportAutoPan";
@@ -84,14 +85,19 @@ function Port({
   levelId,
   nodeId,
   inspect,
+  move,
+  dragging,
   expanded,
 }: {
   port: BlockPort;
   levelId: string;
   nodeId: string;
   inspect?: (nodeId: string, port: BlockPort) => void;
+  move?: (event: ReactPointerEvent<HTMLButtonElement>, port: BlockPort) => void;
+  dragging: boolean;
   expanded: boolean;
 }) {
+  const { t } = useStudioLocale();
   const vertical = port.side === "left" || port.side === "right";
   const offset = port.offset * 100;
   return (
@@ -109,11 +115,28 @@ function Port({
         type={handleType(port)}
         position={positionBySide[port.side]}
         className={`bd-port-handle bd-port-handle-outer bd-port-handle-${port.direction}`}
+        title={t("port.connect", { label: port.label })}
         onClick={(event) => {
           event.stopPropagation();
           inspect?.(nodeId, port);
         }}
       />
+      <button
+        type="button"
+        tabIndex={-1}
+        className={`bd-port-move-grip bd-port-move-grip-${port.side} nodrag nopan${dragging ? " is-dragging" : ""}`}
+        title={t("port.moveHint")}
+        aria-label={t("port.move", { label: port.label })}
+        onPointerDown={(event) => move?.(event, port)}
+        onClick={(event) => {
+          event.stopPropagation();
+          inspect?.(nodeId, port);
+        }}
+      >
+        {vertical
+          ? <GripVertical size={11} aria-hidden="true" />
+          : <GripHorizontal size={11} aria-hidden="true" />}
+      </button>
       <Handle
         id={bindingPortId(port.id)}
         type={handleType(port) === "source" ? "target" : "source"}
@@ -204,6 +227,8 @@ function PortRail({
           levelId={levelId}
           nodeId={nodeId}
           inspect={inspect}
+          move={move}
+          dragging={draggingPortId === port.id}
           expanded={expanded}
         />
       ))}
@@ -224,6 +249,7 @@ function PortRail({
 }
 
 export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowNode>) {
+  const { t } = useStudioLocale();
   const articleRef = useRef<HTMLElement>(null);
   const resizeGestureRef = useRef<{ original: NodeResizeRect; direction: NodeResizeDirection } | undefined>(undefined);
   const resizeAutoPanRef = useRef<ViewportAutoPanGesture | undefined>(undefined);
@@ -395,6 +421,7 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
 
   const beginPortMove = (event: ReactPointerEvent<HTMLButtonElement>, port: BlockPort) => {
     if (event.button !== 0 || !event.isPrimary || !data.movePort || data.canEditSelection?.() === false) return;
+    event.preventDefault();
     event.stopPropagation();
     if (data.beginPortMove?.(port.id) === false) return;
     portGestureRef.current?.autoPan?.stop();
@@ -499,8 +526,8 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
             type="button"
             tabIndex={-1}
             className="bd-hierarchy-button nodrag nopan"
-            title={data.expanded ? "折叠内部 Block Design" : "展开内部 Block Design"}
-            aria-label={`${data.expanded ? "折叠" : "展开"} ${block.title} 内部 Block Design`}
+            title={data.expanded ? t("block.collapseHint") : t("block.expandHint")}
+            aria-label={t(data.expanded ? "block.collapse" : "block.expand", { title: block.title })}
             onClick={(event) => {
               event.stopPropagation();
               data.toggleHierarchy?.(hierarchy.childLevelId);
@@ -521,7 +548,7 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
             <input
               ref={titleInputRef}
               className="bd-block-title-editor nodrag nopan"
-              aria-label={`Rename ${block.title}`}
+              aria-label={t("block.rename", { title: block.title })}
               value={titleDraft}
               required
               onChange={(event) => {
@@ -542,20 +569,20 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
           )}
           <span>{block.process ?? block.kind}</span>
         </div>
-        {block.layout.pinned && <Pin className="bd-pin-indicator" size={11} aria-label="Authored position" />}
+        {block.layout.pinned && <Pin className="bd-pin-indicator" size={11} aria-label={t("block.authored")} />}
       </header>
       {!data.expanded && (
         <>
           <div className="bd-block-body">
             {block.summary && <p>{block.summary}</p>}
           </div>
-          <footer className="bd-block-owner">{block.owner ?? "Unassigned owner"}</footer>
+          <footer className="bd-block-owner">{block.owner ?? t("block.unassigned")}</footer>
         </>
       )}
       {data.expanded && (
         <div className="bd-hierarchy-watermark" aria-hidden="true">
           <strong>{hierarchy?.childLevelId}</strong>
-          <span>expanded hierarchy</span>
+          <span>{t("block.expanded")}</span>
         </div>
       )}
 

@@ -1,6 +1,7 @@
 import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import type { StudioCommand, StudioCommands } from "../studio/commands";
+import { useStudioLocale } from "../i18n/StudioLocale";
 import { useDialogFocus } from "./useDialogFocus";
 
 function searchableCommandText(command: StudioCommand): string {
@@ -26,6 +27,7 @@ export function CommandPalette({
   commands: StudioCommands;
   onClose: () => void;
 }) {
+  const { t } = useStudioLocale();
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const dialogRef = useRef<HTMLElement>(null);
@@ -75,21 +77,21 @@ export function CommandPalette({
         className="bd-command-palette"
         role="dialog"
         aria-modal="true"
-        aria-label="Command Palette"
+        aria-label={t("palette.title")}
       >
         <div className="bd-command-palette-search">
           <Search size={18} aria-hidden="true" />
           <input
             data-autofocus="true"
             role="combobox"
-            aria-label="Search commands"
+            aria-label={t("palette.search")}
             aria-autocomplete="list"
             aria-controls={listboxId}
             aria-expanded="true"
             aria-activedescendant={activeOptionId}
             autoComplete="off"
             spellCheck="false"
-            placeholder="Search commands..."
+            placeholder={t("palette.placeholder")}
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -107,7 +109,7 @@ export function CommandPalette({
           />
           <kbd>Ctrl/⌘ K</kbd>
         </div>
-        <div id={listboxId} className="bd-command-palette-results" role="listbox" aria-label="Commands">
+        <div id={listboxId} className="bd-command-palette-results" role="listbox" aria-label={t("palette.commands")}>
           {results.map((command, index) => {
             const Icon = command.icon;
             const active = index === safeActiveIndex;
@@ -136,14 +138,17 @@ export function CommandPalette({
           {results.length === 0 && (
             <div className="bd-command-palette-empty">
               <Search size={20} aria-hidden="true" />
-              <strong>No matching commands</strong>
-              <span>Try a command name, shortcut, or action.</span>
+              <strong>{t("palette.emptyTitle")}</strong>
+              <span>{t("palette.emptyHint")}</span>
             </div>
           )}
         </div>
         <footer>
-          <span role="status">{results.length} {results.length === 1 ? "command" : "commands"}</span>
-          <span><kbd>↑↓</kbd> Navigate <kbd>Enter</kbd> Run <kbd>Esc</kbd> Close</span>
+          <span role="status">{t("palette.count", {
+            count: results.length,
+            noun: t(results.length === 1 ? "palette.commandOne" : "palette.commandMany"),
+          })}</span>
+          <span><kbd>↑↓</kbd> {t("palette.navigate")} <kbd>Enter</kbd> {t("palette.run")} <kbd>Esc</kbd> {t("palette.close")}</span>
         </footer>
       </section>
     </div>

@@ -564,7 +564,7 @@ async function captureStudioScreenshot(page: Page, path: string): Promise<void> 
 }
 
 async function addModule(page: Page, values: { title: string; id: string; owner?: string }): Promise<void> {
-  await toolbarButton(page, "添加模块").click({ force: true });
+  await toolbarButton(page, "Add Module...").click({ force: true });
   const dialog = page.getByRole("dialog", { name: /Add Module/ });
   await dialog.getByLabel("Module title").fill(values.title);
   await dialog.getByLabel("Module id").fill(values.id);
@@ -654,7 +654,7 @@ async function addPort(page: Page, values: {
   side: "left" | "right" | "top" | "bottom";
   dataType?: string;
 }): Promise<void> {
-  await toolbarButton(page, "添加端口").click({ force: true });
+  await toolbarButton(page, "Add Port...").click({ force: true });
   const dialog = page.getByRole("dialog", { name: /Add Port/ });
   await dialog.getByLabel("Port label").fill(values.label);
   await dialog.getByLabel("Port id").fill(values.id);
@@ -680,7 +680,7 @@ async function beginToolbarModuleDrag(
   page: Page,
   target: { x: number; y: number },
 ): Promise<void> {
-  const toolBounds = await toolbarButton(page, "添加模块").boundingBox();
+  const toolBounds = await toolbarButton(page, "Add Module...").boundingBox();
   expect(toolBounds).not.toBeNull();
   await page.mouse.move(
     toolBounds!.x + toolBounds!.width / 2,
@@ -730,10 +730,11 @@ async function dragSelectionResizeHandle(
 
 async function expandHierarchy(page: Page, title: string): Promise<void> {
   const expandedBefore = Number.parseInt(await page.locator(".bd-level-chip").innerText(), 10);
-  await page.getByRole("button", { name: `展开 ${title}`, exact: true }).click({ force: true });
+  const sources = page.getByRole("region", { name: "Sources", exact: true });
+  await sources.getByRole("button", { name: `Expand ${title}`, exact: true }).click({ force: true });
   await expect(page.locator(".bd-level-chip")).toHaveText(`${expandedBefore + 1} expanded`);
   await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 30_000 });
-  await expect(page.getByRole("button", { name: `折叠 ${title}`, exact: true })).toBeVisible();
+  await expect(sources.getByRole("button", { name: `Collapse ${title}`, exact: true })).toBeVisible();
   await expect(page.locator(".react-flow__edge")).not.toHaveCount(0, { timeout: 30_000 });
   await page.waitForTimeout(350);
 }
@@ -1312,7 +1313,7 @@ test("renames a module directly on the canvas as one recoverable document edit",
 
 test("keeps the compact desktop workbench operable without panel or route obstruction", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
-  await toolbarButton(page, "适应窗口").click({ force: true });
+  await toolbarButton(page, "Fit Design").click({ force: true });
 
   const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
   await clickReachableEdgePoint(page, edge);
@@ -1386,17 +1387,17 @@ test("keeps the compact desktop workbench operable without panel or route obstru
 
 test("reveals one unobtrusive tooltip path for toolbar and canvas controls", async ({ page }) => {
   const tooltip = page.getByRole("tooltip");
-  const save = toolbarButton(page, "保存设计");
+  const save = toolbarButton(page, "Save");
 
   await expect(page.locator(".bd-toolbar button[title], .bd-canvas-controls button[title]")).toHaveCount(0);
   await save.hover();
   await expect(tooltip).toHaveCount(0);
   await expect(tooltip).toBeVisible();
-  await expect(tooltip).toContainText("保存设计");
+  await expect(tooltip).toContainText("Save");
   await expect(tooltip).toContainText("Ctrl/⌘ S");
 
   const toolbarGeometry = await page.evaluate(() => {
-    const target = document.querySelector<HTMLElement>('.bd-toolbar button[aria-label="保存设计"]');
+    const target = document.querySelector<HTMLElement>('.bd-toolbar button[aria-label="Save"]');
     const popup = document.querySelector<HTMLElement>('[role="tooltip"]');
     if (!target || !popup) throw new Error("Toolbar tooltip geometry is unavailable.");
     const targetBox = target.getBoundingClientRect();
@@ -1424,10 +1425,10 @@ test("reveals one unobtrusive tooltip path for toolbar and canvas controls", asy
 
   const unavailablePort = page
     .getByRole("toolbar", { name: "Architecture design tools" })
-    .getByRole("button", { name: /^添加端口 — Select a module first\.$/ });
+    .getByRole("button", { name: /^Add Port... — Select a module first\.$/ });
   await unavailablePort.hover();
   await expect(tooltip).toBeVisible();
-  await expect(tooltip).toContainText("添加端口");
+  await expect(tooltip).toContainText("Add Port...");
   await expect(tooltip).toContainText("Select a module first.");
   expect((await accessibilityResults(page, '[role="tooltip"]')).violations).toEqual([]);
   expect(await textContrastIssues(page, '[role="tooltip"]')).toEqual([]);
@@ -1481,7 +1482,7 @@ test("keeps only direct-workflow commands in the persistent toolbar", async ({ p
   await expect(toolbar.getByRole("group", { name: "Create" }).getByRole("button")).toHaveCount(4);
   await expect(toolbar.getByRole("group", { name: "Canvas and review" }).getByRole("button")).toHaveCount(2);
 
-  for (const title of ["重新生成布局", "仅优化布线", "Sources", "Messages", "Properties", "最大化或还原画布"]) {
+  for (const title of ["Regenerate Layout", "Optimize Routing", "Sources", "Messages", "Properties", "Maximize Diagram"]) {
     await expect(toolbar.getByRole("button", { name: title, exact: true })).toHaveCount(0);
   }
 
@@ -1544,7 +1545,7 @@ test("keeps only direct-workflow commands in the persistent toolbar", async ({ p
 });
 
 test("searches and runs the unified command palette without losing workflow focus", async ({ page }) => {
-  const save = toolbarButton(page, "保存设计");
+  const save = toolbarButton(page, "Save");
   await save.focus();
   await page.keyboard.press("ControlOrMeta+K");
 
@@ -1555,7 +1556,7 @@ test("searches and runs the unified command palette without losing workflow focu
   await expect(palette.getByRole("option")).toHaveCount(51);
   await expect(palette.getByRole("option", { name: /^Command Palette/ })).toHaveCount(0);
 
-  await search.fill("添加端口");
+  await search.fill("Add Port...");
   const unavailablePort = palette.getByRole("option", { name: /^Add Port/ });
   await expect(palette.getByRole("option")).toHaveCount(1);
   await expect(unavailablePort).toHaveAttribute("aria-disabled", "true");
@@ -1716,7 +1717,7 @@ test("routes and persists a new interface inside an existing complex design", as
   await inspector.getByLabel("Failure behavior", { exact: true }).fill("Reports validation failure to the caller without retrying.");
   await inspector.getByRole("button", { name: "Apply Changes" }).click({ force: true });
   await waitForEditorIdle(page);
-  await toolbarButton(page, "适应窗口").click({ force: true });
+  await toolbarButton(page, "Fit Design").click({ force: true });
   await page.waitForTimeout(400);
 
   await expect(page.locator(".react-flow__node")).toHaveCount(8);
@@ -1935,7 +1936,7 @@ test("reaches available and unavailable design commands by typing menu initials"
 });
 
 test("explains why context-dependent design commands are unavailable", async ({ page }) => {
-  await page.getByRole("button", { name: "新建设计", exact: true }).click();
+  await page.getByRole("button", { name: "New Design...", exact: true }).click();
   await page.getByRole("dialog", { name: "New Design" }).getByRole("button", { name: "Create", exact: true }).click();
   const emptyState = page.getByRole("region", { name: "Start with a module" });
   await expect(emptyState).toBeVisible();
@@ -1979,11 +1980,11 @@ test("explains why context-dependent design commands are unavailable", async ({ 
   }
   await page.keyboard.press("Escape");
 
-  const addPortTool = page.getByRole("button", { name: /^添加端口/ });
-  const addInterfaceTool = page.getByRole("button", { name: /^添加接口/ });
-  const addChildTool = page.getByRole("button", { name: /^创建子设计/ });
-  await expect(addPortTool).toHaveAttribute("aria-label", "添加端口 — Select a module first.");
-  await expect(addInterfaceTool).toHaveAttribute("aria-label", "添加接口 — Add compatible output/input ports to this level first.");
+  const addPortTool = page.getByRole("button", { name: /^Add Port.../ });
+  const addInterfaceTool = page.getByRole("button", { name: /^Add Interface.../ });
+  const addChildTool = page.getByRole("button", { name: /^Create Child Design.../ });
+  await expect(addPortTool).toHaveAttribute("aria-label", "Add Port... — Select a module first.");
+  await expect(addInterfaceTool).toHaveAttribute("aria-label", "Add Interface... — Add compatible output/input ports to this level first.");
 
   await emptyState.getByRole("button", { name: "Add first module" }).click();
   await page.getByRole("dialog", { name: /Add Module/ }).getByRole("button", { name: "Add Module", exact: true }).click();
@@ -2006,12 +2007,12 @@ test("explains why context-dependent design commands are unavailable", async ({ 
   await page.keyboard.press("Escape");
   await expect(addChildTool).toHaveAttribute(
     "aria-label",
-    "创建子设计 — Use this module's hierarchy control to open its child design.",
+    "Create Child Design... — Use this module's hierarchy control to open its child design.",
   );
 });
 
 test("guides a new user from an empty design to the first module", async ({ page }) => {
-  await toolbarButton(page, "新建设计").click({ force: true });
+  await toolbarButton(page, "New Design...").click({ force: true });
   const newDialog = page.getByRole("dialog", { name: "New Design" });
   await newDialog.getByLabel("Design title").fill("Review Workbench");
   await newDialog.getByLabel("Design id").fill("review-workbench");
@@ -2049,7 +2050,7 @@ test("guides a new user from an empty design to the first module", async ({ page
 });
 
 test("keeps suggested identifiers linked until the user customizes them", async ({ page }) => {
-  await toolbarButton(page, "新建设计").click({ force: true });
+  await toolbarButton(page, "New Design...").click({ force: true });
   const newDesign = page.getByRole("dialog", { name: "New Design" });
   await newDesign.getByLabel("Design title").fill("Checkout Platform");
   await expect(newDesign.getByLabel("Design id")).toHaveValue("checkout-platform");
@@ -2059,14 +2060,14 @@ test("keeps suggested identifiers linked until the user customizes them", async 
   await newDesign.getByRole("button", { name: "Create", exact: true }).click({ force: true });
   await waitForEditorIdle(page);
 
-  await toolbarButton(page, "添加模块").click({ force: true });
+  await toolbarButton(page, "Add Module...").click({ force: true });
   const firstModule = page.getByRole("dialog", { name: /Add Module/ });
   await firstModule.getByLabel("Module title").fill("Payment Worker");
   await expect(firstModule.getByLabel("Module id")).toHaveValue("payment-worker");
   await firstModule.getByRole("button", { name: "Add Module", exact: true }).click({ force: true });
   await waitForEditorIdle(page);
 
-  await toolbarButton(page, "添加模块").click({ force: true });
+  await toolbarButton(page, "Add Module...").click({ force: true });
   const secondModule = page.getByRole("dialog", { name: /Add Module/ });
   await secondModule.getByLabel("Module title").fill("Payment Worker");
   await expect(secondModule.getByLabel("Module id")).toHaveValue("payment-worker-2");
@@ -2076,7 +2077,7 @@ test("keeps suggested identifiers linked until the user customizes them", async 
   await secondModule.getByRole("button", { name: "Add Module", exact: true }).click({ force: true });
   await waitForEditorIdle(page);
 
-  await toolbarButton(page, "添加端口").click({ force: true });
+  await toolbarButton(page, "Add Port...").click({ force: true });
   const firstPort = page.getByRole("dialog", { name: /Add Port/ });
   await firstPort.getByLabel("Port label").fill("Session Events");
   await expect(firstPort.getByLabel("Port id")).toHaveValue("session-events");
@@ -2084,7 +2085,7 @@ test("keeps suggested identifiers linked until the user customizes them", async 
   await firstPort.getByRole("button", { name: "Add Port", exact: true }).click({ force: true });
   await waitForEditorIdle(page);
 
-  await toolbarButton(page, "添加端口").click({ force: true });
+  await toolbarButton(page, "Add Port...").click({ force: true });
   const secondPort = page.getByRole("dialog", { name: /Add Port/ });
   await secondPort.getByLabel("Port label").fill("Session Events");
   await expect(secondPort.getByLabel("Port id")).toHaveValue("session-events-2");
@@ -2093,7 +2094,7 @@ test("keeps suggested identifiers linked until the user customizes them", async 
   await waitForEditorIdle(page);
 
   await flowNode(page, "system::payment-worker").click({ force: true });
-  await toolbarButton(page, "创建子设计").click({ force: true });
+  await toolbarButton(page, "Create Child Design...").click({ force: true });
   const childDesign = page.getByRole("dialog", { name: /Create Child Design/ });
   await childDesign.getByLabel("Child design title").fill("Payment Worker Runtime");
   await expect(childDesign.getByLabel("Child level id")).toHaveValue("payment-worker-runtime");
@@ -2184,7 +2185,7 @@ test("protects unapplied Inspector changes across review navigation and save", a
 
   await inspector.getByLabel("Title").fill("Project draft");
   await expect(inspector.getByText("UNAPPLIED", { exact: true })).toBeVisible();
-  await toolbarButton(page, "保存设计").click({ force: true });
+  await toolbarButton(page, "Save").click({ force: true });
   await expect(page.locator(".bd-command-error")).toContainText("before saving");
   await expect(inspector.getByLabel("Title")).toHaveValue("Project draft");
 
@@ -2195,7 +2196,7 @@ test("protects unapplied Inspector changes across review navigation and save", a
 });
 
 test("keeps keyboard focus inside dialogs and restores the invoking command", async ({ page }) => {
-  const newButton = toolbarButton(page, "新建设计");
+  const newButton = toolbarButton(page, "New Design...");
   await newButton.focus();
   await newButton.click({ force: true });
   const newDialog = page.getByRole("dialog", { name: "New Design" });
@@ -2211,7 +2212,7 @@ test("keeps keyboard focus inside dialogs and restores the invoking command", as
   await expect(newDialog).toHaveCount(0);
   await expect(newButton).toBeFocused();
 
-  const openButton = toolbarButton(page, "打开设计");
+  const openButton = toolbarButton(page, "Open Design...");
   await openButton.focus();
   await openButton.click({ force: true });
   const openDialog = page.getByRole("dialog", { name: "Open Design" });
@@ -2222,7 +2223,7 @@ test("keeps keyboard focus inside dialogs and restores the invoking command", as
 });
 
 test("filters design issues and cross-probes the reviewed module", async ({ page }) => {
-  await toolbarButton(page, "新建设计").click({ force: true });
+  await toolbarButton(page, "New Design...").click({ force: true });
   const newDialog = page.getByRole("dialog", { name: "New Design" });
   await newDialog.getByLabel("Design title").fill("Review Workbench");
   await newDialog.getByLabel("Design id").fill("review-workbench");
@@ -2291,7 +2292,7 @@ test("filters design issues and cross-probes the reviewed module", async ({ page
 });
 
 test("keeps the authoring chrome stable and handles direct commands", async ({ page }) => {
-  const positions = await toolbarButton(page, "新建设计").evaluate(async (button) => {
+  const positions = await toolbarButton(page, "New Design...").evaluate(async (button) => {
     const samples: string[] = [];
     for (let index = 0; index < 12; index += 1) {
       await new Promise<void>((resolve) => setTimeout(resolve, 25));
@@ -2301,7 +2302,7 @@ test("keeps the authoring chrome stable and handles direct commands", async ({ p
     return samples;
   });
   expect(new Set(positions).size).toBe(1);
-  await toolbarButton(page, "新建设计").evaluate((button: HTMLButtonElement) => button.click());
+  await toolbarButton(page, "New Design...").evaluate((button: HTMLButtonElement) => button.click());
   await expect(page.getByRole("dialog", { name: "New Design" })).toBeVisible();
   await page.getByRole("dialog", { name: "New Design" }).getByRole("button", { name: "Cancel" }).evaluate((button: HTMLButtonElement) => button.click());
 });
@@ -2576,7 +2577,7 @@ test("summarizes a module's direct interfaces and opens the selected contract", 
 });
 
 test("creates a typed interface with the keyboard instead of dragging ports", async ({ page }) => {
-  const addInterface = toolbarButton(page, "添加接口");
+  const addInterface = toolbarButton(page, "Add Interface...");
   await addInterface.focus();
   await page.keyboard.press("Enter");
 
@@ -2752,7 +2753,7 @@ test("completes a design and save journey without switching from the keyboard", 
     await captureStudioScreenshot(page, "docs/screenshots/firefox-apply-focus.png");
   }
 
-  await tabTo(page, toolbarButton(page, "验证设计"), 160, "backward");
+  await tabTo(page, toolbarButton(page, "Validate Design"), 160, "backward");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("region", { name: "Messages" })).toBeVisible();
   await page.keyboard.press("ControlOrMeta+Z");
@@ -2774,7 +2775,7 @@ test("completes a design and save journey without switching from the keyboard", 
 
 test("keeps routes outside blocks with both hierarchy containers expanded", async ({ page }) => {
   if (process.env.CAPTURE_ROUTING_PROOF === "1") {
-    await toolbarButton(page, "适应窗口").click({ force: true });
+    await toolbarButton(page, "Fit Design").click({ force: true });
     await page.waitForTimeout(400);
     await captureStudioScreenshot(page, "docs/screenshots/aio-routing-validation.png");
   }
@@ -3062,7 +3063,7 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
   await assertCompleteAudit();
 
   if (process.env.CAPTURE_ROUTING_STRESS === "1" && browserName === "chromium") {
-    await toolbarButton(page, "适应窗口").click({ force: true });
+    await toolbarButton(page, "Fit Design").click({ force: true });
     await page.waitForTimeout(400);
     await captureStudioScreenshot(page, "docs/screenshots/routing-stress-overview.png");
     await page.locator('.bd-tree-select[data-level-id="system"][data-node-id="hub"]').click({ force: true });
@@ -3326,7 +3327,7 @@ test("expands five hierarchy layers and audits every visible route and pair", as
     await page.keyboard.press("ControlOrMeta+Shift+H");
     await page.waitForTimeout(500);
     await captureStudioScreenshot(page, "docs/screenshots/five-level-coordinate-resize.png");
-    await toolbarButton(page, "适应窗口").click({ force: true });
+    await toolbarButton(page, "Fit Design").click({ force: true });
     await page.waitForTimeout(500);
   }
   await page.keyboard.press("ControlOrMeta+Z");
@@ -3386,7 +3387,7 @@ test("expands five hierarchy layers and audits every visible route and pair", as
   });
 
   if (process.env.CAPTURE_ROUTING_FIVE_LEVEL === "1" && browserName === "chromium") {
-    await toolbarButton(page, "适应窗口").click({ force: true });
+    await toolbarButton(page, "Fit Design").click({ force: true });
     await page.waitForTimeout(500);
     await captureStudioScreenshot(page, "docs/screenshots/routing-five-level-overview.png");
     await page.locator('.bd-tree-select[data-level-id="level-2"][data-node-id="layer-3"]').click({ force: true });
@@ -3397,7 +3398,7 @@ test("expands five hierarchy layers and audits every visible route and pair", as
   const sources = page.getByRole("region", { name: "Sources" });
   await sources.getByRole("tab", { name: "Interfaces" }).click({ force: true });
   await sources.getByLabel("Filter interfaces").fill("layer-5-flow-00");
-  const nestedInterface = sources.getByRole("list", { name: "Declared interfaces" }).getByRole("button");
+  const nestedInterface = sources.getByRole("list", { name: "Matching interfaces" }).getByRole("button");
   await expect(nestedInterface).toHaveCount(1);
   await nestedInterface.click({ force: true });
   await expect(page.locator(".bd-inspector-title code")).toContainText(
@@ -3700,7 +3701,7 @@ test("keeps toolbar drop preview, JSON, and rendered geometry identical at every
     orphanJumps: [],
   });
   if (process.env.CAPTURE_ADD_MODULE_HERE === "1" && browserName === "chromium") {
-    await toolbarButton(page, "适应窗口").click({ force: true });
+    await toolbarButton(page, "Fit Design").click({ force: true });
     await page.waitForTimeout(500);
     await captureStudioScreenshot(page, "docs/screenshots/add-module-five-depth-contract.png");
     await page.locator(
@@ -3708,7 +3709,7 @@ test("keeps toolbar drop preview, JSON, and rendered geometry identical at every
     ).click({ force: true });
     await page.keyboard.press("ControlOrMeta+Shift+End");
     await expect(page.locator(".bd-canvas-caption strong")).toHaveText("Layer 3");
-    await toolbarButton(page, "适应窗口").click({ force: true });
+    await toolbarButton(page, "Fit Design").click({ force: true });
     await page.waitForTimeout(500);
     await captureStudioScreenshot(page, "docs/screenshots/add-module-five-depth-detail.png");
     await page.getByRole("navigation", { name: "Diagram view hierarchy" })
@@ -3744,20 +3745,21 @@ test("loads the repository-derived five-depth module architecture and reviews ev
     "Verified Source Graph",
   ]) {
     const expandedBefore = Number.parseInt(await page.locator(".bd-level-chip").innerText(), 10);
-    await page.getByRole("button", { name: `展开 ${title}`, exact: true }).click({ force: true });
+    const sources = page.getByRole("region", { name: "Sources", exact: true });
+    await sources.getByRole("button", { name: `Expand ${title}`, exact: true }).click({ force: true });
     await expect(page.locator(".bd-level-chip")).toHaveText(`${expandedBefore + 1} expanded`);
     await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 30_000 });
-    await expect(page.getByRole("button", { name: `折叠 ${title}`, exact: true })).toBeVisible();
+    await expect(sources.getByRole("button", { name: `Collapse ${title}`, exact: true })).toBeVisible();
     await page.waitForTimeout(350);
   }
 
   await expect(page.locator(".bd-level-chip")).toHaveText("4 expanded");
   await expect(page.locator(".react-flow__node")).toHaveCount(16, { timeout: 60_000 });
-  await expect(page.locator(".react-flow__edge")).toHaveCount(27, { timeout: 60_000 });
+  await expect(page.locator(".react-flow__edge")).toHaveCount(29, { timeout: 60_000 });
   await expect(page.locator('.bd-react-flow[data-routing-status="Feasible"]')).toHaveCount(1);
   await expect(page.locator(".react-flow__edge-text")).toHaveCount(0);
   await expect(page.locator(".bd-statusbar")).toContainText("16 diagram blocks");
-  await expect(page.locator(".bd-statusbar")).toContainText("27 diagram interfaces");
+  await expect(page.locator(".bd-statusbar")).toContainText("29 diagram interfaces");
 
   expect(await geometryIssues(page)).toEqual({
     collisions: [],
@@ -3770,20 +3772,20 @@ test("loads the repository-derived five-depth module architecture and reviews ev
   });
   const overviewAudit = await exhaustiveRouteAudit(page);
   expect(overviewAudit).toMatchObject({
-    auditedRouteCount: 27,
-    auditedPairCount: 351,
-    expectedPairCount: 351,
+    auditedRouteCount: 29,
+    auditedPairCount: 406,
+    expectedPairCount: 406,
     duplicateRouteIds: [],
     perRouteIssues: [],
     parallelConflicts: [],
     unbridgedCrossings: [],
     orphanJumps: [],
   });
-  expect(overviewAudit.routeIds).toHaveLength(27);
+  expect(overviewAudit.routeIds).toHaveLength(29);
 
   if (process.env.CAPTURE_SELF_ARCHITECTURE === "1" && browserName === "chromium") {
     await runMenuCommand(page, "View", "Maximize Diagram");
-    await toolbarButton(page, "适应窗口").click({ force: true });
+    await toolbarButton(page, "Fit Design").click({ force: true });
     await page.waitForTimeout(500);
     await captureStudioScreenshot(page, "docs/screenshots/source-architecture-overview.png");
     await runMenuCommand(page, "View", "Restore Diagram");
@@ -3807,9 +3809,9 @@ test("loads the repository-derived five-depth module architecture and reviews ev
   await selectionMenu.getByRole("menuitem", { name: /^Fit Selection/ }).click();
   await page.waitForTimeout(500);
   expect(await exhaustiveRouteAudit(page)).toMatchObject({
-    auditedRouteCount: 27,
-    auditedPairCount: 351,
-    expectedPairCount: 351,
+    auditedRouteCount: 29,
+    auditedPairCount: 406,
+    expectedPairCount: 406,
     perRouteIssues: [],
     parallelConflicts: [],
     unbridgedCrossings: [],
@@ -3843,7 +3845,7 @@ test("loads the repository-derived five-depth module architecture and reviews ev
   await sources.getByRole("tab", { name: "Interfaces" }).click({ force: true });
   await sources.getByLabel("Filter interfaces").fill("import-studio-to-model");
   const sourceInterface = sources
-    .getByRole("list", { name: "Declared interfaces" })
+    .getByRole("list", { name: "Matching interfaces" })
     .getByRole("button");
   await expect(sourceInterface).toHaveCount(1);
   await sourceInterface.click({ force: true });
@@ -3869,9 +3871,9 @@ test("loads the repository-derived five-depth module architecture and reviews ev
 
   const finalAudit = await exhaustiveRouteAudit(page);
   expect(finalAudit).toMatchObject({
-    auditedRouteCount: 27,
-    auditedPairCount: 351,
-    expectedPairCount: 351,
+    auditedRouteCount: 29,
+    auditedPairCount: 406,
+    expectedPairCount: 406,
     duplicateRouteIds: [],
     perRouteIssues: [],
     parallelConflicts: [],
@@ -3888,7 +3890,7 @@ test("loads the repository-derived five-depth module architecture and reviews ev
   expect(saved.levels.find((level: { id: string }) => level.id === "runtime-modules").nodes)
     .toHaveLength(12);
   expect(saved.levels.flatMap((level: { connections: unknown[] }) => level.connections))
-    .toHaveLength(27);
+    .toHaveLength(29);
 });
 
 test("enters and exits five hierarchy view roots without changing the design", async ({ page, browserName }) => {
@@ -3944,12 +3946,12 @@ test("enters and exits five hierarchy view roots without changing the design", a
   );
 
   await expect(page.locator(".react-flow__node")).toHaveCount(12, { timeout: 30_000 });
-  await expect(page.locator(".react-flow__edge")).toHaveCount(27, { timeout: 30_000 });
+  await expect(page.locator(".react-flow__edge")).toHaveCount(29, { timeout: 30_000 });
   await expect(page.locator(".bd-statusbar")).toContainText("View root: Runtime Source Modules");
   expect(await exhaustiveRouteAudit(page)).toMatchObject({
-    auditedRouteCount: 27,
-    auditedPairCount: 351,
-    expectedPairCount: 351,
+    auditedRouteCount: 29,
+    auditedPairCount: 406,
+    expectedPairCount: 406,
     duplicateRouteIds: [],
     perRouteIssues: [],
     parallelConflicts: [],
@@ -3959,7 +3961,7 @@ test("enters and exits five hierarchy view roots without changing the design", a
 
   if (process.env.CAPTURE_HIERARCHY_FOCUS === "1" && browserName === "chromium") {
     await runMenuCommand(page, "View", "Maximize Diagram");
-    await toolbarButton(page, "适应窗口").click({ force: true });
+    await toolbarButton(page, "Fit Design").click({ force: true });
     await page.waitForTimeout(500);
     await captureStudioScreenshot(page, "docs/screenshots/hierarchy-focused-source-architecture.png");
     await runMenuCommand(page, "View", "Restore Diagram");
@@ -3983,7 +3985,7 @@ test("enters and exits five hierarchy view roots without changing the design", a
   const sources = page.getByRole("region", { name: "Sources" });
   await sources.getByRole("tab", { name: "Interfaces" }).click({ force: true });
   await sources.getByLabel("Filter interfaces").fill("import-studio-to-model");
-  await sources.getByRole("list", { name: "Declared interfaces" }).getByRole("button").click();
+  await sources.getByRole("list", { name: "Matching interfaces" }).getByRole("button").click();
   await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 30_000 });
   await expect(caption).toHaveText("Product Boundary");
   await expect(page.locator('.react-flow__edge[data-id$="::import-studio-to-model"]'))
@@ -4059,6 +4061,78 @@ test("resizes, collapses, maximizes, floats and resets dock panels", async ({ pa
     page.locator(".dv-floating-overlay-host").getByRole("region", { name: "Properties" }),
   ).toHaveCount(0);
   expect((await sources.boundingBox())!.width).toBeCloseTo(250, -1);
+});
+
+test("switches all five interface languages without changing the design document", async ({ page }) => {
+  const language = page.locator(".bd-language-selector select");
+  const cases = [
+    { id: "zh-CN", menu: "文件", dock: "来源", saved: "已保存", htmlLang: "zh-CN" },
+    { id: "fr", menu: "Fichier", dock: "Sources", saved: "Enregistré", htmlLang: "fr" },
+    { id: "ja", menu: "ファイル", dock: "ソース", saved: "保存済み", htmlLang: "ja" },
+    { id: "ko", menu: "파일", dock: "소스", saved: "저장됨", htmlLang: "ko" },
+    { id: "en", menu: "File", dock: "Sources", saved: "Saved", htmlLang: "en" },
+  ];
+
+  for (const item of cases) {
+    await language.selectOption(item.id);
+    await expect(page.getByRole("button", { name: item.menu, exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: item.dock, exact: true })).toBeVisible();
+    await expect(page.locator(".bd-statusbar")).toContainText(item.saved);
+    await expect(page.locator("html")).toHaveAttribute("lang", item.htmlLang);
+    await expect(page.locator(".bd-document-title span")).not.toContainText("*");
+  }
+
+  await language.selectOption("ko");
+  await page.reload();
+  await waitForEditorIdle(page);
+  await expect(page.getByRole("combobox", { name: "언어" })).toHaveValue("ko");
+  await expect(page.getByRole("button", { name: "파일", exact: true })).toBeVisible();
+  await expect(page.locator(".bd-document-title span")).not.toContainText("*");
+});
+
+test("hides sidebars from their headers and restores them from the collapsed rails", async ({ page }) => {
+  const sources = page.getByRole("region", { name: "Sources" });
+  const properties = page.getByRole("region", { name: "Properties" });
+  expect((await sources.boundingBox())!.width).toBeGreaterThan(180);
+  expect((await properties.boundingBox())!.width).toBeGreaterThan(250);
+
+  await page.getByRole("button", { name: "Hide left sidebar", exact: true }).click();
+  await expect.poll(async () => (await sources.boundingBox())?.width ?? 0).toBeLessThan(60);
+  await page.getByRole("tab", { name: "Sources", exact: true }).click();
+  await expect.poll(async () => (await sources.boundingBox())?.width ?? 0).toBeGreaterThan(180);
+
+  await page.getByRole("button", { name: "Hide right sidebar", exact: true }).click();
+  await expect.poll(async () => (await properties.boundingBox())?.width ?? 0).toBeLessThan(60);
+  await page.getByRole("tab", { name: "Properties", exact: true }).click();
+  await expect.poll(async () => (await properties.boundingBox())?.width ?? 0).toBeGreaterThan(250);
+});
+
+test("keeps a fixed-size mouse target for moving ports at overview zoom", async ({ page }) => {
+  const agentUi = flowNode(page, "system::agent-ui");
+  const port = agentUi.locator('.bd-port[data-port-id="session-command"]');
+  const grip = port.getByRole("button", { name: "Move port session.command", exact: true });
+
+  for (let index = 0; index < 3; index += 1) {
+    await page.locator(".react-flow__controls-zoomout").click({ force: true });
+  }
+  const gripBounds = await grip.boundingBox();
+  const nodeBounds = await agentUi.boundingBox();
+  expect(gripBounds).not.toBeNull();
+  expect(nodeBounds).not.toBeNull();
+  expect(gripBounds!.width).toBeGreaterThanOrEqual(20);
+  expect(gripBounds!.height).toBeGreaterThanOrEqual(20);
+
+  await page.mouse.move(gripBounds!.x + gripBounds!.width / 2, gripBounds!.y + gripBounds!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(nodeBounds!.x + nodeBounds!.width * 0.4, nodeBounds!.y + 2, { steps: 8 });
+  await expect(page.locator(".bd-react-flow")).toHaveAttribute("data-port-move-active", "true");
+  await expect(page.locator(".bd-react-flow")).toHaveAttribute("data-routing-frame-gesture", "port-drag");
+  await page.mouse.up();
+  await expect(port).toHaveClass(/bd-port-top/);
+  await expect(page.locator(".bd-document-title span")).toContainText("*");
+
+  await page.keyboard.press("ControlOrMeta+Z");
+  await expect(port).toHaveClass(/bd-port-right/);
 });
 
 test("optimizes routes without moving blocks and regenerates placement separately", async ({ page }) => {
@@ -4182,11 +4256,11 @@ test("loads and operates a deterministic large or stress design", async ({ brows
       heapAfterHistory.totalMeasuredBytes - heapBeforeHistory.totalMeasuredBytes,
     );
     const undoStarted = performance.now();
-    await toolbarButton(page, "撤销").click({ force: true });
+    await toolbarButton(page, "Undo").click({ force: true });
     await expect(page.locator(".bd-inspector-title h2")).toContainText("Revision 9");
     metrics.historyUndoMs = Math.round(performance.now() - undoStarted);
     const redoStarted = performance.now();
-    await toolbarButton(page, "重做").click({ force: true });
+    await toolbarButton(page, "Redo").click({ force: true });
     await expect(page.locator(".bd-inspector-title h2")).toContainText("Revision 10");
     metrics.historyRedoMs = Math.round(performance.now() - redoStarted);
   }
@@ -4565,7 +4639,7 @@ test("loads and operates a deterministic large or stress design", async ({ brows
 
   const saveStarted = performance.now();
   const downloadPromise = page.waitForEvent("download");
-  await clickWithPointer(page, toolbarButton(page, "保存设计"));
+  await clickWithPointer(page, toolbarButton(page, "Save"));
   const download = await downloadPromise;
   const savedPath = await download.path();
   expect(savedPath).not.toBeNull();
@@ -4654,7 +4728,7 @@ test("drags, persists, resets, and restores a manual orthogonal route", async ({
   }
 
   const downloadPromise = page.waitForEvent("download");
-  await toolbarButton(page, "保存设计").click({ force: true });
+  await toolbarButton(page, "Save").click({ force: true });
   const download = await downloadPromise;
   const savedPath = await download.path();
   expect(savedPath).not.toBeNull();
@@ -4665,7 +4739,7 @@ test("drags, persists, resets, and restores a manual orthogonal route", async ({
   await inspector.getByRole("button", { name: "Reset to automatic routing" }).click({ force: true });
   await waitForEditorIdle(page);
   await expect(edge.locator('[data-routing-mode="automatic"]')).toBeVisible();
-  await toolbarButton(page, "撤销").click({ force: true });
+  await toolbarButton(page, "Undo").click({ force: true });
   await waitForEditorIdle(page);
   await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
 });
@@ -5115,7 +5189,7 @@ test("reconnects a selected edge endpoint and discards stale manual geometry", a
 
   await expect(edge.locator('[data-routing-mode="automatic"]')).toBeVisible();
   const downloadPromise = page.waitForEvent("download");
-  await toolbarButton(page, "保存设计").click({ force: true });
+  await toolbarButton(page, "Save").click({ force: true });
   const savedPath = await (await downloadPromise).path();
   const saved = JSON.parse(await readFile(savedPath!, "utf8"));
   const connection = saved.levels[0].connections.find(
@@ -5261,7 +5335,7 @@ test("reconnects an interface entirely by keyboard with undo, redo, focus, and s
 });
 
 test("keeps the dense port edge editor visible, separated, and label free", async ({ page, browserName }) => {
-  await toolbarButton(page, "适应窗口").click({ force: true });
+  await toolbarButton(page, "Fit Design").click({ force: true });
   await page.waitForTimeout(350);
   const edge = page.locator('.react-flow__edge[data-id="system::core-tool-invoke"]');
   await clickReachableEdgePoint(page, edge);
@@ -5913,7 +5987,7 @@ test("resizes a differently sized module selection as one atomic group", async (
   expect(redone[0]!.width).toBeCloseTo(enlarged[1]!.width, 0);
   expect(redone[1]!.width).toBeCloseTo(enlarged[2]!.width, 0);
   if (process.env.CAPTURE_GROUP_RESIZE === "1" && browserName === "chromium") {
-    await toolbarButton(page, "适应窗口").click({ force: true });
+    await toolbarButton(page, "Fit Design").click({ force: true });
     await page.waitForTimeout(450);
     await captureStudioScreenshot(page, "docs/screenshots/group-resize.png");
   }
@@ -6268,7 +6342,7 @@ test("cuts a complete hierarchy once and pastes it into another design from the 
     orphanJumps: [],
   });
   if (process.env.CAPTURE_CUT_PROOF === "1" && browserName === "chromium") {
-    await toolbarButton(page, "适应窗口").click({ force: true });
+    await toolbarButton(page, "Fit Design").click({ force: true });
     await page.waitForTimeout(400);
     await captureStudioScreenshot(page, "docs/screenshots/cut-paste-subgraph.png");
   }
@@ -6366,7 +6440,7 @@ test("box-selects, toggles, and moves modules as one professional selection", as
   await expect(inspector.locator(".bd-multi-metrics dd")).toHaveText(["2", "0", "1"]);
   await expect(page.locator(".bd-tree-row.is-selected")).toHaveCount(2);
   await expect(page.locator(".bd-node-resize-handle")).toHaveCount(0);
-  await expect(toolbarButton(page, "删除所选内容")).toBeEnabled();
+  await expect(toolbarButton(page, "Delete Selection")).toBeEnabled();
 
   const projectBefore = await project.boundingBox();
   const knowledgeBefore = await knowledge.boundingBox();
@@ -6859,7 +6933,7 @@ test("selects every module or every interface in the current level without desig
   await expect(page.locator(".bd-statusbar")).toContainText("Saved");
   await expect(
     page.getByRole("toolbar", { name: "Architecture design tools" })
-      .getByRole("button", { name: /^撤销/ }),
+      .getByRole("button", { name: /^Undo/ }),
   ).toBeDisabled();
 
   const audit = await exhaustiveRouteAudit(page);
@@ -6918,7 +6992,7 @@ test("expands selected modules to every direct interface without changing the de
   await expect(page.locator(".bd-statusbar")).toContainText("Saved");
   await expect(
     page.getByRole("toolbar", { name: "Architecture design tools" })
-      .getByRole("button", { name: /^撤销/ }),
+      .getByRole("button", { name: /^Undo/ }),
   ).toBeDisabled();
   for (const connectionId of [
     "ui-session-command",
@@ -7009,7 +7083,7 @@ test("selects and explicitly focuses a complete direct module neighborhood", asy
   await expect(page.locator(".bd-statusbar")).toContainText("Saved");
   await expect(
     page.getByRole("toolbar", { name: "Architecture design tools" })
-      .getByRole("button", { name: /^撤销/ }),
+      .getByRole("button", { name: /^Undo/ }),
   ).toBeDisabled();
 
   const audit = await exhaustiveRouteAudit(page);
@@ -7162,7 +7236,7 @@ test("selects incoming and outgoing dependency directions without guessing from 
   await expect(page.locator(".bd-statusbar")).toContainText("Saved");
   await expect(
     page.getByRole("toolbar", { name: "Architecture design tools" })
-      .getByRole("button", { name: /^撤销/ }),
+      .getByRole("button", { name: /^Undo/ }),
   ).toBeDisabled();
 });
 
@@ -7568,7 +7642,7 @@ test("creates one module at a canvas point from context menu or toolbar drag", a
   const [dragPoint] = await clearModuleInsertionPoints(page, 1);
   const canvasBounds = await canvas.boundingBox();
   expect(canvasBounds).not.toBeNull();
-  await toolbarButton(page, "添加模块").dragTo(canvas, {
+  await toolbarButton(page, "Add Module...").dragTo(canvas, {
     targetPosition: {
       x: dragPoint.client.x - canvasBounds!.x,
       y: dragPoint.client.y - canvasBounds!.y,
@@ -7633,7 +7707,8 @@ test("drops a module into an expanded empty child Level without a special-case t
     buffer: Buffer.from(JSON.stringify(document)),
   });
   await expect(page.locator(".bd-document-title span")).toHaveText("Empty Child Drop");
-  await page.getByRole("button", { name: "展开 Empty Boundary", exact: true }).click({ force: true });
+  await page.getByRole("region", { name: "Sources", exact: true })
+    .getByRole("button", { name: "Expand Empty Boundary", exact: true }).click({ force: true });
   await expect(page.locator(".bd-level-chip")).toHaveText("1 expanded");
   await waitForEditorIdle(page);
   await expect(page.locator(".react-flow__node")).toHaveCount(1);
@@ -8499,7 +8574,7 @@ test("authors, connects, nests, undoes, saves, and reloads a local module design
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("pageerror", (error) => browserErrors.push(error.message));
-  await toolbarButton(page, "新建设计").click({ force: true });
+  await toolbarButton(page, "New Design...").click({ force: true });
   const newDialog = page.getByRole("dialog", { name: "New Design" });
   await newDialog.getByLabel("Design title").fill("Payments Architecture");
   await newDialog.getByLabel("Design id").fill("payments-architecture");
@@ -8553,13 +8628,13 @@ test("authors, connects, nests, undoes, saves, and reloads a local module design
   expect(apiPosition).not.toBeNull();
   expect(workerPosition!.x).toBeLessThan(apiPosition!.x);
   if (process.env.CAPTURE_EDITOR_PROOF === "1") {
-    await toolbarButton(page, "适应窗口").click({ force: true });
+    await toolbarButton(page, "Fit Design").click({ force: true });
     await page.waitForTimeout(400);
     await captureStudioScreenshot(page, "docs/screenshots/editor-polished-workbench.png");
   }
 
   await flowNode(page, "system::api").click({ force: true });
-  await toolbarButton(page, "创建子设计").click({ force: true });
+  await toolbarButton(page, "Create Child Design...").click({ force: true });
   const childDialog = page.getByRole("dialog", { name: /Create Child Design/ });
   await childDialog.getByLabel("Child design title").fill("API Internals");
   await childDialog.getByLabel("Child level id").fill("api-internals");
@@ -8578,9 +8653,9 @@ test("authors, connects, nests, undoes, saves, and reloads a local module design
   await waitForEditorIdle(page);
   await expect(page.locator(".bd-validation-summary")).toContainText("0 errors");
 
-  await toolbarButton(page, "撤销").click({ force: true });
+  await toolbarButton(page, "Undo").click({ force: true });
   await expect(page.locator(".bd-validation-summary")).toContainText("1 errors");
-  await toolbarButton(page, "重做").click({ force: true });
+  await toolbarButton(page, "Redo").click({ force: true });
   await expect(page.locator(".bd-validation-summary")).toContainText("0 errors");
   await expect(page.locator(".bd-validation-summary")).toContainText("0 warnings");
   await waitForEditorIdle(page);
@@ -8598,7 +8673,7 @@ test("authors, connects, nests, undoes, saves, and reloads a local module design
     await runMenuCommand(page, "View", "Toggle Sources");
     await runMenuCommand(page, "View", "Toggle Properties");
     await page.waitForTimeout(400);
-    await toolbarButton(page, "适应窗口").click({ force: true });
+    await toolbarButton(page, "Fit Design").click({ force: true });
     await page.waitForTimeout(400);
     await captureStudioScreenshot(page, "docs/screenshots/editor-routing-validation.png");
     await runMenuCommand(page, "View", "Toggle Sources");
@@ -8638,7 +8713,7 @@ test("authors, connects, nests, undoes, saves, and reloads a local module design
   await waitForEditorIdle(page);
   await expect(flowNode(page, "system::api").locator("h3")).toHaveText("Public API v2");
   page.once("dialog", async (dialog) => dialog.dismiss());
-  await toolbarButton(page, "新建设计").click({ force: true });
+  await toolbarButton(page, "New Design...").click({ force: true });
   await expect(page.getByRole("dialog", { name: "New Design" })).toHaveCount(0);
   await expect(page.locator(".bd-document-title span")).toHaveText("Payments Architecture *");
   expect(browserErrors).toEqual([]);
@@ -8651,7 +8726,7 @@ test("moves, edits, deletes, restores, saves, and exports authored facts", async
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("pageerror", (error) => browserErrors.push(error.message));
-  await toolbarButton(page, "新建设计").click({ force: true });
+  await toolbarButton(page, "New Design...").click({ force: true });
   const newDialog = page.getByRole("dialog", { name: "New Design" });
   await newDialog.getByLabel("Design title").fill("Worker Design");
   await newDialog.getByLabel("Design id").fill("worker-design");
@@ -8660,7 +8735,7 @@ test("moves, edits, deletes, restores, saves, and exports authored facts", async
 
   await addModule(page, { title: "Worker", id: "worker", owner: "Runtime Team" });
   const worker = flowNode(page, "system::worker");
-  await toolbarButton(page, "添加模块").click({ force: true });
+  await toolbarButton(page, "Add Module...").click({ force: true });
   const duplicateDialog = page.getByRole("dialog", { name: /Add Module/ });
   await duplicateDialog.getByLabel("Module title").fill("Duplicate Worker");
   await duplicateDialog.getByLabel("Module id").fill("worker");
@@ -8684,14 +8759,14 @@ test("moves, edits, deletes, restores, saves, and exports authored facts", async
   const inspector = page.getByRole("region", { name: "Properties" });
   await inspector.getByLabel("Label").fill("events-out");
   await inspector.getByLabel("Direction").selectOption("output");
-  await inspector.getByLabel("Side").selectOption("right");
+  await inspector.getByRole("combobox", { name: "Side", exact: true }).selectOption("right");
   await inspector.getByLabel("Required connection").uncheck({ force: true });
   await inspector.getByRole("button", { name: "Apply Changes" }).click({ force: true });
   await waitForEditorIdle(page);
   await expect(worker.locator(".bd-port-label")).toContainText("events-out");
 
   const saveDownloadPromise = page.waitForEvent("download");
-  await toolbarButton(page, "保存设计").click({ force: true });
+  await toolbarButton(page, "Save").click({ force: true });
   const saveDownload = await saveDownloadPromise;
   expect(saveDownload.suggestedFilename()).toBe("worker-design.block-design.json");
   await expect(page.locator(".bd-statusbar")).toContainText("Saved");
@@ -8707,19 +8782,19 @@ test("moves, edits, deletes, restores, saves, and exports authored facts", async
   await expect(page.locator(".bd-statusbar")).toContainText("Unsaved changes");
 
   page.once("dialog", async (dialog) => dialog.accept());
-  await toolbarButton(page, "删除所选内容").click({ force: true });
+  await toolbarButton(page, "Delete Selection").click({ force: true });
   await waitForEditorIdle(page);
   await expect(worker.locator(".bd-port-label")).toHaveCount(0);
-  await toolbarButton(page, "撤销").click({ force: true });
+  await toolbarButton(page, "Undo").click({ force: true });
   await waitForEditorIdle(page);
   await expect(worker.locator(".bd-port-label")).toContainText("events-out");
 
   await worker.click({ force: true });
   page.once("dialog", async (dialog) => dialog.accept());
-  await toolbarButton(page, "删除所选内容").click({ force: true });
+  await toolbarButton(page, "Delete Selection").click({ force: true });
   await waitForEditorIdle(page);
   await expect(page.locator(".react-flow__node")).toHaveCount(0);
-  await toolbarButton(page, "撤销").click({ force: true });
+  await toolbarButton(page, "Undo").click({ force: true });
   await waitForEditorIdle(page);
   await expect(flowNode(page, "system::worker")).toBeVisible();
   expect(browserErrors).toEqual([]);

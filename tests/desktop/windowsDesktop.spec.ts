@@ -30,11 +30,14 @@ async function settledCanvasTransform(window: import("@playwright/test").Page): 
 }
 
 test("launches the isolated Windows desktop shell and renders the full workbench", async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "architecture-block-studio-desktop-"));
   const environment = Object.fromEntries(
     Object.entries(process.env).filter(([name]) => name !== "ELECTRON_RUN_AS_NODE"),
   ) as Record<string, string>;
-  const application = await electron.launch({ args: ["."], env: environment });
-  const temporaryDirectory = await mkdtemp(join(tmpdir(), "architecture-block-studio-desktop-"));
+  const application = await electron.launch({
+    args: [".", `--user-data-dir=${join(temporaryDirectory, "user-data")}`],
+    env: environment,
+  });
   try {
     const window = await application.firstWindow();
     await window.waitForLoadState("domcontentloaded");
@@ -64,9 +67,11 @@ test("launches the isolated Windows desktop shell and renders the full workbench
         "downloadUpdate",
         "getUpdateState",
         "installUpdate",
+        "listRecentDesigns",
         "onSaveBeforeClose",
         "onUpdateState",
         "openDesign",
+        "openRecentDesign",
         "platform",
         "saveDesign",
         "setDirty",
@@ -74,22 +79,31 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     });
     expect(await window.evaluate(
       () => window.architectureBlockStudioDesktop!.getUpdateState(),
-    )).toEqual({ status: "unsupported", currentVersion: "0.3.0" });
+    )).toEqual({ status: "unsupported", currentVersion: "0.4.0" });
     await expect(window.locator(".bd-desktop-update")).toHaveCount(0);
+    expect(await window.evaluate(
+      () => window.architectureBlockStudioDesktop!.listRecentDesigns(),
+    )).toEqual([]);
 
     const agentUi = window.locator('.react-flow__node[data-id="system::agent-ui"]');
     const screenshotDirectory = resolve("docs/screenshots");
     await mkdir(screenshotDirectory, { recursive: true });
-    const commandPortLabel = agentUi.locator(".bd-port-label").filter({ hasText: "session.command" });
     const commandPort = agentUi.locator('.bd-port[data-port-id="session-command"]');
-    const portBounds = await commandPortLabel.boundingBox();
+    const commandPortGrip = commandPort.getByRole("button", { name: "Move port session.command" });
+    const portBounds = await commandPortGrip.boundingBox();
     const agentBounds = await agentUi.boundingBox();
     expect(portBounds).not.toBeNull();
     expect(agentBounds).not.toBeNull();
+    expect(portBounds!.width).toBeGreaterThanOrEqual(20);
+    expect(portBounds!.height).toBeGreaterThanOrEqual(20);
     const routeGeometryBeforePortMove = await window.locator(".bd-interface-route").evaluateAll(
       (paths) => paths.map((path) => path.getAttribute("d")),
     );
     await window.mouse.move(portBounds!.x + portBounds!.width / 2, portBounds!.y + portBounds!.height / 2);
+    await window.screenshot({
+      path: resolve(screenshotDirectory, "windows-port-move-grip.png"),
+      animations: "disabled",
+    });
     await window.mouse.down();
     await window.mouse.move(agentBounds!.x + agentBounds!.width * 0.36, agentBounds!.y + 2, { steps: 12 });
     await expect(window.locator(".bd-react-flow")).toHaveAttribute("data-port-move-active", "true");
@@ -167,7 +181,7 @@ test("launches the isolated Windows desktop shell and renders the full workbench
 
     const addModuleTool = window
       .getByRole("toolbar", { name: "Architecture design tools" })
-      .getByRole("button", { name: "添加模块", exact: true });
+      .getByRole("button", { name: "Add Module...", exact: true });
     await addModuleTool.dragTo(project);
     const addModuleDialog = window.getByRole("dialog", { name: /Add Module/ });
     await expect(addModuleDialog).toBeVisible();
@@ -186,7 +200,7 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     await window.keyboard.press("Control+Z");
     await expect(window.locator(".react-flow__node")).toHaveCount(7);
     await expect(window.locator(".bd-statusbar")).toContainText("Saved");
-    await window.getByRole("button", { name: "Fit design" }).click({ force: true });
+    await window.getByRole("button", { name: "Fit design", exact: true }).click({ force: true });
     await window.waitForTimeout(320);
 
     const inputPath = join(temporaryDirectory, "opened.block-design.json");
@@ -205,6 +219,12 @@ test("launches the isolated Windows desktop shell and renders the full workbench
       (token) => window.architectureBlockStudioDesktop!.acceptOpenedDesign(token),
       opened.token,
     )).toBe(true);
+    const recentAfterOpen = await window.evaluate(
+      () => window.architectureBlockStudioDesktop!.listRecentDesigns(),
+    );
+    expect(recentAfterOpen).toHaveLength(1);
+    expect(recentAfterOpen[0]).toMatchObject({ fileName: "opened.block-design.json" });
+    expect(recentAfterOpen[0]).not.toHaveProperty("filePath");
 
     await application.evaluate(({ dialog }, selectedPath) => {
       dialog.showSaveDialog = async () => ({ canceled: false, filePath: selectedPath });
@@ -219,6 +239,55 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     );
     expect(saved).toEqual({ status: "saved", fileName: "saved-as.block-design.json" });
     expect(await readFile(outputPath, "utf8")).toBe(opened.content);
+    const recentAfterSave = await window.evaluate(
+      () => window.architectureBlockStudioDesktop!.listRecentDesigns(),
+    );
+    expect(recentAfterSave.map((entry) => entry.fileName)).toEqual([
+      "saved-as.block-design.json",
+      "opened.block-design.json",
+    ]);
+    const reopened = await window.evaluate(
+      (id) => window.architectureBlockStudioDesktop!.openRecentDesign(id),
+      recentAfterOpen[0].id,
+    );
+    expect(reopened.status).toBe("opened");
+    if (reopened.status !== "opened") throw new Error("Expected a recent design to reopen.");
+    expect(reopened.content).toBe(opened.content);
+    expect(await window.evaluate(
+      (token) => window.architectureBlockStudioDesktop!.acceptOpenedDesign(token),
+      reopened.token,
+    )).toBe(true);
+
+    await application.evaluate(({ dialog }) => {
+      dialog.showMessageBox = async () => ({ response: 0, checkboxChecked: false });
+    });
+    await rm(inputPath);
+    expect(await window.evaluate(
+      (id) => window.architectureBlockStudioDesktop!.openRecentDesign(id),
+      recentAfterOpen[0].id,
+    )).toEqual({ status: "unavailable", fileName: "opened.block-design.json" });
+    await expect.poll(() => window.evaluate(
+      () => window.architectureBlockStudioDesktop!.listRecentDesigns(),
+    )).toHaveLength(1);
+
+    await window.reload();
+    await expect(window.locator(".react-flow__node")).toHaveCount(7, { timeout: 30_000 });
+    await window.getByRole("button", { name: "File", exact: true }).click();
+    await expect(window.getByText("Recent Designs", { exact: true })).toBeVisible();
+    await window.getByRole("menuitem", {
+      name: "Open recent design saved-as.block-design.json",
+      exact: true,
+    }).click();
+    await expect(window.locator(".bd-document-title small")).toHaveText("saved-as.block-design.json");
+
+    await window.locator(".bd-language-selector select").selectOption("zh-CN");
+    await window.getByRole("button", { name: "文件", exact: true }).click();
+    await expect(window.getByText("最近打开的设计", { exact: true })).toBeVisible();
+    await window.screenshot({
+      path: resolve(screenshotDirectory, "windows-multilingual-recent-designs.png"),
+      animations: "disabled",
+    });
+    await window.keyboard.press("Escape");
 
     await window.screenshot({
       path: resolve(screenshotDirectory, "windows-desktop-app.png"),

@@ -1,6 +1,7 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Box, Cable, ChevronRight, CircuitBoard, Layers3, Search } from "lucide-react";
 import type { BlockDesignDocument } from "../model";
+import { useStudioLocale } from "../i18n/StudioLocale";
 import {
   selectionContains,
   toggleDiagramSelection,
@@ -28,6 +29,7 @@ function ProgressiveResultList<T>({
   renderItem: (item: T) => ReactNode;
   empty: ReactNode;
 }) {
+  const { t } = useStudioLocale();
   const listRef = useRef<HTMLDivElement>(null);
   const [window, setWindow] = useState({ resetKey, limit: RESULT_BATCH_SIZE });
   const limit = window.resetKey === resetKey ? window.limit : RESULT_BATCH_SIZE;
@@ -65,7 +67,7 @@ function ProgressiveResultList<T>({
       {items.length === 0 && empty}
       {renderedItems.length < items.length && (
         <p className="bd-progressive-results" role="status">
-          Showing {renderedItems.length} of {items.length} · Scroll for more
+          {t("sources.showing", { shown: renderedItems.length, total: items.length })}
         </p>
       )}
     </div>
@@ -99,6 +101,7 @@ const HierarchyNodeRow = memo(function HierarchyNodeRow({
   onRevealLevel,
   onSelect,
 }: HierarchyNodeRowProps) {
+  const { t } = useStudioLocale();
   return (
     <div>
       <div
@@ -126,7 +129,7 @@ const HierarchyNodeRow = memo(function HierarchyNodeRow({
           <button
             type="button"
             className={`bd-tree-expander${expanded ? " is-expanded" : ""}`}
-            aria-label={`${expanded ? "折叠" : "展开"} ${title}`}
+            aria-label={`${t(expanded ? "common.collapse" : "common.expand")} ${title}`}
             onClick={(event) => {
               event.stopPropagation();
               onToggleLevel(childLevelId);
@@ -159,6 +162,7 @@ export function HierarchyTree({
   onRevealLevel: (levelId: string) => void;
   onSelect: (selection: SelectionRef) => boolean;
 }) {
+  const { t } = useStudioLocale();
   const [tab, setTab] = useState<"hierarchy" | "interfaces">("hierarchy");
   const [hierarchyQuery, setHierarchyQuery] = useState("");
   const [interfaceQuery, setInterfaceQuery] = useState("");
@@ -208,12 +212,12 @@ export function HierarchyTree({
 
   return (
     <section className="bd-sources-pane">
-      <div className="bd-dock-tabs" role="tablist" aria-label="Sources views">
+      <div className="bd-dock-tabs" role="tablist" aria-label={t("sources.views")}>
         <button type="button" role="tab" aria-selected={tab === "hierarchy"} className={tab === "hierarchy" ? "is-active" : ""} onClick={() => setTab("hierarchy")}>
-          <Layers3 size={12} aria-hidden="true" /> Hierarchy
+          <Layers3 size={12} aria-hidden="true" /> {t("sources.hierarchy")}
         </button>
         <button type="button" role="tab" aria-selected={tab === "interfaces"} className={tab === "interfaces" ? "is-active" : ""} onClick={() => setTab("interfaces")}>
-          <Cable size={12} aria-hidden="true" /> Interfaces
+          <Cable size={12} aria-hidden="true" /> {t("sources.interfaces")}
         </button>
       </div>
       {tab === "hierarchy" ? (
@@ -223,8 +227,8 @@ export function HierarchyTree({
             <input
               value={hierarchyQuery}
               onChange={(event) => setHierarchyQuery(event.target.value)}
-              placeholder="Filter modules"
-              aria-label="Filter modules"
+              placeholder={t("sources.filterModules")}
+              aria-label={t("sources.filterModules")}
             />
             <output className="bd-filter-count" aria-live="polite">
               {normalizedHierarchyQuery ? visibleNodes.length : totalNodeCount}
@@ -235,7 +239,7 @@ export function HierarchyTree({
               items={visibleNodes}
               resetKey={normalizedHierarchyQuery}
               className="bd-hierarchy-search-list"
-              ariaLabel="Matching modules"
+              ariaLabel={t("sources.matchingModules")}
               itemKey={({ level, node }) => `${level.id}:${node.id}`}
               renderItem={({ level, node }) => {
                 const item: DiagramSelectionRef = { kind: "node", levelId: level.id, nodeId: node.id };
@@ -253,18 +257,18 @@ export function HierarchyTree({
                   >
                     <Box size={12} aria-hidden="true" />
                     <strong>{node.title}</strong>
-                    <small>{node.id} · {node.owner ?? "Unassigned owner"} · {level.title}</small>
+                    <small>{node.id} · {node.owner ?? t("sources.unassigned")} · {level.title}</small>
                   </button>
                 );
               }}
-              empty={<p className="bd-empty-state">No matching modules</p>}
+              empty={<p className="bd-empty-state">{t("sources.noModules")}</p>}
             />
           ) : (
             <ProgressiveResultList
               items={hierarchyRows}
               resetKey={document.id}
               className="bd-source-scroll"
-              ariaLabel="Design hierarchy"
+              ariaLabel={t("sources.designHierarchy")}
               itemKey={(row) => row.key}
               renderItem={(row) => {
                 if (row.kind === "document") {
@@ -324,14 +328,14 @@ export function HierarchyTree({
         <div className="bd-interface-browser">
           <label className="bd-filter-field">
             <Search size={13} aria-hidden="true" />
-            <input value={interfaceQuery} onChange={(event) => setInterfaceQuery(event.target.value)} placeholder="Filter interfaces" aria-label="Filter interfaces" />
+            <input value={interfaceQuery} onChange={(event) => setInterfaceQuery(event.target.value)} placeholder={t("sources.filterInterfaces")} aria-label={t("sources.filterInterfaces")} />
             <output className="bd-filter-count" aria-live="polite">{visibleConnections.length}</output>
           </label>
           <ProgressiveResultList
             items={visibleConnections}
             resetKey={normalizedInterfaceQuery}
             className="bd-interface-browser-list"
-            ariaLabel="Declared interfaces"
+            ariaLabel={t("sources.matchingInterfaces")}
             itemKey={({ level, connection }) => `${level.id}:${connection.id}`}
             renderItem={({ level, connection, definition }) => {
               const item: DiagramSelectionRef = {
@@ -357,7 +361,7 @@ export function HierarchyTree({
                 </button>
               );
             }}
-            empty={<p className="bd-empty-state">No matching interfaces</p>}
+            empty={<p className="bd-empty-state">{t("sources.noInterfaces")}</p>}
           />
         </div>
       )}

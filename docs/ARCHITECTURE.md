@@ -35,10 +35,11 @@ React Studio ──具名 DesktopBridge──► sandbox preload ──具名 IP
      │                                                                  │
      └── BlockDesignDocument ◄── canonical JSON ────────────────────────┘
                                                                         ├─ 原生 Open / Save 对话框
-                                                                        └─ 受限 JSON 原子读写
+                                                                        ├─ 受限 JSON 原子读写
+                                                                        └─ RecentDesignService 路径引用
 ```
 
-`BlockDesignDocument` 仍是设计事实，Editor 仍唯一拥有 dirty / saved baseline。Electron main 只拥有窗口会话中的当前文件路径、原生对话框和磁盘 IO；路径不返回 renderer、不写入 JSON。preload 只暴露逐项命名的方法，不暴露 Node、任意 IPC、任意路径或通用文件系统。
+`BlockDesignDocument` 仍是设计事实，Editor 仍唯一拥有 dirty / saved baseline。Electron main 只拥有窗口会话中的当前文件路径、原生对话框、磁盘 IO，以及 `userData/recent-designs.json` 中最多 10 个最近文件引用。最近列表只在成功接受 Open 或成功 Save 后更新；renderer 只获得 opaque id、文件名、目录展示和时间，不获得可自行访问的文件路径。失效引用由 main 在重开失败时删除。preload 只暴露逐项命名的方法，不暴露 Node、任意 IPC 或通用文件系统。
 
 ## 模块与 Owner
 
@@ -47,12 +48,13 @@ React Studio ──具名 DesktopBridge──► sandbox preload ──具名 IP
 | `src/model` | 拥有文档结构、Schema 版本与迁移、语义设计规则和无状态图查询 | `BlockDesignDocument`、`BLOCK_DESIGN_SCHEMA_VERSION`、`blockDesignSchemaCompatibility`、`parseBlockDesignDocument`、`validateBlockDesignDocument`、`listModuleInterfaces`、`normalizeConnectionEndpoints` | 不负责 UI、历史或布局；版本与结构非法时在字段路径拒绝，语义问题输出 DRC，查询与连接规范化不持有状态 |
 | `src/editor` | 拥有原子文档变换、历史、dirty 判断与可移植设计片段的引用完整性 | `DesignOperation`、`DesignFragment`、`createDesignFragment`、`parseDesignFragment`、`applyDesignOperation`、`useDesignEditor`、具名工厂 | 不渲染、不路由、不持久化；片段必须自包含，失败不产生部分修改 |
 | `src/io` | 拥有外部 JSON 与已校验文档之间的转换，以及 renderer 可见的最小桌面文件协议 | `loadDesignFromObject/Text/File/Url`、`serializeDesign`、`downloadDesign`、`ArchitectureBlockStudioDesktopBridge` | 不解释模块业务、不持有系统路径；加载失败保留已安装文档 |
+| `src/i18n` | 拥有五种受支持界面语言、消息目录与本机语言偏好 | `STUDIO_LOCALES`、`StudioLocaleProvider`、`translateStudioMessage`、`translateStudioCommand` | 不翻译用户设计内容、技术 ID 或 DRC 事实；语言切换不进入 JSON、History 或 dirty |
 | `src/layout` | 从文档与展开状态派生纯复合节点、边和位置投影，定义布局真正消费的签名，并提供不持有交互状态的网格、辅助线、多选编排与组选区缩放几何 | `layoutBlockDesign`、`layoutFrameSignature`、`layoutProjectionSignature`、`DESIGN_GRID_SIZE`、`snapMovingRect`、`snapResizingRect`、`resizeSelectionGroup`、`alignSelection`、`distributeSelection`、`LayoutResult`、`PlacementMode` | 不依赖 Studio 或 React 交互回调，不修改源文档；没有合法辅助线时只应用显式网格策略，没有网格时原样返回预览几何，非法几何、编排输入或布局失败上抛给 Studio |
 | `src/routing` | 从绝对布局几何和锁定 waypoint 构造 `RoutingScene`，统一拥有版本化正交多连接策略、规模资源预算、确定性求解、证明等级与独立验证；同一布局投影还向 pointer preview 提供只读障碍、规范端口和层级域，另提供手工路线编辑几何与线桥 | `createRoutingLayoutProjectionFromLayout`、`createRoutingSceneFromLayout`、`solveConnectionPreview`、`routingPolicyForScene`、`solveRoutingScene`、`verifyRoutingResult`、`planRouteJumps`、`RoutingScene`、`RoutingPolicy`、`RoutingResult` | 设计坐标是路由事实；不移动模块、不改文档、不持有 gesture；preview 只解一条可丢弃 leg，不参与多线 lane 协调；规模只收紧同一策略的有界资源，不改变几何与失败语义。失败返回明确无解，不调用第二套自动 fallback。完整合同见 [`ROUTING.md`](ROUTING.md) |
 | `src/components` | 将纯布局投影组合为可交互 Canvas，拥有选中几何的 viewport framing、具名缩放请求投影与直接手势的持续边缘平移，并展示用户视图、发出用户意图 | `CanvasBlockNodeData`、`CanvasInterfaceEdgeData`、`CanvasViewportActionRequest`、`ViewportAutoPanController`、`canvasGeometryBounds`、Canvas、Node、Edge、Tree、Inspector、Dialogs、Dock、Messages | 交互回调只存在于 Canvas 投影；viewport 只消费节点矩形、线路点集、指针压力和可丢弃动作请求，不直接深改文档，自动平移不得提交设计操作，局部表单草稿不得伪装成已提交事实 |
 | `src/studio` | 组合公开能力，拥有工作区选择协议、临时设计剪贴板与无碰撞粘贴位置投影 | `BlockDesignStudio`、`BlockDesignStudioProps`、`SelectionRef`、`selectAllInLevel`、`findDesignFragmentPlacement` 及纯选择查询 | 不重新定义 Schema、片段引用、布局或编辑规则；系统剪贴板失败时同源退化，组合失败应可见、可恢复 |
 | `src/App.tsx` | 提供独立应用的默认装配 | 默认示例 URL 与查询参数入口 | 示例不是核心依赖，不拥有设计内容 |
-| `desktop` | 拥有 Windows 窗口、会话文件绑定、原生对话框、关闭保护与 JSON 原子读写 | Electron main、sandbox preload、具名 IPC、`readDesignFile`、`writeDesignFile` | 不解释或修改设计语义；renderer 不获得 Node / 路径 / 通用 IPC，失败不清除 dirty 或替换当前文件绑定 |
+| `desktop` | 拥有 Windows 窗口、会话文件绑定、最近文件引用、原生对话框、关闭保护与 JSON 原子读写 | Electron main、sandbox preload、具名 IPC、`readDesignFile`、`writeDesignFile`、`RecentDesignService` | 不解释或修改设计语义；renderer 不获得 Node / 通用 IPC，最近记录不复制 JSON，失败不清除 dirty 或替换当前文件绑定 |
 | `tests/performance` + `scripts/performance-baseline.mjs` | 拥有压力观测样本合同与重复聚合入口 | `performance-sample v1`、`performance-trend-report v1`、`pnpm performance:baseline` | 只验证产品合同，不被运行时代码依赖，不写回设计 JSON；环境或样本漂移时停止生成可信报告 |
 
 `BlockDesignStudio.tsx` 当前承担较多编排职责，但它仍通过上述公开接口组合模块。后续只有在出现独立变化原因时才拆出命令协调器；不能建立囊括所有能力的全局 Service 或共享可变状态。
@@ -69,9 +71,10 @@ flowchart LR
   bootstrap --> styles[Visual Tokens]
   app --> studio[Studio Orchestrator]
   app --> io[Canonical File I/O]
+  app --> protocols[Workbench Protocols]
   studio --> canvas[Canvas Interaction]
   studio --> workbench[Workbench Components]
-  studio --> protocols[Command & Selection]
+  studio --> protocols
   studio --> editor[Atomic Editor]
   studio --> layout[Layout Projection]
   studio --> io
@@ -84,6 +87,7 @@ flowchart LR
   canvas --> model
   workbench --> protocols
   workbench --> editor
+  workbench --> io
   workbench --> model
   routing --> layout
   routing --> model
@@ -94,7 +98,7 @@ flowchart LR
   io --> model
 ```
 
-图中箭头严格表达“左侧源码模块 import 右侧模块”，不是运行时数据流，也不按卡片相对位置猜方向。`Studio Orchestrator` 与叶子 `Command & Selection` 分开，是因为前者拥有产品组合，后者只拥有无 UI 依赖的命令和选择协议；Canvas 与 Workbench 也按直接画布手势和外围审查界面分开。这个划分恰好覆盖当前 84 个受管源码文件，不能漏文件或让一个文件同时属于多个模块。桌面主进程是 OS 适配边界，不反向进入这张 renderer 源码依赖图。
+图中箭头严格表达“左侧源码模块 import 右侧模块”，不是运行时数据流，也不按卡片相对位置猜方向。`Studio Orchestrator` 与叶子 `Workbench Protocols` 分开，是因为前者拥有产品组合，后者只拥有命令、选择和界面语言协议；Canvas 与 Workbench 也按直接画布手势和外围审查界面分开。这个划分恰好覆盖当前 89 个受管源码文件和 29 条跨模块依赖，不能漏文件或让一个文件同时属于多个模块。桌面主进程是 OS 适配边界，不反向进入这张 renderer 源码依赖图。
 
 生成和验证必须保持以下不变量：
 
@@ -118,7 +122,7 @@ flowchart LR
 
 连接方向与连接点是两个正交的视觉角色。Canvas 只对非 hierarchy continuation 的真实连接投影一个 target marker，marker 的方向完全来自 `BlockConnection.source -> target` 路径末段；Port Handle 只表达“这里可以连接”，使用中性圆点，不用输入 / 输出三角形冒充数据流箭头。接口类型颜色由 edge 上的 `--interface-color` 统一提供给普通路径、React Flow 选中态和 `context-stroke` marker；第三方默认 selected stroke 不能成为第二颜色源。marker、Handle hover 和选中描边都属于可重建展示，不进入 JSON 或历史。
 
-端口连接点几何与标签排版同样正交。文档中的 `port.side + port.offset` 是精确端口位置的唯一事实，`layout/nodeGeometry` 只负责把它投影成 Handle、标签、安全尺寸和路由锚点，并用同一纯函数把 Windows pointer 解析为最近卡片边、可读间距和可选比例吸附。`BlockNode` 只拥有当前 pointer gesture；Canvas 只拥有可丢弃预览并让相关线路实时重算；松手后的一个 `port/move` 才由 Editor 原子写回文档。外侧 Handle 始终只创建连接，拖动标签只移动端口，点击标签只进入 Inspector，三种输入不能共享隐式状态。已有 authored width / height 满足标签合同时必须原样保留；只有外部 JSON 或端口重新分布使尺寸小于内容安全下限时，布局投影才钳制到可读尺寸。
+端口连接点几何与标签排版同样正交。文档中的 `port.side + port.offset` 是精确端口位置的唯一事实，`layout/nodeGeometry` 只负责把它投影成 Handle、标签、安全尺寸和路由锚点，并用同一纯函数把 Windows pointer 解析为最近卡片边、可读间距和可选比例吸附。`BlockNode` 只拥有当前 pointer gesture；Canvas 只拥有可丢弃预览并让相关线路实时重算；松手后的一个 `port/move` 才由 Editor 原子写回文档。外侧圆形 Handle 始终只创建连接；独立移动抓手使用 inverse zoom 保持至少 22 CSS px 命中区，并偏移到端口外侧避免覆盖标签；标签仍可拖动或点击 Inspector。三种输入不能共享隐式状态。已有 authored width / height 满足标签合同时必须原样保留；只有外部 JSON 或端口重新分布使尺寸小于内容安全下限时，布局投影才钳制到可读尺寸。
 
 模块尺寸编辑复用同一几何 Owner。`minimumNodeDimensions` 从四侧端口和内容区计算可读下限，Canvas 只把这个纯结果投影为四边 / 四角 resize 限制；最大值来自节点几何合同，pointer 网格、键盘移动 / resize 步长和背景点阵共同消费 `DESIGN_GRID_SIZE`。Shift pointer resize 由纯 `preserveNodeAspectRatio` 以 gesture 起始矩形、抓手方向和同一尺寸上下限求解，固定对侧角或对侧边中心；比例不进入文档，并优先于兄弟尺寸吸附。多选时，`selectionResizeBounds / selectionResizeLimits / resizeSelectionGroup` 只接受同父级、同 Level、具有唯一可编辑投影的模块，以一个冻结的组包围框计算全组可行 scale，再用同一仿射变换更新每个成员的位置和尺寸。已有外部 JSON 若暂时超出当前上下限仍可被选中，但只允许朝合法范围变化，不能因显示组选区而抛错。Canvas 只拥有可丢弃预览，松手后发出一次位置加尺寸意图；Editor 的 `node/resize` 或 `nodes/resize` 才原子写入 `node.layout.position / width / height / pinned`。左边或上边缩放会同时改变锚点和尺寸，因此不能只写 width / height，否则视觉边界与持久几何会漂移。展开的 hierarchy 容器尺寸由子图边界派生，跨父级选择没有共同坐标系，两者都不提供组选区 resize 把手。
 

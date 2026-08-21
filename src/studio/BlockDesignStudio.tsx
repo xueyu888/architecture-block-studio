@@ -74,10 +74,12 @@ import {
 } from "../components/EditorDialogs";
 import { HierarchyTree } from "../components/HierarchyTree";
 import { Inspector } from "../components/Inspector";
+import { LanguageSelector } from "../components/LanguageSelector";
 import { LoadDesignDialog } from "../components/LoadDesignDialog";
 import { MenuBar } from "../components/MenuBar";
 import { MessagesPanel } from "../components/MessagesPanel";
 import { StudioToolbar } from "../components/StudioToolbar";
+import { useStudioLocale } from "../i18n/StudioLocale";
 import {
   createBlankDesign,
   createBlock,
@@ -102,7 +104,7 @@ import {
   loadDesignFromUrl,
   type DesignLoadError,
 } from "../io/loadDesign";
-import { getDesktopBridge } from "../io/desktopBridge";
+import { getDesktopBridge, type RecentDesignSummary } from "../io/desktopBridge";
 import {
   downloadDesign,
   normalizeDesignFileName,
@@ -287,6 +289,7 @@ export function BlockDesignStudio({
   initialDesignUrl,
   initialSourceLabel = "embedded document",
 }: BlockDesignStudioProps) {
+  const { commandLabel, t } = useStudioLocale();
   const bootDocument = useMemo(() => createBlankDesign("studio-loading", "Loading Design"), []);
   const desktopBridge = useMemo(() => getDesktopBridge(), []);
   const editor = useDesignEditor(bootDocument);
@@ -311,6 +314,7 @@ export function BlockDesignStudio({
   const [messageFocusRequest, setMessageFocusRequest] = useState(0);
   const [workspaceResetRequest, setWorkspaceResetRequest] = useState(0);
   const [dockApi, setDockApi] = useState<DockviewApi>();
+  const [recentDesigns, setRecentDesigns] = useState<RecentDesignSummary[]>([]);
   const [diagramMaximized, setDiagramMaximized] = useState(false);
   const diagramEdgeState = useRef<Map<EdgeGroupPosition, boolean> | undefined>(undefined);
   const fitAfterLayout = useRef(true);
@@ -402,6 +406,22 @@ export function BlockDesignStudio({
     return window.confirm(message);
   }, []);
 
+  const refreshRecentDesigns = useCallback(async () => {
+    if (!desktopBridge) {
+      setRecentDesigns([]);
+      return;
+    }
+    try {
+      setRecentDesigns(await desktopBridge.listRecentDesigns());
+    } catch (error) {
+      setCommandError(errorMessage(error));
+    }
+  }, [desktopBridge]);
+
+  useEffect(() => {
+    void refreshRecentDesigns();
+  }, [refreshRecentDesigns]);
+
   const openUrl = useCallback(async (url: string, initial = false) => {
     if (!initial && !mayDiscardChanges()) return;
     setBusy(true);
@@ -441,17 +461,48 @@ export function BlockDesignStudio({
     try {
       const result = await desktopBridge.openDesign();
       if (result.status === "canceled") return;
+      if (result.status === "unavailable") {
+        setCommandError(t("menu.recentUnavailable", { name: result.fileName }));
+        await refreshRecentDesigns();
+        return;
+      }
       const next = loadDesignFromText(result.content, result.fileName);
       if (!await desktopBridge.acceptOpenedDesign(result.token)) {
         throw new Error("The selected desktop file was no longer available to accept.");
       }
       installDocument(next, result.fileName);
+      await refreshRecentDesigns();
     } catch (error) {
       setCommandError(errorMessage(error));
     } finally {
       setBusy(false);
     }
-  }, [desktopBridge, installDocument, mayDiscardChanges]);
+  }, [desktopBridge, installDocument, mayDiscardChanges, refreshRecentDesigns, t]);
+
+  const openRecentDesign = useCallback(async (id: string) => {
+    if (!desktopBridge || !mayDiscardChanges()) return;
+    setBusy(true);
+    setLoadError(undefined);
+    try {
+      const result = await desktopBridge.openRecentDesign(id);
+      if (result.status === "canceled") return;
+      if (result.status === "unavailable") {
+        setCommandError(t("menu.recentUnavailable", { name: result.fileName }));
+        await refreshRecentDesigns();
+        return;
+      }
+      const next = loadDesignFromText(result.content, result.fileName);
+      if (!await desktopBridge.acceptOpenedDesign(result.token)) {
+        throw new Error("The recent desktop file was no longer available to accept.");
+      }
+      installDocument(next, result.fileName);
+      await refreshRecentDesigns();
+    } catch (error) {
+      setCommandError(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }, [desktopBridge, installDocument, mayDiscardChanges, refreshRecentDesigns, t]);
 
   useEffect(() => {
     if (initialLoadStarted.current) return;
@@ -748,6 +799,7 @@ export function BlockDesignStudio({
         setFileName(result.fileName);
         setSourceLabel(result.fileName);
         editor.markSaved();
+        await refreshRecentDesigns();
       }
       setCommandError(undefined);
       return true;
@@ -755,7 +807,7 @@ export function BlockDesignStudio({
       setCommandError(errorMessage(error));
       return false;
     }
-  }, [desktopBridge, document, editor.markSaved, fileName, requireAppliedInspectorDraft]);
+  }, [desktopBridge, document, editor.markSaved, fileName, refreshRecentDesigns, requireAppliedInspectorDraft]);
 
   const saveCurrent = useCallback(async (): Promise<boolean> => {
     if (!document) return false;
@@ -2084,6 +2136,17 @@ export function BlockDesignStudio({
     validateDesign,
   ]);
 
+  const displayCommands = useMemo<StudioCommands>(() => Object.fromEntries(
+    Object.entries(commands).map(([id, command]) => {
+      const label = commandLabel(id, command.label);
+      return [id, {
+        ...command,
+        label,
+        toolbarTitle: command.toolbarTitle ? label : undefined,
+      }];
+    }),
+  ) as StudioCommands, [commandLabel, commands]);
+
   useEffect(() => {
     const handleKeyboard = (event: KeyboardEvent) => {
       const modifier = event.ctrlKey || event.metaKey;
@@ -2198,14 +2261,14 @@ export function BlockDesignStudio({
       <main className="bd-boot-screen">
         <CircuitBoard size={34} aria-hidden="true" />
         <h1>Architecture Block Studio</h1>
-        <p>{busy ? "Loading design document..." : "The design could not be loaded."}</p>
+        <p>{busy ? t("boot.loading") : t("boot.failed")}</p>
         {loadError && <pre>{loadError}</pre>}
         {!busy && <div className="bd-boot-actions">
-          <button type="button" className="bd-command-button" onClick={() => setNewDialogOpen(true)}><FilePlus2 size={15} /> New design</button>
+          <button type="button" className="bd-command-button" onClick={() => setNewDialogOpen(true)}><FilePlus2 size={15} /> {t("boot.new")}</button>
           <button type="button" className="bd-command-button" onClick={() => {
             if (desktopBridge) void openDesktopDesign();
             else setLoadDialogOpen(true);
-          }}><FolderOpen size={15} /> Open another design</button>
+          }}><FolderOpen size={15} /> {t("boot.open")}</button>
         </div>}
         <LoadDesignDialog open={loadDialogOpen} busy={busy} error={loadError} onClose={() => { setLoadDialogOpen(false); setLoadError(undefined); }} onLoadFile={(file) => void openFile(file)} onLoadUrl={(url) => void openUrl(url)} />
         <NewDesignDialog open={newDialogOpen} error={commandError} idFromTitle={(title) => suggestId(title, "design")} onClose={() => { setNewDialogOpen(false); setCommandError(undefined); }} onCreate={async ({ id, title }) => {
@@ -2304,13 +2367,13 @@ export function BlockDesignStudio({
             onReconnectConnection={applyConnectionReconnect}
           />
         </ReactFlowProvider>
-        {(layoutBusy || busy) && <div className="bd-canvas-busy" role="status">Updating diagram...</div>}
+        {(layoutBusy || busy) && <div className="bd-canvas-busy" role="status">{t("canvas.updating")}</div>}
       </section>
     ),
     properties: <Inspector
       document={document}
       selection={selection}
-      reconnectCommand={commands.reconnectConnection}
+      reconnectCommand={displayCommands.reconnectConnection}
       reconnectFocusRequest={inspectorReconnectFocusRequest}
       onOperation={runOperation}
       onDelete={deleteSelection}
@@ -2333,18 +2396,24 @@ export function BlockDesignStudio({
     }}>
       <header className="bd-app-header">
         <div className="bd-brand"><span className="bd-brand-mark"><CircuitBoard size={16} /></span><strong>Architecture Block Studio</strong></div>
-        <div className="bd-document-title"><span>{document.title}{editor.dirty || inspectorDraftDirty ? " *" : ""}</span><small>{sourceLabel}{inspectorDraftDirty ? " · Unapplied Inspector changes" : editor.dirty ? " · Unsaved" : ""}</small></div>
+        <div className="bd-document-title"><span>{document.title}{editor.dirty || inspectorDraftDirty ? " *" : ""}</span><small>{sourceLabel}{inspectorDraftDirty ? ` · ${t("document.unapplied")}` : editor.dirty ? ` · ${t("document.unsaved")}` : ""}</small></div>
         <div className={`bd-validation-summary${errorCount > 0 ? " has-errors" : " is-clean"}`}>
           {errorCount === 0 ? <CheckCircle2 size={14} /> : <TriangleAlert size={14} />}
-          <span>{errorCount} errors</span><span>{warningCount} warnings</span>
+          <span>{t("header.errors", { count: errorCount })}</span><span>{t("header.warnings", { count: warningCount })}</span>
         </div>
+        <LanguageSelector />
         <DesktopUpdateControl bridge={desktopBridge} />
       </header>
 
-      <MenuBar sourceRef={document.sourceRef} commands={commands} />
+      <MenuBar
+        sourceRef={document.sourceRef}
+        commands={displayCommands}
+        recentDesigns={desktopBridge ? recentDesigns : undefined}
+        onOpenRecent={(id) => { void openRecentDesign(id); }}
+      />
 
       <StudioToolbar
-        commands={commands}
+        commands={displayCommands}
         viewRootPath={viewRootPath}
         onNavigateViewRoot={(levelId) => {
           const level = document.levels.find((candidate) => candidate.id === levelId);
@@ -2357,27 +2426,27 @@ export function BlockDesignStudio({
         expandedCount={expandedLevelIds.size}
       />
 
-      <section className="bd-workspace"><DockWorkspace content={dockContent} resetRequest={workspaceResetRequest} onReady={setDockApi} /></section>
+      <section className="bd-workspace"><DockWorkspace content={dockContent} resetRequest={workspaceResetRequest} onReady={setDockApi} onToggleEdgeGroup={toggleDock} /></section>
       <footer className="bd-statusbar">
         <span><Braces size={12} /> BlockDesignDocument {document.schemaVersion}</span>
-        <span className={editor.dirty || inspectorDraftDirty ? "is-dirty" : ""}>{inspectorDraftDirty ? "Unapplied Inspector changes" : editor.dirty ? "Unsaved changes" : "Saved"}</span>
-        <span>{layout.nodes.length} diagram blocks</span><span>{visibleConnections} diagram interfaces</span>
-        <span>View root: {viewRootLevel?.title}</span>
-        <span>ELK placement · obstacle-aware orthogonal routes</span>
+        <span className={editor.dirty || inspectorDraftDirty ? "is-dirty" : ""}>{inspectorDraftDirty ? t("document.unapplied") : editor.dirty ? t("document.unsavedChanges") : t("document.saved")}</span>
+        <span>{t("status.blocks", { count: layout.nodes.length })}</span><span>{t("status.interfaces", { count: visibleConnections })}</span>
+        <span>{t("status.viewRoot", { title: viewRootLevel?.title ?? "" })}</span>
+        <span>{t("status.routing")}</span>
       </footer>
 
-      {commandError && <div className="bd-command-error" role="alert"><TriangleAlert size={15} /><span>{commandError}</span><button type="button" onClick={() => setCommandError(undefined)}>Dismiss</button></div>}
-      {commandNotice && !commandError && <div className="bd-command-notice" role="status"><Info size={15} /><span>{commandNotice}</span><button type="button" onClick={() => setCommandNotice(undefined)}>Dismiss</button></div>}
+      {commandError && <div className="bd-command-error" role="alert"><TriangleAlert size={15} /><span>{commandError}</span><button type="button" onClick={() => setCommandError(undefined)}>{t("status.dismiss")}</button></div>}
+      {commandNotice && !commandError && <div className="bd-command-notice" role="status"><Info size={15} /><span>{commandNotice}</span><button type="button" onClick={() => setCommandNotice(undefined)}>{t("status.dismiss")}</button></div>}
       {dragActive && <div className="bd-drop-overlay"><FileJsonDrop /></div>}
       {canvasContextMenu && (
         <CanvasContextMenu
           key={canvasContextMenu.revision}
           request={canvasContextMenu}
-          commands={commands}
+          commands={displayCommands}
           onClose={dismissCanvasContextMenu}
         />
       )}
-      <CommandPalette open={commandPaletteOpen} commands={commands} onClose={() => setCommandPaletteOpen(false)} />
+      <CommandPalette open={commandPaletteOpen} commands={displayCommands} onClose={() => setCommandPaletteOpen(false)} />
       <LoadDesignDialog open={loadDialogOpen} busy={busy} error={loadError} onClose={() => { setLoadDialogOpen(false); setLoadError(undefined); }} onLoadFile={(file) => void openFile(file)} onLoadUrl={(url) => void openUrl(url)} />
       <NewDesignDialog open={newDialogOpen} error={commandError} idFromTitle={(title) => suggestId(title, "design")} onClose={() => { setNewDialogOpen(false); setCommandError(undefined); }} onCreate={async ({ id, title }) => {
         try {

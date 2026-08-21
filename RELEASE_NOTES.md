@@ -1,38 +1,35 @@
-# Architecture Block Studio v0.2.0
+# Architecture Block Studio v0.4.0
 
-首个 Windows 桌面版本。Architecture Block Studio 现在可以作为独立 Windows x64 应用安装和运行，并继续以一份可版本控制的 `BlockDesignDocument` JSON 作为模块、端口、接口与层级设计的唯一事实源。
+这一版完成 Windows 日常设计工作台的关键闭环：最近文件、五种界面语言、可收纳工作区，以及真正容易命中的端口直接拖动。设计内容仍只由一份可版本控制的 `BlockDesignDocument` JSON 定义；本机偏好、最近路径和操作预览不会污染架构事实。
 
 ## 本版亮点
 
-- Windows 原生 Open、Save、Save As 与 Export JSON。
-- 已打开文件可原位保存；新设计首次保存使用原生文件对话框。
-- Open 只有在 JSON 解析和 Schema 校验成功后才替换当前设计与文件绑定。
-- Save 采用临时文件、flush 与 rename 的原子写入链；磁盘成功前不会清除未保存状态。
-- 关闭窗口时保护未保存文档与尚未 Apply 的 Inspector 草稿。
-- Electron renderer 启用 sandbox 与 context isolation，不暴露 Node、系统路径、任意 IPC 或通用文件系统。
-- 提供 Windows x64 NSIS 安装程序、开始菜单 / 桌面快捷方式和 SHA-256 校验文件。
-- 新增正式应用图标与 Windows 桌面真实启动截图。
+- **最近设计**：保留最近成功打开或保存的 10 份本地设计，可从 **File → Recent Designs** 直接重开；失效引用会明确提示并清理。
+- **五种界面语言**：支持 English、中文、Français、日本語和한국어，覆盖核心菜单、工具栏、Dock、Inspector、Messages、对话框和更新状态。
+- **左右侧栏收纳**：Sources 与 Properties 可从 Header 一键隐藏，并从保留的窄边栏立即展开；布局和显隐偏好跨启动保存。
+- **端口直接拖动**：选中模块后，端口外侧显示不随画布缩小的 22 CSS px 独立移动抓手；低缩放下仍易于鼠标命中，可跨四边移动并实时重布线。
+- **操作职责清晰**：圆形 Handle 只负责创建连接，独立抓手和端口文字负责移动；松手只产生一次 `side + offset` 文档编辑，可 Undo / Redo、保存和重载。
+- **客户端内升级**：延续 v0.3.0 建立的检查、下载、进度显示和“重启并安装”闭环；未保存设计或未应用 Inspector 草稿会阻止安装。
 
-## 既有专业图形能力
+## 数据与安全边界
 
-- 自动正交避障、多线分道、线桥与逐线 / 逐对路线审计。
-- 线段、折点和端点直接编辑，手工路线随 JSON 保存。
-- 模块和多模块统一 resize、吸附、对齐、分布、框选与依赖邻域审查。
-- 五层层级 Enter / Exit / Home 与 breadcrumb 聚焦。
-- 画布不显示容易遮挡路线的线中标签；点击线路后在 Inspector 查看完整接口合同。
-- 由真实 TypeScript import 生成五层源码架构示例，用于代码可视化与人工架构审查。
+- 最近列表仅保存在 Electron main 的 `userData/recent-designs.json`，只含文件引用和打开时间，不复制设计 JSON。
+- renderer 只接收 opaque id、文件名、目录摘要和时间；不会获得可自行访问的完整系统路径或通用文件系统。
+- 界面语言与 Dock 状态属于本机工作区，不进入设计 JSON、History 或 dirty 判断。
+- 用户编写的模块、端口、接口合同和技术 ID 保持原文，不被界面翻译改写。
 
 ## 验证摘要
 
-- 180 / 180 单元测试通过。
-- production build 与五层自架构一致性门禁通过。
-- Electron 真实启动、sandbox 隔离、7 模块 / 10 接口渲染通过。
-- 原生 Open → 校验确认 → Save As 端到端字节一致性通过。
-- Windows 安装包由 GitHub Actions 的 Windows runner 构建并附带 SHA-256。
+- 233 / 233 单元测试通过，35 个 test files。
+- Chromium 92 / 92、Firefox 91 / 91 产品回归通过。
+- Windows Electron 真实窗口 1 / 1 通过，覆盖最近设计跨 reload 持久化、失效清理、五语、左右栏和低缩放端口拖动。
+- 五层源码架构覆盖 89 个 renderer 源文件、12 个责任模块、29 条真实 import 路线与 406 个无序线对。
+- 非均匀连接压力继续覆盖 100 端口 / 100 线路 Hub，以及 200 / 400、1000 / 2000 大图旅程。
+- Windows 截图已人工复核端口抓手、标签、线路、菜单、侧栏和 Inspector 无遮挡。
 
 ## 已知边界
 
-- 本版本仅支持 Windows x64，不提供网页产品、macOS、Linux 或移动端发行。
-- 安装包尚未使用商业代码签名证书，Windows 可能显示“未知发布者”；请在运行前核对 Release 中的 SHA-256。
-- 尚无异常崩溃后的自动恢复副本。
-- 图形化能力仍在持续对照 draw.io 迭代，本版不宣称已经达到 draw.io 的整体同等水平。
+- 仅支持 Windows x64，不提供网页产品、macOS、Linux、手机或平板发行。
+- 安装包尚未使用商业代码签名证书，Windows 可能显示“未知发布者”；请先核对 Release 中的 SHA-256。
+- 尚无异常崩溃后的自动恢复副本，也尚未在固定 CI 硬件上建立性能硬预算。
+- 产品会继续对照 draw.io 打磨代码模块设计领域的图形操作，但本版不宣称已经达到 draw.io 的整体同等水平。

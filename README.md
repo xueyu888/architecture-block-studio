@@ -26,6 +26,9 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 ## 核心能力
 
 - 像专业 IDE 一样新建、打开、编辑、保存、另存和导出设计。
+- Windows 客户端会保留最近成功打开或保存的 10 份设计；从 **File → Recent Designs** 可直接重开，失效文件会在访问时明确提示并自动移除。历史只保存本地文件引用和时间，不复制设计 JSON，也不改变 dirty / Undo。
+- 工作台界面可切换 English、中文、Français、日本語和한국어；语言偏好只属于本机界面，不翻译用户编写的模块、端口、合同和技术 ID，也不改设计 JSON。
+- 左右侧栏可从各自 Header 一键隐藏，并从保留的窄边栏直接展开；Dock 布局和显隐只属于本机工作区状态。
 - 创建模块、具名端口、RPC / DTO / Event / Stream 等类型化接口。
 - 既可以在画布拖线，也可以通过 **Add Interface** 用键盘选择端点并创建同一类接口合同。
 - 为模块和接口记录 Principle、Purpose、Boundary、Failure 与 Owner。
@@ -56,7 +59,7 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 - 使用 **Ctrl/⌘ C、Ctrl/⌘ X、Ctrl/⌘ V、Ctrl/⌘ D** 或 Edit 菜单复制、剪切、粘贴和 Duplicate 同层模块子图；内部接口、接口合同和完整子设计一起进入片段，外部连接明确排除，Cut 的源图删除只形成一次 Undo。
 - 选中一个或多个同层模块后按住 **Ctrl/⌘ 拖动**，可在指针落点直接克隆完整子图；原模块只作拖动预览，新模块、内部接口与后代 Level 作为一次原子编辑提交。
 - 选中连线后拖动正交线段，手动路由随 JSON 保存，也可随时恢复自动布线。
-- 直接拖动端口名称即可沿卡片四边重新放置端口；拖过角点会切换边，邻近端口会保持可读间距，Alt 可临时绕过常用比例吸附。拖动中 Handle、标签和全部相关线路实时共用同一预览，松手只提交一次可撤销的 `side + offset` 几何；外侧圆点仍专门用于创建连接，点击名称仍打开 Inspector。
+- 选中模块后，端口外侧会出现不随画布缩小的独立移动抓手；直接拖它或端口名称即可沿卡片四边重新放置端口。拖过角点会切换边，邻近端口会保持可读间距，Alt 可临时绕过常用比例吸附。拖动中 Handle、标签和全部相关线路实时共用同一预览，松手只提交一次可撤销的 `side + offset` 几何；外侧圆点仍专门用于创建连接，抓手不会覆盖端口文字或抢占拉线动作。
 - 从端口拉线或拖动既有线路端点时，画布会实时标出起点、合法候选与非法目标，并显示端口法向的正交预览；一次拖拽只注册一次静态障碍，坐标变化立即求解，完全相同的短时请求才安全复用。按 **Esc**、移出画布或落到非法端口都会完整销毁预览会话，不改 JSON、不污染 Undo / Redo。
 - 选中接口后可从 **Design、命令面板或 Inspector** 打开 `Reconnect Interface`，仅用键盘重新选择源 / 目标端口；端点未变化时不会产生历史，真正变化后会清除旧端点拥有的手工路线，并完整进入 Undo / Redo 与保存链。
 - 画布不显示线中标签；端口承担局部识别，点击连线后由 Inspector 展示完整合同。
@@ -66,6 +69,8 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 ![Windows 桌面画布内直接编辑模块标题](docs/screenshots/windows-inline-title-editing.png)
 
 ![Windows 桌面直接拖动端口并实时重布线](docs/screenshots/windows-port-direct-placement.png)
+
+![低缩放下仍可直接命中的端口移动抓手](docs/screenshots/windows-port-move-grip.png)
 
 ![双层展开后的场景级正交布线局部](docs/screenshots/scene-routing-core-detail.png)
 
@@ -234,8 +239,11 @@ Ctrl/⌘ 拖动复用同一份可校验片段合同，但由指针明确给出�
 1. 前往 [Releases](https://github.com/xueyu888/architecture-block-studio/releases/latest) 下载 `Architecture-Block-Studio-*-windows-x64-setup.exe`。
 2. 运行安装程序并从开始菜单启动 Architecture Block Studio。
 3. 选择 **File → Open Design** 加载任意合法 `.json` / `.block-design.json`，或直接从内置示例开始探索。
-4. 编辑完成后使用 **Save** 原位保存，使用 **Save As** 保留新副本；磁盘写入成功前不会清除未保存状态。
-5. 首次安装后可直接从标题栏检查新版本、下载并查看进度；下载完成后点击“重启并安装”。存在未保存设计或未应用 Inspector 草稿时，客户端会拒绝重启，先保护内容再更新。
+4. 之后可从 **File → Recent Designs** 重开最近文件；使用 **Save** 原位保存，使用 **Save As** 保留新副本。磁盘写入成功前不会清除未保存状态。
+5. 在标题栏切换五种界面语言；左右栏可从 Header 隐藏，并点击窄边栏恢复。
+6. 首次安装后可直接从标题栏检查新版本、下载并查看进度；下载完成后点击“重启并安装”。存在未保存设计或未应用 Inspector 草稿时，客户端会拒绝重启，先保护内容再更新。
+
+![五种界面语言、可折叠侧栏与最近设计菜单](docs/screenshots/windows-multilingual-recent-designs.png)
 
 当前仅发布 Windows x64 桌面版，不提供网页产品或移动端。v0.2.0 及更早版本没有更新入口，需要最后手工安装一次 v0.3.0；从 v0.3.0 起，后续版本不必再去 GitHub 寻找下载文件。安装包暂未使用商业代码签名证书；若 Windows SmartScreen 提示“未知发布者”，请先核对 Release 页面提供的 SHA-256，再决定是否运行。
 
@@ -266,6 +274,7 @@ pnpm dev --host 127.0.0.1 --port 4317
 当前设计内容来自一份 `BlockDesignDocument v2` JSON。Windows 桌面版通过原生文件对话框加载和保存：
 
 - **本地文件**：在 **File → Open Design** 中选择任意合法 JSON。
+- **最近设计**：成功打开或保存后会进入本机最近列表；条目只引用原文件，不缓存第二份设计内容。文件被移动或删除时，重开会明确失败并清理条目。
 - **原位保存**：已打开文件使用 **Save** 原子替换；新设计首次保存会打开原生保存对话框。
 - **副本与导出**：**Save As** 绑定新文件，**Export JSON** 只输出副本，不改变当前文件绑定或 dirty 基线。
 
@@ -279,7 +288,7 @@ pnpm dev --host 127.0.0.1 --port 4317
 http://127.0.0.1:4317/?design=%2Fexamples%2Farchitecture-block-studio.block-design.json
 ```
 
-这份示例不是手绘宣传图。生成器会遍历 `src` 中的 TypeScript、TSX 与 CSS 文件，要求每个文件恰好属于一个责任模块，并把所有可解析的跨模块相对 import（包括 Vite 资源查询）投影为接口；当前示例覆盖 86 个源码文件、12 个责任模块、27 条跨模块依赖和 5 层上下文。缺失归属、虚构依赖、无法解析的引用或模块环都会使验证失败。
+这份示例不是手绘宣传图。生成器会遍历 `src` 中的 TypeScript、TSX 与 CSS 文件，要求每个文件恰好属于一个责任模块，并把所有可解析的跨模块相对 import（包括 Vite 资源查询）投影为接口；当前示例覆盖 89 个源码文件、12 个责任模块、29 条跨模块依赖和 5 层上下文。缺失归属、虚构依赖、无法解析的引用或模块环都会使验证失败。
 
 ```bash
 pnpm generate:self-architecture  # 源码结构变化后重新生成示例
@@ -290,7 +299,7 @@ Windows 客户端渲染层不会自行扫描仓库，源码仍是依赖事实源
 
 ![Architecture Block Studio 五层源码架构总览](docs/screenshots/source-architecture-overview.png)
 
-面对五层源码图时，不必把所有父级容器都挤在一个缩放视图里。连续进入模块后，第五层 12 个真实源码模块和 27 条依赖可以独占画布；顶部 breadcrumb 始终保留完整来路，退出时还会重新选中拥有该子设计的父模块。
+面对五层源码图时，不必把所有父级容器都挤在一个缩放视图里。连续进入模块后，第五层 12 个真实源码模块和 29 条依赖可以独占画布；顶部 breadcrumb 始终保留完整来路，退出时还会重新选中拥有该子设计的父模块。
 
 ![聚焦第五层源码模块与依赖](docs/screenshots/hierarchy-focused-source-architecture.png)
 
@@ -327,7 +336,7 @@ pnpm desktop:package:win
 
 - 当前是本地单人工作台，不包含账号、服务端存储、多人协作或冲突合并。
 - 产品只支持 Windows x64 桌面端；浏览器只作为渲染内核与开发测试入口，不规划移动端。
-- Windows Save / Save As 只经受限 preload 与原生对话框访问 `.json` 文件；文件路径属于窗口会话，不进入设计 JSON。
+- Windows Save / Save As 只经受限 preload 与原生对话框访问 `.json` 文件；最近设计的路径引用只保存在 Electron `userData`，renderer 只接收展示摘要，路径和界面语言都不进入设计 JSON。
 - 当前写出 `BlockDesignDocument 2.2`，可逐步读取并迁移 `2.0`、`2.1`；2.2 用端口 `side + offset` 保存用户决定的精确边缘位置。尚未提供 v1 或 Draw.io 导入器。
 - 当前安装包未签名；代码签名证书与 SmartScreen 信誉仍是后续发行基础设施事项。
 - 可视化审查补充模块与接口视角，不替代逐行 Code Review、测试、静态分析或安全审计。

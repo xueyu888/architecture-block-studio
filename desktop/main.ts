@@ -16,10 +16,13 @@ import {
 } from "electron";
 import electronUpdater from "electron-updater";
 import { readDesignFile, writeDesignFile } from "./fileService.js";
+import { RecentDesignService } from "./recentDesignService.js";
 import { DesktopUpdateService } from "./updateService.js";
 
 interface Channels {
   openDesign: string;
+  listRecentDesigns: string;
+  openRecentDesign: string;
   acceptOpenedDesign: string;
   saveDesign: string;
   clearFileBinding: string;
@@ -58,6 +61,7 @@ const windowStates = new WeakMap<BrowserWindow, WindowState>();
 const windows = new Set<BrowserWindow>();
 const developmentUrl = process.env.ARCHITECTURE_BLOCK_STUDIO_DEV_URL;
 let updateService: DesktopUpdateService;
+let recentDesignService: RecentDesignService;
 
 function stateFor(window: BrowserWindow): WindowState {
   const state = windowStates.get(window);
@@ -102,6 +106,13 @@ function showDesktopError(window: BrowserWindow, title: string, error: unknown):
   void dialog.showMessageBox(window, { type: "error", title, message: title, detail });
 }
 
+async function prepareDesignOpen(window: BrowserWindow, filePath: string) {
+  const token = randomUUID();
+  const content = await readDesignFile(filePath);
+  stateFor(window).pendingOpen = { token, filePath };
+  return { status: "opened" as const, token, fileName: basename(filePath), content };
+}
+
 function installIpcHandlers(): void {
   ipcMain.handle(channels.openDesign, async (event) => {
     const window = windowForEvent(event);
@@ -112,22 +123,40 @@ function installIpcHandlers(): void {
     });
     if (result.canceled || result.filePaths.length !== 1) return { status: "canceled" };
     try {
-      const filePath = result.filePaths[0];
-      const token = randomUUID();
-      const content = await readDesignFile(filePath);
-      stateFor(window).pendingOpen = { token, filePath };
-      return { status: "opened", token, fileName: basename(filePath), content };
+      return await prepareDesignOpen(window, result.filePaths[0]);
     } catch (error) {
       showDesktopError(window, "Unable to open design", error);
       return { status: "canceled" };
     }
   });
 
-  ipcMain.handle(channels.acceptOpenedDesign, (event, token: unknown) => {
+  ipcMain.handle(channels.listRecentDesigns, (event) => {
+    windowForEvent(event);
+    return recentDesignService.list();
+  });
+
+  ipcMain.handle(channels.openRecentDesign, async (event, id: unknown) => {
+    const window = windowForEvent(event);
+    if (typeof id !== "string") throw new Error("Invalid recent design id.");
+    const filePath = await recentDesignService.resolvePath(id);
+    if (!filePath) return { status: "unavailable", fileName: "Recent design" };
+    try {
+      return await prepareDesignOpen(window, filePath);
+    } catch (error) {
+      await recentDesignService.remove(id).catch(() => undefined);
+      showDesktopError(window, "Unable to open recent design", error);
+      return { status: "unavailable", fileName: basename(filePath) };
+    }
+  });
+
+  ipcMain.handle(channels.acceptOpenedDesign, async (event, token: unknown) => {
     const state = stateFor(windowForEvent(event));
     if (typeof token !== "string" || state.pendingOpen?.token !== token) return false;
     state.currentFilePath = state.pendingOpen.filePath;
     state.pendingOpen = undefined;
+    await recentDesignService.record(state.currentFilePath).catch((error) => {
+      console.warn("Unable to persist recent design metadata.", error);
+    });
     return true;
   });
 
@@ -144,7 +173,12 @@ function installIpcHandlers(): void {
     if (!filePath) return { status: "canceled" };
     try {
       await writeDesignFile(filePath, content);
-      if (mode !== "export") state.currentFilePath = filePath;
+      if (mode !== "export") {
+        state.currentFilePath = filePath;
+        await recentDesignService.record(filePath).catch((error) => {
+          console.warn("Unable to persist recent design metadata.", error);
+        });
+      }
       return { status: "saved", fileName: basename(filePath) };
     } catch (error) {
       showDesktopError(window, "Unable to save design", error);
@@ -322,6 +356,7 @@ app.whenReady().then(async () => {
     app.isPackaged && process.platform === "win32" ? autoUpdater : undefined,
     app.getVersion(),
   );
+  recentDesignService = new RecentDesignService(join(app.getPath("userData"), "recent-designs.json"));
   updateService.subscribe((state) => {
     windows.forEach((window) => {
       if (!window.isDestroyed()) window.webContents.send(channels.updateState, state);
