@@ -16,6 +16,19 @@ async function canvasTransform(window: import("@playwright/test").Page): Promise
   );
 }
 
+async function settledCanvasTransform(window: import("@playwright/test").Page): Promise<string> {
+  let previous = await canvasTransform(window);
+  let stableSamples = 0;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await window.waitForTimeout(100);
+    const current = await canvasTransform(window);
+    stableSamples = current === previous ? stableSamples + 1 : 0;
+    if (attempt >= 5 && stableSamples >= 2) return current;
+    previous = current;
+  }
+  throw new Error("Canvas viewport transform did not settle within 3 seconds.");
+}
+
 test("launches the isolated Windows desktop shell and renders the full workbench", async () => {
   const environment = Object.fromEntries(
     Object.entries(process.env).filter(([name]) => name !== "ELECTRON_RUN_AS_NODE"),
@@ -31,6 +44,7 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     await expect(window.locator(".bd-canvas-busy")).toHaveCount(0);
     await expect(window.locator(".bd-react-flow")).toHaveAttribute("data-committed-routing-status", "ready");
     await expect.poll(() => canvasZoom(window)).toBeLessThan(1);
+    const initialZoom = await canvasZoom(window);
 
     const isolation = await window.evaluate(() => ({
       bridgePlatform: window.architectureBlockStudioDesktop?.platform,
@@ -90,9 +104,8 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     await agentUi.click({ force: true });
     await rustCore.click({ force: true, modifiers: ["Control"] });
     await window.keyboard.press("Control+Shift+H");
-    await expect.poll(() => canvasZoom(window)).toBeGreaterThan(0.65);
-    await window.waitForTimeout(350);
-    const viewportAfterPortMove = await canvasTransform(window);
+    await expect.poll(() => canvasZoom(window)).toBeGreaterThan(initialZoom);
+    const viewportAfterPortMove = await settledCanvasTransform(window);
     await window.screenshot({
       path: resolve(screenshotDirectory, "windows-port-direct-placement.png"),
       animations: "disabled",
@@ -103,7 +116,7 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     await expect(commandPort).toHaveClass(/bd-port-top/);
     await window.keyboard.press("Control+Z");
     await expect(commandPort).toHaveClass(/bd-port-right/);
-    expect(await canvasTransform(window)).toBe(viewportAfterPortMove);
+    await expect.poll(() => canvasTransform(window)).toBe(viewportAfterPortMove);
     await expect(window.locator(".bd-statusbar")).toContainText("Saved");
 
     await agentUi.click({ force: true });
