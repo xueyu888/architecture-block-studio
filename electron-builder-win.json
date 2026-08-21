@@ -5,6 +5,13 @@
   "directories": {
     "output": "release"
   },
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "xueyu888",
+      "repo": "architecture-block-studio"
+    }
+  ],
   "files": [
     "dist/**",
     "dist-desktop/**",

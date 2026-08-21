@@ -448,7 +448,7 @@ function PortEditor({ level, node, port, onOperation, onDelete, onDraftChange }:
       levelId: level.id,
       nodeId: node.id,
       portId: port.id,
-      values: { label, direction, side, dataType: dataType.trim() || undefined, required, order: port.order },
+      values: { label, direction, side, dataType: dataType.trim() || undefined, required, offset: port.offset },
     })}>
       <Field label="Port id"><input value={port.id} disabled /></Field>
       <Field label="Label" value={label} onChange={setLabel} required />

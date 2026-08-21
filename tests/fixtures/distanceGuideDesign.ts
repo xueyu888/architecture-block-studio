@@ -30,7 +30,7 @@ function interfaceDefinition(title: string): InterfaceDefinition {
 
 export function distanceGuideDesignDocument(): BlockDesignDocument {
   return {
-    schemaVersion: "2.1",
+    schemaVersion: "2.2",
     id: "distance-guide-proof",
     title: "Equal Distance Guide Proof",
     summary: "A moving module snaps between its nearest overlapping neighbors.",
@@ -65,7 +65,7 @@ export function distanceGuideDesignDocument(): BlockDesignDocument {
           kind: "module",
           tone: "ui",
           owner: "UI Team",
-          ports: [{ id: "out", label: "request", side: "right", direction: "output", required: true }],
+          ports: [{ id: "out", label: "request", side: "right", direction: "output", required: true, offset: 0.5 }],
           inspector: inspector("Provide the fixed neighbor before the moving module."),
           layout: { position: { x: 64, y: 170 }, width: 192, height: 120, pinned: true },
         },
@@ -76,8 +76,8 @@ export function distanceGuideDesignDocument(): BlockDesignDocument {
           tone: "core",
           owner: "Runtime Team",
           ports: [
-            { id: "in", label: "request", side: "left", direction: "input", required: true },
-            { id: "out", label: "result", side: "right", direction: "output", required: true },
+            { id: "in", label: "request", side: "left", direction: "input", required: true, offset: 0.5 },
+            { id: "out", label: "result", side: "right", direction: "output", required: true, offset: 0.5 },
           ],
           inspector: inspector("Represent the single moving module and its live distance feedback."),
           layout: { position: { x: 320, y: 240 }, width: 256, height: 192, pinned: true },
@@ -88,7 +88,7 @@ export function distanceGuideDesignDocument(): BlockDesignDocument {
           kind: "module",
           tone: "platform",
           owner: "Review Team",
-          ports: [{ id: "in", label: "result", side: "left", direction: "input", required: true }],
+          ports: [{ id: "in", label: "result", side: "left", direction: "input", required: true, offset: 0.5 }],
           inspector: inspector("Provide the fixed neighbor after the moving module."),
           layout: { position: { x: 1000, y: 390 }, width: 208, height: 120, pinned: true },
         },
@@ -99,7 +99,7 @@ export function distanceGuideDesignDocument(): BlockDesignDocument {
 
 export function groupDistanceGuideDesignDocument(): BlockDesignDocument {
   return {
-    schemaVersion: "2.1",
+    schemaVersion: "2.2",
     id: "group-distance-guide-proof",
     title: "Group Equal Distance Guide Proof",
     summary: "A differently sized module group snaps as one spacing subject.",
@@ -141,7 +141,7 @@ export function groupDistanceGuideDesignDocument(): BlockDesignDocument {
           kind: "module",
           tone: "ui",
           owner: "UI Team",
-          ports: [{ id: "out", label: "ingress", side: "right", direction: "output", required: true }],
+          ports: [{ id: "out", label: "ingress", side: "right", direction: "output", required: true, offset: 0.5 }],
           inspector: inspector("Provide the fixed neighbor before the selected group."),
           layout: { position: { x: 64, y: 240 }, width: 192, height: 208, pinned: true },
         },
@@ -152,8 +152,8 @@ export function groupDistanceGuideDesignDocument(): BlockDesignDocument {
           tone: "core",
           owner: "Runtime Team",
           ports: [
-            { id: "in", label: "ingress", side: "left", direction: "input", required: true },
-            { id: "out", label: "internal", side: "bottom", direction: "output", required: true },
+            { id: "in", label: "ingress", side: "left", direction: "input", required: true, offset: 0.5 },
+            { id: "out", label: "internal", side: "bottom", direction: "output", required: true, offset: 0.5 },
           ],
           inspector: inspector("Represent the compact member of the moving group."),
           layout: { position: { x: 320, y: 160 }, width: 192, height: 144, pinned: true },
@@ -165,8 +165,8 @@ export function groupDistanceGuideDesignDocument(): BlockDesignDocument {
           tone: "tool",
           owner: "Tool Team",
           ports: [
-            { id: "in", label: "internal", side: "top", direction: "input", required: true },
-            { id: "out", label: "egress", side: "right", direction: "output", required: true },
+            { id: "in", label: "internal", side: "top", direction: "input", required: true, offset: 0.5 },
+            { id: "out", label: "egress", side: "right", direction: "output", required: true, offset: 0.5 },
           ],
           inspector: inspector("Represent the larger member and preserve relative geometry."),
           layout: { position: { x: 352, y: 400 }, width: 256, height: 192, pinned: true },
@@ -177,7 +177,7 @@ export function groupDistanceGuideDesignDocument(): BlockDesignDocument {
           kind: "module",
           tone: "platform",
           owner: "Review Team",
-          ports: [{ id: "in", label: "egress", side: "left", direction: "input", required: true }],
+          ports: [{ id: "in", label: "egress", side: "left", direction: "input", required: true, offset: 0.5 }],
           inspector: inspector("Provide the fixed neighbor after the selected group."),
           layout: { position: { x: 1120, y: 240 }, width: 208, height: 208, pinned: true },
         },

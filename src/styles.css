@@ -103,7 +103,7 @@ button { color: inherit; }
 
 .bd-app-header {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) auto;
+  grid-template-columns: 220px minmax(0, 1fr) auto auto;
   align-items: center;
   min-width: 0;
   gap: 14px;
@@ -175,6 +175,55 @@ button { color: inherit; }
 .bd-validation-summary.is-clean svg { color: var(--success); }
 .bd-validation-summary.has-errors svg { color: var(--error); }
 .bd-validation-summary span + span { border-left: 1px solid var(--divider-soft); padding-left: 7px; }
+
+.bd-desktop-update { position: relative; min-width: 0; }
+.bd-desktop-update > button {
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 190px;
+  border: 1px solid var(--control-border);
+  border-radius: 6px;
+  padding: 0 9px;
+  color: #334150;
+  background: #fff;
+  font-size: 9px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.bd-desktop-update > button:hover:not(:disabled) { border-color: #8ba9cf; background: var(--blue-soft); color: #174c91; }
+.bd-desktop-update > button:disabled { cursor: default; opacity: 0.72; }
+.bd-desktop-update > button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bd-desktop-update.is-checking svg,
+.bd-desktop-update.is-installing svg { animation: bd-update-spin 1s linear infinite; }
+.bd-desktop-update-progress {
+  position: absolute;
+  right: 5px;
+  bottom: 2px;
+  left: 5px;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dce5ef;
+}
+.bd-desktop-update-progress i { display: block; height: 100%; background: var(--blue); transition: width 160ms linear; }
+.bd-desktop-update-detail {
+  position: absolute;
+  z-index: var(--z-popover);
+  top: calc(100% + 6px);
+  right: 0;
+  width: 240px;
+  padding: 7px 9px;
+  border: 1px solid #d8ae68;
+  border-radius: 6px;
+  color: #71470b;
+  background: #fff8e8;
+  box-shadow: var(--shadow-popover);
+  font-size: 9px;
+  line-height: 1.4;
+}
+@keyframes bd-update-spin { to { transform: rotate(360deg); } }
 
 .bd-menubar {
   display: flex;
@@ -672,9 +721,20 @@ button { color: inherit; }
   gap: 1px;
   width: var(--port-label-width);
   border: 0;
-  cursor: pointer;
+  cursor: grab;
   font: 9px/1.1 "SFMono-Regular", Consolas, monospace;
   text-align: left;
+  touch-action: none;
+  user-select: none;
+}
+
+.bd-port-label:active,
+.bd-port-label.is-dragging { cursor: grabbing; }
+.bd-port-label.is-dragging {
+  z-index: 9;
+  color: #174c91;
+  background: color-mix(in srgb, var(--blue-soft) 88%, #fff);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--selection) 52%, transparent), 0 2px 7px rgba(37, 99, 217, 0.2);
 }
 
 .bd-port-label-left { left: 7px; transform: translateY(-50%); }

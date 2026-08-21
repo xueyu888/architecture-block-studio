@@ -270,7 +270,7 @@ describe("public design operations", () => {
         direction: "output",
         dataType: "Command",
         required: false,
-        order: 3,
+        offset: 0.75,
       },
     });
 
@@ -282,8 +282,59 @@ describe("public design operations", () => {
       direction: "output",
       dataType: "Command",
       required: false,
-      order: 3,
+      offset: 0.75,
     });
+  });
+
+  test("places each new same-side port in the widest remaining gap", () => {
+    let document = createBlankDesign("port-placement", "Port Placement");
+    document = applyDesignOperation(document, {
+      type: "node/add",
+      levelId: "system",
+      node: createBlock({ id: "api", title: "API" }),
+    });
+
+    ["first", "second", "third", "fourth"].forEach((id) => {
+      document = applyDesignOperation(document, {
+        type: "port/add",
+        levelId: "system",
+        nodeId: "api",
+        port: createPort({ id, label: id, side: "right", direction: "output", required: false }),
+      });
+    });
+
+    expect(document.levels[0].nodes[0].ports.map((port) => port.offset)).toEqual([
+      0.5,
+      0.25,
+      0.75,
+      0.125,
+    ]);
+  });
+
+  test("moves one port as an atomic structurally shared geometry operation", () => {
+    const document = connectedDesign();
+    const untouchedNode = document.levels[0].nodes[1];
+
+    const moved = applyDesignOperation(document, {
+      type: "port/move",
+      levelId: "system",
+      nodeId: "source",
+      portId: "out",
+      side: "bottom",
+      offset: 0.72,
+    });
+
+    expect(moved.levels[0].nodes[0].ports[0]).toMatchObject({ side: "bottom", offset: 0.72 });
+    expect(document.levels[0].nodes[0].ports[0]).toMatchObject({ side: "right", offset: 0.5 });
+    expect(moved.levels[0].nodes[1]).toBe(untouchedNode);
+    expect(() => applyDesignOperation(document, {
+      type: "port/move",
+      levelId: "system",
+      nodeId: "source",
+      portId: "out",
+      side: "bottom",
+      offset: 1,
+    })).toThrow("greater than 0 and less than 1");
   });
 
   test("replaces and removes a hierarchy binding by parent port", () => {

@@ -111,7 +111,7 @@ function elkSide(side: PortSide): "WEST" | "EAST" | "NORTH" | "SOUTH" {
 function sortedPorts(ports: BlockPort[]): BlockPort[] {
   return [...ports].sort((left, right) => {
     if (left.side !== right.side) return left.side.localeCompare(right.side);
-    return (left.order ?? 999) - (right.order ?? 999) || left.label.localeCompare(right.label);
+    return left.offset - right.offset || left.label.localeCompare(right.label) || left.id.localeCompare(right.id);
   });
 }
 
@@ -282,7 +282,7 @@ async function automaticPositions(
         height: 12,
         layoutOptions: {
           "org.eclipse.elk.port.side": elkSide(port.side),
-          "org.eclipse.elk.port.index": String(port.order ?? index),
+          "org.eclipse.elk.port.index": String(index),
         },
       })),
       layoutOptions: { "org.eclipse.elk.portConstraints": "FIXED_ORDER" },

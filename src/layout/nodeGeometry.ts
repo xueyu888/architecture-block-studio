@@ -5,6 +5,16 @@ export interface NodeDimensions {
   height: number;
 }
 
+export interface PortPlacement {
+  side: PortSide;
+  offset: number;
+}
+
+export interface PortPlacementPoint {
+  x: number;
+  y: number;
+}
+
 export interface NodeResizeRect extends NodeDimensions {
   x: number;
   y: number;
@@ -27,8 +37,8 @@ export const BLOCK_NODE_GEOMETRY = {
   defaultHeight: 144,
   minimumWidth: 180,
   minimumHeight: 112,
-  maximumWidth: 1600,
-  maximumHeight: 1200,
+  maximumWidth: 32_768,
+  maximumHeight: 32_768,
   headerHeight: 32,
   horizontalRailHeight: 24,
   ownerBandHeight: 18,
@@ -109,10 +119,10 @@ export function portAnchorOffset(
   port: BlockPort,
   expanded: boolean,
 ): { x: number; y: number } {
-  const sidePorts = portsForSide(ports, port.side);
-  const index = sidePorts.findIndex((candidate) => candidate.id === port.id);
-  if (index < 0) throw new Error(`Port ${port.id} is not present in the supplied node geometry.`);
-  const fraction = (index + 1) / (sidePorts.length + 1);
+  if (!ports.some((candidate) => candidate.id === port.id)) {
+    throw new Error(`Port ${port.id} is not present in the supplied node geometry.`);
+  }
+  const fraction = port.offset;
   const borderWidth = expanded
     ? BLOCK_NODE_GEOMETRY.expandedBorderWidth
     : BLOCK_NODE_GEOMETRY.borderWidth;
@@ -145,26 +155,124 @@ export function portLabelWidth(label: string): number {
 export function portsForSide(ports: readonly BlockPort[], side: PortSide): BlockPort[] {
   return ports
     .filter((port) => port.side === side)
-    .sort((left, right) => (left.order ?? 999) - (right.order ?? 999) || left.label.localeCompare(right.label));
+    .sort((left, right) => left.offset - right.offset || left.label.localeCompare(right.label) || left.id.localeCompare(right.id));
 }
 
 export function portRailOffset(ports: readonly BlockPort[], index: number): number {
-  if (ports.length === 0) return 50;
-  const widths = ports.map((port) => portLabelWidth(port.label));
-  const contentWidth = widths.reduce((total, width) => total + width, 0)
-    + Math.max(0, widths.length - 1) * BLOCK_NODE_GEOMETRY.horizontalPortGap;
-  const railWidth = contentWidth + BLOCK_NODE_GEOMETRY.horizontalRailPadding * 2;
-  const precedingWidth = widths
-    .slice(0, index)
-    .reduce((total, width) => total + width + BLOCK_NODE_GEOMETRY.horizontalPortGap, 0);
-  return ((BLOCK_NODE_GEOMETRY.horizontalRailPadding + precedingWidth + widths[index] / 2) / railWidth) * 100;
+  return (ports[index]?.offset ?? 0.5) * 100;
+}
+
+function nearestFreeCoordinate(
+  desired: number,
+  minimum: number,
+  maximum: number,
+  radius: number,
+  occupied: readonly { center: number; radius: number }[],
+): number {
+  const clamp = (value: number) => Math.max(minimum, Math.min(maximum, value));
+  const candidates = [
+    clamp(desired),
+    minimum,
+    maximum,
+    ...occupied.flatMap((interval) => [
+      clamp(interval.center - interval.radius - radius),
+      clamp(interval.center + interval.radius + radius),
+    ]),
+  ];
+  const available = candidates.filter((candidate) => occupied.every(
+    (interval) => Math.abs(candidate - interval.center) >= radius + interval.radius - 0.01,
+  ));
+  return (available.length > 0 ? available : candidates)
+    .sort((left, right) => Math.abs(left - desired) - Math.abs(right - desired) || left - right)[0];
+}
+
+/**
+ * Resolves a pointer to one persistent port position on the module perimeter.
+ * Side and offset are the only authored facts; visual labels, handles, layout,
+ * and routes all derive from this result.
+ */
+export function resolvePortPlacement(
+  dimensions: NodeDimensions,
+  ports: readonly BlockPort[],
+  portId: string,
+  point: PortPlacementPoint,
+  disableSnap = false,
+): PortPlacement {
+  const port = ports.find((candidate) => candidate.id === portId);
+  if (!port) throw new Error(`Port ${portId} is not present in the supplied node geometry.`);
+  const x = Math.max(0, Math.min(dimensions.width, point.x));
+  const y = Math.max(0, Math.min(dimensions.height, point.y));
+  const distances: readonly [PortSide, number][] = [
+    ["left", x],
+    ["right", dimensions.width - x],
+    ["top", y],
+    ["bottom", dimensions.height - y],
+  ];
+  const closestDistance = Math.min(...distances.map(([, distance]) => distance));
+  const tiedSides = distances.filter(([, distance]) => Math.abs(distance - closestDistance) < 0.5);
+  const side = (tiedSides.find(([candidate]) => candidate === port.side) ?? tiedSides[0])[0];
+  const vertical = side === "left" || side === "right";
+  const length = vertical ? dimensions.height : dimensions.width;
+  const desiredCoordinate = vertical ? y : x;
+  const ownRadius = vertical
+    ? BLOCK_NODE_GEOMETRY.sidePortSlotHeight / 2
+    : (portLabelWidth(port.label) + BLOCK_NODE_GEOMETRY.horizontalPortGap) / 2;
+  const minimum = Math.min(length / 2, ownRadius + BLOCK_NODE_GEOMETRY.borderWidth);
+  const maximum = Math.max(length / 2, length - ownRadius - BLOCK_NODE_GEOMETRY.borderWidth);
+  const snappedCoordinate = disableSnap
+    ? desiredCoordinate
+    : [0.25, 0.5, 0.75]
+        .map((fraction) => fraction * length)
+        .find((coordinate) => Math.abs(coordinate - desiredCoordinate) <= 6) ?? desiredCoordinate;
+  const occupied = ports
+    .filter((candidate) => candidate.id !== portId && candidate.side === side)
+    .map((candidate) => ({
+      center: candidate.offset * length,
+      radius: vertical
+        ? BLOCK_NODE_GEOMETRY.sidePortSlotHeight / 2
+        : (portLabelWidth(candidate.label) + BLOCK_NODE_GEOMETRY.horizontalPortGap) / 2,
+    }));
+  const coordinate = nearestFreeCoordinate(
+    snappedCoordinate,
+    minimum,
+    maximum,
+    ownRadius,
+    occupied,
+  );
+  return { side, offset: Math.round((coordinate / length) * 10_000) / 10_000 };
 }
 
 function horizontalRailWidth(ports: readonly BlockPort[]): number {
   if (ports.length === 0) return 0;
-  return ports.reduce((total, port) => total + portLabelWidth(port.label), 0)
-    + Math.max(0, ports.length - 1) * BLOCK_NODE_GEOMETRY.horizontalPortGap
-    + BLOCK_NODE_GEOMETRY.horizontalRailPadding * 2;
+  const sorted = [...ports].sort((left, right) => left.offset - right.offset);
+  const radii = sorted.map((port) => portLabelWidth(port.label) / 2);
+  const requirements = [
+    ...sorted.map((port, index) =>
+      (radii[index] + BLOCK_NODE_GEOMETRY.horizontalRailPadding) / port.offset
+    ),
+    ...sorted.map((port, index) =>
+      (radii[index] + BLOCK_NODE_GEOMETRY.horizontalRailPadding) / (1 - port.offset)
+    ),
+    ...sorted.slice(1).map((port, index) =>
+      (radii[index] + radii[index + 1] + BLOCK_NODE_GEOMETRY.horizontalPortGap) /
+      (port.offset - sorted[index].offset)
+    ),
+  ];
+  return Math.ceil(Math.max(...requirements));
+}
+
+function verticalRailHeight(ports: readonly BlockPort[]): number {
+  if (ports.length === 0) return 0;
+  const sorted = [...ports].sort((left, right) => left.offset - right.offset);
+  const radius = BLOCK_NODE_GEOMETRY.sidePortSlotHeight / 2;
+  const requirements = [
+    ...sorted.map((port) => radius / port.offset),
+    ...sorted.map((port) => radius / (1 - port.offset)),
+    ...sorted.slice(1).map((port, index) =>
+      (radius * 2) / (port.offset - sorted[index].offset)
+    ),
+  ];
+  return Math.ceil(Math.max(...requirements));
 }
 
 function sideLabelWidth(ports: readonly BlockPort[]): number {
@@ -189,6 +297,7 @@ export function minimumNodeDimensions(node: BlockNode): NodeDimensions {
     + Math.max(BLOCK_NODE_GEOMETRY.minimumBodyHeight, sidePortCount * BLOCK_NODE_GEOMETRY.sidePortSlotHeight)
     + BLOCK_NODE_GEOMETRY.ownerBandHeight
     + bottomRailHeight;
+  const sideRailHeight = Math.max(verticalRailHeight(leftPorts), verticalRailHeight(rightPorts));
   const sideLabelHeight = sidePortCount === 0
     ? 0
     : topRailHeight
@@ -200,7 +309,7 @@ export function minimumNodeDimensions(node: BlockNode): NodeDimensions {
       + Math.max(0, sidePortCount - 1) * 22;
   return {
     width: Math.max(BLOCK_NODE_GEOMETRY.minimumWidth, contentWidth),
-    height: Math.max(BLOCK_NODE_GEOMETRY.minimumHeight, contentHeight, sideLabelHeight),
+    height: Math.max(BLOCK_NODE_GEOMETRY.minimumHeight, contentHeight, sideLabelHeight, sideRailHeight),
   };
 }
 

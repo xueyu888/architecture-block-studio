@@ -413,7 +413,7 @@ describe("standalone scene router", () => {
     )));
     const layout = await layoutBlockDesign(document, {
       expandedLevelIds: new Set([
-        "browser-runtime",
+        "windows-desktop-runtime",
         "workbench-composition",
         "source-architecture",
         "runtime-modules",

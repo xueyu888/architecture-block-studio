@@ -13,7 +13,7 @@ function portGeometry(port: BlockPort) {
     id: port.id,
     label: port.label,
     side: port.side,
-    order: port.order,
+    offset: port.offset,
   };
 }
 
@@ -55,7 +55,7 @@ export function layoutFrameSignature(document: BlockDesignDocument): string {
       nodes: level.nodes.map((node) => ({
         id: node.id,
         childLevelId: node.hierarchy?.childLevelId,
-        ports: node.ports.map(portGeometry),
+        ports: node.ports.map((port) => ({ id: port.id })),
       })),
       connections: level.connections.map((connection) => ({
         source: connection.source,
@@ -101,7 +101,7 @@ export function layoutProjectionSignature(document: BlockDesignDocument): string
           side: port.side,
           direction: port.direction,
           dataType: port.dataType,
-          order: port.order,
+          offset: port.offset,
         })),
       })),
       connections: level.connections.map((connection) => ({

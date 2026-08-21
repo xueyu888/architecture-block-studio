@@ -14,4 +14,13 @@ contextBridge.exposeInMainWorld("architectureBlockStudioDesktop", Object.freeze(
     return () => ipcRenderer.removeListener(channels.saveBeforeClose, listener);
   },
   completeSaveBeforeClose: (saved) => ipcRenderer.send(channels.saveBeforeCloseComplete, saved),
+  getUpdateState: () => ipcRenderer.invoke(channels.getUpdateState),
+  checkForUpdates: () => ipcRenderer.invoke(channels.checkForUpdates),
+  downloadUpdate: () => ipcRenderer.invoke(channels.downloadUpdate),
+  installUpdate: () => ipcRenderer.invoke(channels.installUpdate),
+  onUpdateState: (handler) => {
+    const listener = (_event, state) => handler(state);
+    ipcRenderer.on(channels.updateState, listener);
+    return () => ipcRenderer.removeListener(channels.updateState, listener);
+  },
 }));

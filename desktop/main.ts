@@ -14,7 +14,9 @@ import {
   type IpcMainEvent,
   type IpcMainInvokeEvent,
 } from "electron";
+import electronUpdater from "electron-updater";
 import { readDesignFile, writeDesignFile } from "./fileService.js";
+import { DesktopUpdateService } from "./updateService.js";
 
 interface Channels {
   openDesign: string;
@@ -24,6 +26,11 @@ interface Channels {
   dirtyState: string;
   saveBeforeClose: string;
   saveBeforeCloseComplete: string;
+  updateState: string;
+  getUpdateState: string;
+  checkForUpdates: string;
+  downloadUpdate: string;
+  installUpdate: string;
 }
 
 interface WindowState {
@@ -50,6 +57,7 @@ const channels = JSON.parse(readFileSync(join(sourceDirectory, "desktop/ipcChann
 const windowStates = new WeakMap<BrowserWindow, WindowState>();
 const windows = new Set<BrowserWindow>();
 const developmentUrl = process.env.ARCHITECTURE_BLOCK_STUDIO_DEV_URL;
+let updateService: DesktopUpdateService;
 
 function stateFor(window: BrowserWindow): WindowState {
   const state = windowStates.get(window);
@@ -170,6 +178,32 @@ function installIpcHandlers(): void {
     state.allowClose = true;
     window.close();
   });
+
+  ipcMain.handle(channels.getUpdateState, (event) => {
+    windowForEvent(event);
+    return updateService.snapshot();
+  });
+
+  ipcMain.handle(channels.checkForUpdates, (event) => {
+    windowForEvent(event);
+    return updateService.check();
+  });
+
+  ipcMain.handle(channels.downloadUpdate, (event) => {
+    windowForEvent(event);
+    return updateService.download();
+  });
+
+  ipcMain.handle(channels.installUpdate, (event) => {
+    windowForEvent(event);
+    const hasUnsavedChanges = [...windows].some((window) => {
+      const state = stateFor(window);
+      return state.documentDirty || state.inspectorDraftDirty;
+    });
+    return updateService.install(hasUnsavedChanges, () => {
+      windows.forEach((window) => { stateFor(window).allowClose = true; });
+    });
+  });
 }
 
 async function registerAppProtocol(): Promise<void> {
@@ -232,6 +266,9 @@ function createWindow(): BrowserWindow {
   });
   window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   window.once("ready-to-show", () => window.show());
+  window.webContents.once("did-finish-load", () => {
+    window.webContents.send(channels.updateState, updateService.snapshot());
+  });
   window.on("close", (event) => {
     const state = stateFor(window);
     if (state.allowClose || (!state.documentDirty && !state.inspectorDraftDirty)) return;
@@ -280,9 +317,22 @@ function createWindow(): BrowserWindow {
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
+  const { autoUpdater } = electronUpdater;
+  updateService = new DesktopUpdateService(
+    app.isPackaged && process.platform === "win32" ? autoUpdater : undefined,
+    app.getVersion(),
+  );
+  updateService.subscribe((state) => {
+    windows.forEach((window) => {
+      if (!window.isDestroyed()) window.webContents.send(channels.updateState, state);
+    });
+  });
   installIpcHandlers();
   if (!developmentUrl) await registerAppProtocol();
   createWindow();
+  if (app.isPackaged && process.platform === "win32") {
+    setTimeout(() => { void updateService.check(); }, 1_500);
+  }
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

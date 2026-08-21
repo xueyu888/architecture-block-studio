@@ -4,6 +4,8 @@ import {
   blockDesignDocumentSchema,
   connectionSchema,
   levelSchema,
+  nodeSchema,
+  portSchema,
 } from "./design";
 
 interface BlockDesignSchemaMigration {
@@ -22,31 +24,80 @@ const versionEnvelopeSchema = z.object({
   schemaVersion: z.string().min(1),
 });
 
-const legacyConnectionSchema = connectionSchema.omit({ routing: true }).strict();
-const legacyLevelSchema = levelSchema.extend({
-  connections: z.array(legacyConnectionSchema).default([]),
+const portV21Schema = portSchema.omit({ offset: true }).extend({
+  order: z.number().int().nonnegative().optional(),
+});
+const nodeV21Schema = nodeSchema.extend({
+  ports: z.array(portV21Schema).default([]),
+});
+const levelV21Schema = levelSchema.extend({
+  nodes: z.array(nodeV21Schema),
+});
+const blockDesignDocumentV21Schema = blockDesignDocumentSchema.extend({
+  schemaVersion: z.literal("2.1"),
+  levels: z.array(levelV21Schema).min(1),
+});
+const connectionV20Schema = connectionSchema.omit({ routing: true }).strict();
+const levelV20Schema = levelV21Schema.extend({
+  connections: z.array(connectionV20Schema).default([]),
 });
 const blockDesignDocumentV20Schema = blockDesignDocumentSchema.extend({
   schemaVersion: z.literal("2.0"),
-  levels: z.array(legacyLevelSchema).min(1),
+  levels: z.array(levelV20Schema).min(1),
 });
 
 function migrateV20ToV21(input: unknown): unknown {
   const legacy = blockDesignDocumentV20Schema.parse(input);
-  return { ...legacy, schemaVersion: BLOCK_DESIGN_SCHEMA_VERSION };
+  return { ...legacy, schemaVersion: "2.1" };
+}
+
+function migrateV21ToV22(input: unknown): unknown {
+  const legacy = blockDesignDocumentV21Schema.parse(input);
+  return {
+    ...legacy,
+    schemaVersion: BLOCK_DESIGN_SCHEMA_VERSION,
+    levels: legacy.levels.map((level) => ({
+      ...level,
+      nodes: level.nodes.map((node) => {
+        const offsets = new Map<string, number>();
+        (["left", "right", "top", "bottom"] as const).forEach((side) => {
+          const sidePorts = node.ports
+            .filter((port) => port.side === side)
+            .sort((left, right) =>
+              (left.order ?? Number.MAX_SAFE_INTEGER) - (right.order ?? Number.MAX_SAFE_INTEGER) ||
+              left.label.localeCompare(right.label) ||
+              left.id.localeCompare(right.id)
+            );
+          sidePorts.forEach((port, index) => offsets.set(port.id, (index + 1) / (sidePorts.length + 1)));
+        });
+        return {
+          ...node,
+          ports: node.ports.map(({ order: _order, ...port }) => ({
+            ...port,
+            offset: offsets.get(port.id) ?? 0.5,
+          })),
+        };
+      }),
+    })),
+  };
 }
 
 const blockDesignSchemaMigrations: readonly BlockDesignSchemaMigration[] = [
   {
     fromVersion: "2.0",
-    toVersion: BLOCK_DESIGN_SCHEMA_VERSION,
+    toVersion: "2.1",
     migrate: migrateV20ToV21,
+  },
+  {
+    fromVersion: "2.1",
+    toVersion: BLOCK_DESIGN_SCHEMA_VERSION,
+    migrate: migrateV21ToV22,
   },
 ];
 
 export const blockDesignSchemaCompatibility: readonly BlockDesignSchemaCompatibility[] = Object.freeze([
-  ...blockDesignSchemaMigrations.map((migration) => Object.freeze({
-    inputVersion: migration.fromVersion,
+  ...[...new Set(blockDesignSchemaMigrations.map((migration) => migration.fromVersion))].map((inputVersion) => Object.freeze({
+    inputVersion,
     outputVersion: BLOCK_DESIGN_SCHEMA_VERSION,
     mode: "migrate" as const,
   })),

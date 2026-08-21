@@ -5,5 +5,10 @@
   "clearFileBinding": "desktop:clear-file-binding",
   "dirtyState": "desktop:dirty-state",
   "saveBeforeClose": "desktop:save-before-close",
-  "saveBeforeCloseComplete": "desktop:save-before-close-complete"
+  "saveBeforeCloseComplete": "desktop:save-before-close-complete",
+  "updateState": "desktop:update-state",
+  "getUpdateState": "desktop:get-update-state",
+  "checkForUpdates": "desktop:check-for-updates",
+  "downloadUpdate": "desktop:download-update",
+  "installUpdate": "desktop:install-update"
 }

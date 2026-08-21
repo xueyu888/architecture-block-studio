@@ -10,6 +10,12 @@ async function canvasZoom(window: import("@playwright/test").Page): Promise<numb
   });
 }
 
+async function canvasTransform(window: import("@playwright/test").Page): Promise<string> {
+  return window.locator(".react-flow__viewport").evaluate(
+    (viewport) => window.getComputedStyle(viewport).transform,
+  );
+}
+
 test("launches the isolated Windows desktop shell and renders the full workbench", async () => {
   const environment = Object.fromEntries(
     Object.entries(process.env).filter(([name]) => name !== "ELECTRON_RUN_AS_NODE"),
@@ -38,25 +44,74 @@ test("launches the isolated Windows desktop shell and renders the full workbench
       hasRequire: false,
       bridgeKeys: [
         "acceptOpenedDesign",
+        "checkForUpdates",
         "clearFileBinding",
         "completeSaveBeforeClose",
+        "downloadUpdate",
+        "getUpdateState",
+        "installUpdate",
         "onSaveBeforeClose",
+        "onUpdateState",
         "openDesign",
         "platform",
         "saveDesign",
         "setDirty",
       ],
     });
+    expect(await window.evaluate(
+      () => window.architectureBlockStudioDesktop!.getUpdateState(),
+    )).toEqual({ status: "unsupported", currentVersion: "0.3.0" });
+    await expect(window.locator(".bd-desktop-update")).toHaveCount(0);
 
     const agentUi = window.locator('.react-flow__node[data-id="system::agent-ui"]');
+    const screenshotDirectory = resolve("docs/screenshots");
+    await mkdir(screenshotDirectory, { recursive: true });
+    const commandPortLabel = agentUi.locator(".bd-port-label").filter({ hasText: "session.command" });
+    const commandPort = agentUi.locator('.bd-port[data-port-id="session-command"]');
+    const portBounds = await commandPortLabel.boundingBox();
+    const agentBounds = await agentUi.boundingBox();
+    expect(portBounds).not.toBeNull();
+    expect(agentBounds).not.toBeNull();
+    const routeGeometryBeforePortMove = await window.locator(".bd-interface-route").evaluateAll(
+      (paths) => paths.map((path) => path.getAttribute("d")),
+    );
+    await window.mouse.move(portBounds!.x + portBounds!.width / 2, portBounds!.y + portBounds!.height / 2);
+    await window.mouse.down();
+    await window.mouse.move(agentBounds!.x + agentBounds!.width * 0.36, agentBounds!.y + 2, { steps: 12 });
+    await expect(window.locator(".bd-react-flow")).toHaveAttribute("data-port-move-active", "true");
+    await expect(window.locator(".bd-react-flow")).toHaveAttribute("data-routing-frame-gesture", "port-drag");
+    await window.mouse.up();
+    await expect(commandPort).toHaveClass(/bd-port-top/);
+    await expect(window.locator(".bd-react-flow")).toHaveAttribute("data-committed-routing-status", "ready");
+    await expect.poll(async () => window.locator(".bd-interface-route").evaluateAll(
+      (paths) => paths.map((path) => path.getAttribute("d")),
+    )).not.toEqual(routeGeometryBeforePortMove);
+    const rustCore = window.locator('.react-flow__node[data-id="system::rust-agent-core"]');
+    await agentUi.click({ force: true });
+    await rustCore.click({ force: true, modifiers: ["Control"] });
+    await window.keyboard.press("Control+Shift+H");
+    await expect.poll(() => canvasZoom(window)).toBeGreaterThan(0.65);
+    await window.waitForTimeout(350);
+    const viewportAfterPortMove = await canvasTransform(window);
+    await window.screenshot({
+      path: resolve(screenshotDirectory, "windows-port-direct-placement.png"),
+      animations: "disabled",
+    });
+    await window.keyboard.press("Control+Z");
+    await expect(commandPort).toHaveClass(/bd-port-right/);
+    await window.keyboard.press("Control+Shift+Z");
+    await expect(commandPort).toHaveClass(/bd-port-top/);
+    await window.keyboard.press("Control+Z");
+    await expect(commandPort).toHaveClass(/bd-port-right/);
+    expect(await canvasTransform(window)).toBe(viewportAfterPortMove);
+    await expect(window.locator(".bd-statusbar")).toContainText("Saved");
+
     await agentUi.click({ force: true });
     await agentUi.focus();
     await window.keyboard.press("F2");
     const titleEditor = agentUi.getByRole("textbox", { name: "Rename Agent UI" });
     await expect(titleEditor).toBeFocused();
     await titleEditor.fill("Agent Desktop Workbench");
-    const screenshotDirectory = resolve("docs/screenshots");
-    await mkdir(screenshotDirectory, { recursive: true });
     await window.screenshot({
       path: resolve(screenshotDirectory, "windows-inline-title-editing.png"),
       animations: "disabled",
@@ -157,7 +212,8 @@ test("launches the isolated Windows desktop shell and renders the full workbench
       animations: "disabled",
     });
   } finally {
-    await application.close();
+    await application.evaluate(({ app }) => app.exit(0)).catch(() => undefined);
+    await application.close().catch(() => undefined);
     await rm(temporaryDirectory, { recursive: true, force: true });
   }
 });

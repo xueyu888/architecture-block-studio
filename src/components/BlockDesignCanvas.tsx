@@ -71,6 +71,7 @@ import {
   type CoordinateStartLimits,
   type LayoutFlowNode,
   type LayoutResult,
+  type PortPlacement,
   type ResizeLimits,
   type ResizedSelectionItem,
   type SelectionResizeItem,
@@ -191,7 +192,7 @@ interface RoutingCanvasProjection {
   transportedRouteJumpCount: number;
 }
 
-type DirectManipulationKind = "node-drag" | "node-resize" | "selection-resize";
+type DirectManipulationKind = "node-drag" | "node-resize" | "selection-resize" | "port-drag";
 
 interface DirectManipulationPreview {
   kind: DirectManipulationKind;
@@ -214,7 +215,10 @@ const EMPTY_ROUTING_PROJECTION: RoutingCanvasProjection = {
 function routingNodeGeometrySignature(nodes: readonly LayoutFlowNode[]): string {
   return nodes.map((node) => {
     const size = layoutNodeRenderDimensions(node);
-    return `${node.id}:${node.parentId ?? "root"}:${node.position.x},${node.position.y},${size.width},${size.height}`;
+    const ports = node.data.block.ports
+      .map((port) => `${port.id},${port.side},${port.offset}`)
+      .join(";");
+    return `${node.id}:${node.parentId ?? "root"}:${node.position.x},${node.position.y},${size.width},${size.height}:${ports}`;
   }).join("|");
 }
 const ALIGNMENT_TOLERANCE_PX = 6;
@@ -370,6 +374,13 @@ interface CanvasInnerProps {
     size: { width: number; height: number },
   ) => boolean;
   onResizeNodes: (resizes: readonly NodeResize[]) => boolean;
+  onMovePort: (
+    levelId: string,
+    nodeId: string,
+    portId: string,
+    side: PortPlacement["side"],
+    offset: number,
+  ) => boolean;
   onCreateConnection: (connection: {
     levelId: string;
     source: { nodeId: string; portId: string; label: string };
@@ -632,6 +643,7 @@ const CanvasInner = memo(function CanvasInner({
   onCloneNodes,
   onResizeNode,
   onResizeNodes,
+  onMovePort,
   onCreateConnection,
   onRouteConnection,
   onReconnectConnection,
@@ -678,6 +690,8 @@ const CanvasInner = memo(function CanvasInner({
   renameNodeRef.current = onRenameNode;
   const resizeNodeRef = useRef(onResizeNode);
   resizeNodeRef.current = onResizeNode;
+  const movePortRef = useRef(onMovePort);
+  movePortRef.current = onMovePort;
   const routeConnectionRef = useRef(onRouteConnection);
   routeConnectionRef.current = onRouteConnection;
   const selectionRef = useRef(selection);
@@ -727,6 +741,20 @@ const CanvasInner = memo(function CanvasInner({
   const contextClickGestureRef = useRef<ContextClickGesture | undefined>(undefined);
   const suppressAltClickRef = useRef(false);
   const resizePreviewRef = useRef<ResizePreview | undefined>(undefined);
+  const portMovePreviewRef = useRef<{ flowNodeId: string; portId: string } | undefined>(undefined);
+  const previewPortMoveCallbackRef = useRef<(
+    flowNodeId: string,
+    portId: string,
+    placement: PortPlacement,
+  ) => void>(() => undefined);
+  const commitPortMoveCallbackRef = useRef<(
+    flowNodeId: string,
+    levelId: string,
+    nodeId: string,
+    portId: string,
+    placement: PortPlacement,
+  ) => boolean>(() => false);
+  const cancelPortMoveCallbackRef = useRef<() => void>(() => undefined);
   const [directManipulationPreview, setDirectManipulationPreview] = useState<DirectManipulationPreview>();
   const beginDirectManipulation = useCallback((kind: DirectManipulationKind) => {
     setDirectManipulationPreview({ kind, phase: "active" });
@@ -1210,6 +1238,27 @@ const CanvasInner = memo(function CanvasInner({
           canEditSelection: () => boxSelectionGestureRef.current === undefined && selectionRef.current.kind !== "multiple",
           inspectPort: (nodeId: string, port: BlockPort) =>
             selectRef.current({ kind: "port", levelId: node.data.levelId, nodeId, portId: port.id }),
+          beginPortMove: (portId: string) => {
+            if (boxSelectionGestureRef.current || selectionRef.current.kind === "multiple") return false;
+            portMovePreviewRef.current = { flowNodeId: node.id, portId };
+            beginDirectManipulation("port-drag");
+            const root = store.getState().domNode;
+            if (root) {
+              root.dataset.portMoveActive = "true";
+              root.dataset.portMovePortId = portId;
+            }
+            return true;
+          },
+          previewPortMove: (portId, placement) =>
+            previewPortMoveCallbackRef.current(node.id, portId, placement),
+          movePort: (portId, placement) => commitPortMoveCallbackRef.current(
+            node.id,
+            node.data.levelId,
+            node.data.block.id,
+            portId,
+            placement,
+          ),
+          cancelPortMove: () => cancelPortMoveCallbackRef.current(),
           beginResize: node.data.positionEditable && !node.data.expanded
               ? () => {
                 beginDirectManipulation("node-resize");
@@ -1272,6 +1321,77 @@ const CanvasInner = memo(function CanvasInner({
   ]);
   const baseNodeById = useMemo(() => new Map(baseNodes.map((node) => [node.id, node])), [baseNodes]);
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasFlowNode>(baseNodes);
+  const refreshPortNodeInternals = useCallback((flowNodeId: string) => {
+    window.requestAnimationFrame(() => {
+      const state = store.getState();
+      const nodeElement = state.domNode?.querySelector<HTMLDivElement>(
+        `.react-flow__node[data-id="${flowNodeId}"]`,
+      );
+      if (!nodeElement) return;
+      state.updateNodeInternals(
+        new Map([[flowNodeId, { id: flowNodeId, nodeElement, force: true }]]),
+        { triggerFitView: false },
+      );
+    });
+  }, [store]);
+  const restorePortMovePreview = useCallback(() => {
+    portMovePreviewRef.current = undefined;
+    const root = store.getState().domNode;
+    if (root) {
+      delete root.dataset.portMoveActive;
+      delete root.dataset.portMovePortId;
+    }
+    setNodes((current) => current.map((node) => {
+      const baseline = baseNodeById.get(node.id);
+      return baseline ? { ...baseline, selected: node.selected } : node;
+    }));
+  }, [baseNodeById, setNodes, store]);
+  previewPortMoveCallbackRef.current = (flowNodeId, portId, placement) => {
+    const active = portMovePreviewRef.current;
+    if (!active || active.flowNodeId !== flowNodeId || active.portId !== portId) return;
+    setNodes((current) => current.map((node) => {
+      if (node.id !== flowNodeId) return node;
+      const block = {
+        ...node.data.block,
+        ports: node.data.block.ports.map((port) => port.id === portId ? { ...port, ...placement } : port),
+      };
+      const minimum = minimumNodeDimensions(block);
+      const width = Math.max(node.width ?? (Number(node.style?.width) || 0), minimum.width);
+      const height = Math.max(node.height ?? (Number(node.style?.height) || 0), minimum.height);
+      return {
+        ...node,
+        width,
+        height,
+        style: { ...node.style, width, height },
+        data: { ...node.data, block },
+      };
+    }));
+    refreshPortNodeInternals(flowNodeId);
+  };
+  commitPortMoveCallbackRef.current = (flowNodeId, levelId, nodeId, portId, placement) => {
+    const active = portMovePreviewRef.current;
+    if (!active || active.flowNodeId !== flowNodeId || active.portId !== portId) return false;
+    const accepted = movePortRef.current(levelId, nodeId, portId, placement.side, placement.offset);
+    portMovePreviewRef.current = undefined;
+    const root = store.getState().domNode;
+    if (root) {
+      delete root.dataset.portMoveActive;
+      delete root.dataset.portMovePortId;
+    }
+    finishDirectManipulation(accepted);
+    if (!accepted) {
+      setNodes((current) => current.map((node) => {
+        const baseline = baseNodeById.get(node.id);
+        return baseline ? { ...baseline, selected: node.selected } : node;
+      }));
+    }
+    else setCanvasAnnouncement(`Moved port ${portId} to the ${placement.side} edge.`);
+    return accepted;
+  };
+  cancelPortMoveCallbackRef.current = () => {
+    restorePortMovePreview();
+    finishDirectManipulation(false);
+  };
   const displayNodes = useMemo(
     () => projectCompoundNodeGrowth(nodes, baseNodes),
     [baseNodes, nodes],
@@ -3553,6 +3673,7 @@ export function BlockDesignCanvas(props: BlockDesignCanvasProps) {
         onCloneNodes={props.onCloneNodes}
         onResizeNode={props.onResizeNode}
         onResizeNodes={props.onResizeNodes}
+        onMovePort={props.onMovePort}
         onCreateConnection={props.onCreateConnection}
         onRouteConnection={props.onRouteConnection}
         onReconnectConnection={props.onReconnectConnection}

@@ -30,13 +30,13 @@ describe("design loading", () => {
   test("reports unsupported versions at the schemaVersion field", () => {
     let caught: unknown;
     try {
-      loadDesignFromObject({ schemaVersion: "2.2" });
+      loadDesignFromObject({ schemaVersion: "2.3" });
     } catch (error) {
       caught = error;
     }
     expect(caught).toBeInstanceOf(DesignLoadError);
     expect((caught as DesignLoadError).causeDetail).toContain(
-      "schemaVersion: Unsupported BlockDesignDocument schemaVersion \"2.2\"",
+      "schemaVersion: Unsupported BlockDesignDocument schemaVersion \"2.3\"",
     );
   });
 

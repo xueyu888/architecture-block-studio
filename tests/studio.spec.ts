@@ -1207,7 +1207,7 @@ test("loads the bundled v2 design without DRC or viewport failures", async ({ pa
   await expect(page.locator(".bd-validation-summary")).toContainText("0 warnings");
   await expect(page.locator(".react-flow__node")).toHaveCount(7);
   await expect(page.locator(".react-flow__edge")).toHaveCount(10);
-  await expect(page.locator(".bd-statusbar")).toContainText("BlockDesignDocument 2.1");
+  await expect(page.locator(".bd-statusbar")).toContainText("BlockDesignDocument 2.2");
   const canvas = page.locator(".bd-react-flow");
   const agentUi = flowNode(page, "system::agent-ui");
   await expect(canvas).toHaveAttribute("data-detail-level", "overview");
@@ -3739,7 +3739,7 @@ test("loads the repository-derived five-depth module architecture and reviews ev
 
   for (const title of [
     "Architecture Block Studio",
-    "React Browser Application",
+    "React Desktop Renderer",
     "Module Architecture",
     "Verified Source Graph",
   ]) {
@@ -3924,11 +3924,11 @@ test("enters and exits five hierarchy view roots without changing the design", a
   await expect(caption).toHaveText("Product Boundary");
   await enterSelectedModule(
     "product-boundary::architecture-block-studio",
-    "Browser Runtime",
+    "Windows Desktop Runtime",
     2,
   );
   await enterSelectedModule(
-    "browser-runtime::react-application",
+    "windows-desktop-runtime::desktop-renderer",
     "Workbench Composition",
     3,
   );
@@ -4088,7 +4088,7 @@ test("loads designs from URL and local JSON files", async ({ page }) => {
   await openDesignDialog(page);
   await page.locator('input[type="file"]').setInputFiles(legacyPath);
   await expect(page.locator(".bd-document-title span")).toHaveText("Legacy v2 Design");
-  await expect(page.locator(".bd-statusbar")).toContainText("BlockDesignDocument 2.1");
+  await expect(page.locator(".bd-statusbar")).toContainText("BlockDesignDocument 2.2");
   await waitForLayout(page);
   await expect(page.locator(".react-flow__node")).toHaveCount(2);
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
@@ -4659,7 +4659,7 @@ test("drags, persists, resets, and restores a manual orthogonal route", async ({
   const savedPath = await download.path();
   expect(savedPath).not.toBeNull();
   const saved = JSON.parse(await readFile(savedPath!, "utf8"));
-  expect(saved.schemaVersion).toBe("2.1");
+  expect(saved.schemaVersion).toBe("2.2");
   expect(saved.levels[0].connections.find((connection: { id: string }) => connection.id === "ui-session-command").routing.waypoints.length).toBeGreaterThanOrEqual(2);
 
   await inspector.getByRole("button", { name: "Reset to automatic routing" }).click({ force: true });
@@ -6278,7 +6278,7 @@ test("cuts a complete hierarchy once and pastes it into another design from the 
   const savedPath = await (await downloadPromise).path();
   expect(savedPath).not.toBeNull();
   const saved = JSON.parse(await readFile(savedPath!, "utf8"));
-  expect(saved.schemaVersion).toBe("2.1");
+  expect(saved.schemaVersion).toBe("2.2");
   expect(saved.levels.find((level: { id: string }) => level.id === "system").nodes).toHaveLength(4);
   expect(saved.levels.find((level: { id: string }) => level.id === "system").connections).toHaveLength(3);
   expect(saved.levels.find((level: { id: string }) => level.id === "core")).toBeDefined();

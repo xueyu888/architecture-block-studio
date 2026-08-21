@@ -1,6 +1,6 @@
 {
   "name": "architecture-block-studio",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Architecture block and protocol design workbench",
   "main": "dist-desktop/desktop/main.js",
   "author": "Architecture Block Studio contributors",
@@ -45,6 +45,7 @@
   "dependencies": {
     "@xyflow/react": "12.9.3",
     "dockview-react": "^8.1.0",
+    "electron-updater": "6.8.3",
     "elkjs": "0.9.3",
     "lucide-react": "0.545.0",
     "react": "19.2.1",

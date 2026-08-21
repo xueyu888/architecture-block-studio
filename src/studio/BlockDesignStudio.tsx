@@ -60,6 +60,7 @@ import type {
   CanvasContextMenuRequest,
 } from "../components/contextMenuModel";
 import { DockWorkspace } from "../components/DockWorkspace";
+import { DesktopUpdateControl } from "./DesktopUpdateControl";
 import {
   AddBlockDialog,
   AddChildDesignDialog,
@@ -134,6 +135,7 @@ import {
   type ConnectionRouting,
   type DesignIssue,
   type DirectConnectionDirection,
+  type PortSide,
 } from "../model";
 import type { StudioCommandAvailability, StudioCommands } from "./commands";
 import {
@@ -243,6 +245,7 @@ function operationNodeGeometryChanges(
   operation: DesignOperation,
 ): readonly { levelId: string; nodeId: string }[] | undefined {
   if (operation.type === "node/move" || operation.type === "node/resize") return [operation];
+  if (operation.type === "port/move") return [operation];
   if (operation.type === "nodes/move") return operation.moves;
   if (operation.type === "nodes/resize") return operation.resizes;
   return undefined;
@@ -1489,6 +1492,17 @@ export function BlockDesignStudio({
     return Boolean(runOperation({ type: "nodes/resize", resizes }));
   }, [requireAppliedInspectorDraft, runOperation]);
 
+  const movePort = useCallback((
+    levelId: string,
+    nodeId: string,
+    portId: string,
+    side: PortSide,
+    offset: number,
+  ) => {
+    if (!requireAppliedInspectorDraft("moving a port")) return false;
+    return Boolean(runOperation({ type: "port/move", levelId, nodeId, portId, side, offset }));
+  }, [requireAppliedInspectorDraft, runOperation]);
+
   const createConnection = useCallback((connection: {
     levelId: string;
     source: { nodeId: string; portId: string; label: string };
@@ -2284,6 +2298,7 @@ export function BlockDesignStudio({
             onCloneNodes={cloneDraggedModules}
             onResizeNode={resizeNode}
             onResizeNodes={resizeNodes}
+            onMovePort={movePort}
             onCreateConnection={createConnection}
             onRouteConnection={routeConnection}
             onReconnectConnection={applyConnectionReconnect}
@@ -2323,6 +2338,7 @@ export function BlockDesignStudio({
           {errorCount === 0 ? <CheckCircle2 size={14} /> : <TriangleAlert size={14} />}
           <span>{errorCount} errors</span><span>{warningCount} warnings</span>
         </div>
+        <DesktopUpdateControl bridge={desktopBridge} />
       </header>
 
       <MenuBar sourceRef={document.sourceRef} commands={commands} />

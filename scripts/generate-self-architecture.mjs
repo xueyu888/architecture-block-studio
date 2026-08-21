@@ -184,6 +184,7 @@ const MODULES = [
     owner: "src/studio · composition",
     sourcePaths: [
       "src/studio/BlockDesignStudio.tsx",
+      "src/studio/DesktopUpdateControl.tsx",
       "src/studio/fragmentPlacement.ts",
       "src/studio/index.ts",
     ],
@@ -219,14 +220,14 @@ const MODULES = [
     sourcePaths: ["src/App.tsx"],
     position: { x: 1730, y: 380 },
     principle: "Choose the initial design source and assemble the standalone Studio.",
-    purpose: "Provide the browser application's minimal product entry contract.",
+    purpose: "Provide the Windows desktop renderer's minimal product entry contract.",
     boundary: "Does not own design content, commands, loading rules, or editor state.",
     failure: "Delegates load failures to the Studio while retaining the current installed document.",
   },
   {
     id: "bootstrap",
     groupId: "application",
-    title: "Browser Bootstrap",
+    title: "Desktop Renderer Bootstrap",
     shortTitle: "Bootstrap",
     kind: "entrypoint",
     tone: "neutral",
@@ -401,7 +402,7 @@ function moduleNode(module, edges) {
         direction: "input",
         dataType: `${edge.declarations.length} import declarations`,
         required: true,
-        order: index,
+        offset: (index + 1) / (incoming.length + 1),
       };
     }),
     ...outgoing.map((edge, index) => {
@@ -413,7 +414,7 @@ function moduleNode(module, edges) {
         direction: "output",
         dataType: `${edge.declarations.length} import declarations`,
         required: true,
-        order: index,
+        offset: (index + 1) / (outgoing.length + 1),
       };
     }),
   ];
@@ -536,7 +537,7 @@ function scopeNode({ id, title, childLevelId, summary, principle, boundary, sour
 function createDocument() {
   const { sourceFiles, edges } = dependencyEdges();
   return {
-    schemaVersion: "2.1",
+    schemaVersion: "2.2",
     id: "architecture-block-studio.source-architecture.v1",
     title: "Architecture Block Studio — Source Architecture",
     summary: `Generated from ${sourceFiles.length} managed source files and ${edges.length} verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.`,
@@ -551,7 +552,7 @@ function createDocument() {
         nodes: [scopeNode({
           id: "architecture-block-studio",
           title: "Architecture Block Studio",
-          childLevelId: "browser-runtime",
+          childLevelId: "windows-desktop-runtime",
           summary: "Design, visualize, and human-review code module and interface architecture as canonical JSON.",
           principle: "Keep architecture intent explicit, inspectable, editable, and version controlled.",
           boundary: "This product does not infer arbitrary business architecture inside its editing runtime.",
@@ -563,17 +564,17 @@ function createDocument() {
         layout: { direction: "LEFT", spacing: 80, layerSpacing: 140 },
       },
       {
-        id: "browser-runtime",
-        title: "Browser Runtime",
-        description: "Depth 2: standalone React application installation.",
+        id: "windows-desktop-runtime",
+        title: "Windows Desktop Runtime",
+        description: "Depth 2: Electron-hosted React desktop renderer.",
         parentLevelId: "product-boundary",
         nodes: [scopeNode({
-          id: "react-application",
-          title: "React Browser Application",
+          id: "desktop-renderer",
+          title: "React Desktop Renderer",
           childLevelId: "workbench-composition",
           summary: "Mount one desktop workbench and load a replaceable BlockDesignDocument source.",
           principle: "Install the editor without moving design facts into the host shell.",
-          boundary: "The browser host does not own document semantics, layout, routing, or history.",
+          boundary: "The Electron host does not own document semantics, layout, routing, or history.",
           sourcePath: "src/main.tsx",
           position: { x: 40, y: 40 },
           depth: 2,
@@ -585,7 +586,7 @@ function createDocument() {
         id: "workbench-composition",
         title: "Workbench Composition",
         description: "Depth 3: application composition before source boundaries are expanded.",
-        parentLevelId: "browser-runtime",
+        parentLevelId: "windows-desktop-runtime",
         nodes: [scopeNode({
           id: "module-architecture",
           title: "Module Architecture",

@@ -60,6 +60,14 @@ export interface NodeResize extends NodeMove {
   size: { width: number; height: number };
 }
 
+export interface PortMove {
+  levelId: string;
+  nodeId: string;
+  portId: string;
+  side: PortSide;
+  offset: number;
+}
+
 export type DiagramDeleteTarget =
   | { kind: "node"; levelId: string; nodeId: string }
   | { kind: "connection"; levelId: string; connectionId: string };
@@ -90,6 +98,7 @@ export type DesignOperation =
   | { type: "node/delete"; levelId: string; nodeId: string }
   | { type: "objects/delete"; targets: readonly DiagramDeleteTarget[] }
   | { type: "port/add"; levelId: string; nodeId: string; port: BlockPort }
+  | ({ type: "port/move" } & PortMove)
   | {
       type: "port/update";
       levelId: string;
@@ -156,14 +165,32 @@ function requirePort(node: BlockNode, portId: string): BlockPort {
   return node.ports.find((port) => port.id === portId) ?? editError(`Port ${node.id}.${portId} does not exist.`);
 }
 
+function nextPortOffset(ports: readonly BlockPort[], side: PortSide): number {
+  const occupied = ports
+    .filter((port) => port.side === side)
+    .map((port) => port.offset)
+    .sort((left, right) => left - right);
+  const boundaries = [0, ...occupied, 1];
+  let widestGapStart = boundaries[0];
+  let widestGap = -1;
+  for (let index = 1; index < boundaries.length; index += 1) {
+    const gap = boundaries[index] - boundaries[index - 1];
+    if (gap > widestGap) {
+      widestGap = gap;
+      widestGapStart = boundaries[index - 1];
+    }
+  }
+  return Math.round((widestGapStart + widestGap / 2) * 10_000) / 10_000;
+}
+
 type NodeGeometryOperation = Extract<
   DesignOperation,
-  { type: "node/move" | "nodes/move" | "node/resize" | "nodes/resize" }
+  { type: "node/move" | "nodes/move" | "node/resize" | "nodes/resize" | "port/move" }
 >;
 
 function isNodeGeometryOperation(operation: DesignOperation): operation is NodeGeometryOperation {
   return operation.type === "node/move" || operation.type === "nodes/move" ||
-    operation.type === "node/resize" || operation.type === "nodes/resize";
+    operation.type === "node/resize" || operation.type === "nodes/resize" || operation.type === "port/move";
 }
 
 function geometryChanges(operation: NodeGeometryOperation): {
@@ -173,6 +200,7 @@ function geometryChanges(operation: NodeGeometryOperation): {
   if (operation.type === "node/move") return { changes: [operation], kind: "moved" };
   if (operation.type === "nodes/move") return { changes: operation.moves, kind: "moved" };
   if (operation.type === "node/resize") return { changes: [operation], kind: "resized" };
+  if (operation.type === "port/move") editError("Port movement does not use module geometry changes.");
   return { changes: operation.resizes, kind: "resized" };
 }
 
@@ -188,6 +216,26 @@ function applyNodeGeometryOperation(
   document: BlockDesignDocument,
   operation: NodeGeometryOperation,
 ): BlockDesignDocument {
+  if (operation.type === "port/move") {
+    if (!Number.isFinite(operation.offset) || operation.offset <= 0 || operation.offset >= 1) {
+      editError(`Port ${operation.portId} offset must be a finite number greater than 0 and less than 1.`);
+    }
+    const sourceLevel = requireLevel(document, operation.levelId);
+    const sourceNode = requireNode(sourceLevel, operation.nodeId);
+    requirePort(sourceNode, operation.portId);
+    const levels = document.levels.map((level) => level.id !== operation.levelId ? level : {
+      ...level,
+      nodes: level.nodes.map((node) => node.id !== operation.nodeId ? node : nodeSchema.parse({
+        ...node,
+        ports: node.ports.map((port) => port.id !== operation.portId ? port : {
+          ...port,
+          side: operation.side,
+          offset: operation.offset,
+        }),
+      })),
+    });
+    return { ...document, levels };
+  }
   const { changes, kind } = geometryChanges(operation);
   if (changes.length === 0) editError(`At least one module is required for a ${kind.slice(0, -1)} operation.`);
   const identities = new Set<string>();
@@ -467,7 +515,10 @@ export function applyDesignOperation(
       if (node.ports.some((port) => port.id === operation.port.id)) {
         editError(`Port id ${operation.port.id} already exists on ${node.title}.`);
       }
-      node.ports.push(operation.port);
+      node.ports.push({
+        ...operation.port,
+        offset: nextPortOffset(node.ports, operation.port.side),
+      });
       break;
     }
     case "port/update": {
@@ -672,6 +723,7 @@ export function createPort(draft: PortDraft): BlockPort {
     direction: draft.direction,
     dataType: draft.dataType?.trim() || undefined,
     required: draft.required,
+    offset: 0.5,
   };
 }
 

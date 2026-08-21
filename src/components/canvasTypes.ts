@@ -1,6 +1,7 @@
 import type { Edge, Node } from "@xyflow/react";
 import type { LayoutBlockNodeData, LayoutInterfaceEdgeData } from "../layout";
 import type { BlockPort, ConnectionRouting } from "../model";
+import type { PortPlacement } from "../layout";
 import type { RouteJump, RoutePoint } from "../routing";
 
 export interface CanvasBlockNodeData extends LayoutBlockNodeData {
@@ -13,6 +14,10 @@ export interface CanvasBlockNodeData extends LayoutBlockNodeData {
   previewResize?: (geometry: NodeResizeGeometry, disableSnap: boolean) => void;
   resizeNode?: (geometry: NodeResizeGeometry, disableSnap: boolean) => boolean;
   canEditSelection?: () => boolean;
+  beginPortMove?: (portId: string) => boolean;
+  previewPortMove?: (portId: string, placement: PortPlacement) => void;
+  movePort?: (portId: string, placement: PortPlacement) => boolean;
+  cancelPortMove?: () => void;
 }
 
 export interface NodeResizeGeometry {

@@ -30,8 +30,8 @@ export function performanceDesignDocument({
       tone: ["ui", "core", "tool", "platform", "plugin"][index % 5],
       owner: `Team ${index % 10}`,
       ports: [
-        { id: "in", label: "Input", side: "left" as const, direction: "input" as const, required: false },
-        { id: "out", label: "Output", side: "right" as const, direction: "output" as const, required: false },
+        { id: "in", label: "Input", side: "left" as const, direction: "input" as const, required: false, offset: 0.5 },
+        { id: "out", label: "Output", side: "right" as const, direction: "output" as const, required: false, offset: 0.5 },
       ],
       inspector: {
         principle: "One measurable module responsibility.",
@@ -86,7 +86,7 @@ export function performanceDesignDocument({
   });
 
   return {
-    schemaVersion: "2.1",
+    schemaVersion: "2.2",
     id: `performance-${scale}`,
     title: `Performance ${scale === "stress" ? "Stress" : "Large"} Design`,
     summary: `Deterministic ${nodeCount} module / ${connectionCount} connection performance fixture.`,

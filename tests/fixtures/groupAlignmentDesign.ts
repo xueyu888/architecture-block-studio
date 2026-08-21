@@ -14,7 +14,7 @@ function inspector(purpose: string): BlockNode["inspector"] {
 
 export function groupAlignmentDesignDocument(): BlockDesignDocument {
   return {
-    schemaVersion: "2.1",
+    schemaVersion: "2.2",
     id: "group-alignment-proof",
     title: "Group Alignment Proof",
     summary: "Different-sized modules expose one stable selection boundary and one shared correction.",
@@ -79,6 +79,7 @@ export function groupAlignmentDesignDocument(): BlockDesignDocument {
             side: "bottom",
             direction: "output",
             required: true,
+            offset: 0.5,
           }],
           inspector: inspector("Represent the compact member of the moving selection."),
           layout: { position: { x: 64, y: 64 }, width: 192, height: 144, pinned: true },
@@ -96,6 +97,7 @@ export function groupAlignmentDesignDocument(): BlockDesignDocument {
               side: "top",
               direction: "input",
               required: true,
+              offset: 0.5,
             },
             {
               id: "review-out",
@@ -103,6 +105,7 @@ export function groupAlignmentDesignDocument(): BlockDesignDocument {
               side: "bottom",
               direction: "output",
               required: true,
+              offset: 0.5,
             },
           ],
           inspector: inspector("Represent the larger member and preserve group-relative geometry."),
@@ -120,6 +123,7 @@ export function groupAlignmentDesignDocument(): BlockDesignDocument {
             side: "top",
             direction: "input",
             required: true,
+            offset: 0.5,
           }],
           inspector: inspector("Provide the stable candidate edge used by the group guide."),
           layout: { position: { x: 1124, y: 600 }, width: 208, height: 208, pinned: true },

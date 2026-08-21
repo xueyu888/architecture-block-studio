@@ -1,3 +1,8 @@
+import type {
+  DesktopUpdateInstallResult,
+  DesktopUpdateState,
+} from "./desktopUpdateContract";
+
 export type DesktopSaveMode = "save" | "saveAs" | "export";
 
 export type DesktopOpenResult =
@@ -26,7 +31,14 @@ export interface ArchitectureBlockStudioDesktopBridge {
   setDirty: (state: DesktopDirtyState) => void;
   onSaveBeforeClose: (handler: () => void) => () => void;
   completeSaveBeforeClose: (saved: boolean) => void;
+  getUpdateState: () => Promise<DesktopUpdateState>;
+  checkForUpdates: () => Promise<DesktopUpdateState>;
+  downloadUpdate: () => Promise<DesktopUpdateState>;
+  installUpdate: () => Promise<DesktopUpdateInstallResult>;
+  onUpdateState: (handler: (state: DesktopUpdateState) => void) => () => void;
 }
+
+export type { DesktopUpdateInstallResult, DesktopUpdateState };
 
 declare global {
   interface Window {

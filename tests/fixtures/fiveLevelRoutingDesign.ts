@@ -26,7 +26,7 @@ function boundaryPorts(): BlockPort[] {
     side: "left" as const,
     direction: "input" as const,
     required: false,
-    order: index,
+    offset: (index + 1) / (FLOW_COUNT + 1),
   }));
 }
 
@@ -42,7 +42,7 @@ function sourceNode(index: number): BlockNode {
     kind: "module",
     tone: "platform",
     owner: "Source Team",
-    ports: [{ id: "out", label: "out", side: "right", direction: "output", required: false }],
+    ports: [{ id: "out", label: "out", side: "right", direction: "output", required: false, offset: 0.5 }],
     inspector: inspector("Own one root-level source flow."),
     layout: { position: leafPosition(index), width: MODULE_WIDTH, height: MODULE_HEIGHT, pinned: true },
   };
@@ -57,8 +57,8 @@ function relayNode(levelNumber: number, index: number): BlockNode {
     tone: levelNumber % 2 === 0 ? "tool" : "core",
     owner: `Layer ${levelNumber} Team`,
     ports: [
-      { id: "in", label: "in", side: "left", direction: "input", required: false },
-      { id: "out", label: "out", side: "right", direction: "output", required: false },
+      { id: "in", label: "in", side: "left", direction: "input", required: false, offset: 0.5 },
+      { id: "out", label: "out", side: "right", direction: "output", required: false, offset: 0.5 },
     ],
     inspector: inspector(`Relay one declared flow through hierarchy layer ${levelNumber}.`),
     layout: { position: leafPosition(index), width: MODULE_WIDTH, height: MODULE_HEIGHT, pinned: true },
@@ -73,7 +73,7 @@ function targetNode(index: number): BlockNode {
     kind: "module",
     tone: "ui",
     owner: "Target Team",
-    ports: [{ id: "in", label: "in", side: "left", direction: "input", required: false }],
+    ports: [{ id: "in", label: "in", side: "left", direction: "input", required: false, offset: 0.5 }],
     inspector: inspector("Own one deepest-level target flow."),
     layout: { position: leafPosition(index), width: MODULE_WIDTH, height: MODULE_HEIGHT, pinned: true },
   };
@@ -151,7 +151,7 @@ export function fiveLevelRoutingDesignDocument(): BlockDesignDocument {
     });
   }
   return {
-    schemaVersion: "2.1",
+    schemaVersion: "2.2",
     id: "five-level-routing-stress",
     title: "Five-Level Routing Stress",
     summary: "Two sparse typed flows, five nested hierarchy boundaries, and exhaustive route auditing.",

@@ -16,7 +16,7 @@ function hubPort(side: PortSide, index: number): BlockPort {
     side,
     direction: incoming ? "input" : "output",
     required: false,
-    order: index,
+    offset: (index + 1) / (PORTS_PER_SIDE + 1),
   };
 }
 
@@ -48,6 +48,7 @@ export function routingStressDesignDocument(): BlockDesignDocument {
             : "top",
       direction: hubIsSource ? "input" : "output",
       required: false,
+      offset: 0.5,
     };
     const position = port.side === "left"
       ? { x: 800, y: coordinate.y - SATELLITE_HEIGHT / 2 }
@@ -92,7 +93,7 @@ export function routingStressDesignDocument(): BlockDesignDocument {
   });
 
   return {
-    schemaVersion: "2.1",
+    schemaVersion: "2.2",
     id: "routing-skew-stress",
     title: "Routing Skew Stress",
     summary: "One 100-connection hub surrounded by 100 one-connection modules.",

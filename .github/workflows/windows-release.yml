@@ -31,7 +31,8 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - shell: pwsh
         run: |
-          $lines = Get-FileHash release/*.exe -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" }
+          $artifacts = Get-ChildItem release -File | Where-Object { $_.Name -match '\.(exe|blockmap)$' -or $_.Name -eq 'latest.yml' }
+          $lines = $artifacts | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" }
           $content = ($lines -join "`n") + "`n"
           [System.IO.File]::WriteAllText((Join-Path $PWD "release/SHA256SUMS.txt"), $content, [System.Text.UTF8Encoding]::new($false))
       - uses: softprops/action-gh-release@v2
@@ -39,4 +40,6 @@ jobs:
           draft: false
           files: |
             release/*.exe
+            release/*.blockmap
+            release/latest.yml
             release/SHA256SUMS.txt

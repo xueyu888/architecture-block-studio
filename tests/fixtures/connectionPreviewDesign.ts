@@ -14,7 +14,7 @@ function inspector(purpose: string): BlockNode["inspector"] {
 
 export function connectionPreviewDesignDocument(): BlockDesignDocument {
   return {
-    schemaVersion: "2.1",
+    schemaVersion: "2.2",
     id: "scene-aware-connection-preview",
     title: "Scene-Aware Connection Preview",
     summary: "A deliberate center obstacle proves that live pointer routing consumes the full scene.",
@@ -39,6 +39,7 @@ export function connectionPreviewDesignDocument(): BlockDesignDocument {
             side: "right",
             direction: "output",
             required: false,
+            offset: 0.5,
           }],
           inspector: inspector("Emit one reviewed command."),
           layout: { position: { x: 0, y: 190 }, width: 250, height: 150, pinned: true },
@@ -65,6 +66,7 @@ export function connectionPreviewDesignDocument(): BlockDesignDocument {
             side: "left",
             direction: "input",
             required: false,
+            offset: 0.5,
           }],
           inspector: inspector("Accept one reviewed command."),
           layout: { position: { x: 790, y: 190 }, width: 250, height: 150, pinned: true },

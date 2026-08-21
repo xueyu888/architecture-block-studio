@@ -61,11 +61,11 @@ React Studio ──具名 DesktopBridge──► sandbox preload ──具名 IP
 
 ## 源码架构示例与一致性门禁
 
-`scripts/generate-self-architecture.mjs` 是“源码事实如何投影成示例设计”的单一适配器。`src` 中真实存在的 TypeScript / TSX / CSS 文件与可解析相对 import 是源事实；脚本中的 `MODULES` 只拥有稳定责任边界、源码归属、说明和展示位置；生成的 `public/examples/architecture-block-studio.block-design.json` 是可重建投影，不得反向定义源码依赖。浏览器运行时仍只消费公开 JSON，不读取仓库文件系统。
+`scripts/generate-self-architecture.mjs` 是“源码事实如何投影成示例设计”的单一适配器。`src` 中真实存在的 TypeScript / TSX / CSS 文件与可解析相对 import 是源事实；脚本中的 `MODULES` 只拥有稳定责任边界、源码归属、说明和展示位置；生成的 `public/examples/architecture-block-studio.block-design.json` 是可重建投影，不得反向定义源码依赖。Windows 客户端渲染层仍只消费公开 JSON，不读取仓库文件系统。
 
 ```mermaid
 flowchart LR
-  bootstrap[Browser Bootstrap] --> app[Application Assembly]
+  bootstrap[Desktop Renderer Bootstrap] --> app[Application Assembly]
   bootstrap --> styles[Visual Tokens]
   app --> studio[Studio Orchestrator]
   app --> io[Canonical File I/O]
@@ -118,7 +118,7 @@ flowchart LR
 
 连接方向与连接点是两个正交的视觉角色。Canvas 只对非 hierarchy continuation 的真实连接投影一个 target marker，marker 的方向完全来自 `BlockConnection.source -> target` 路径末段；Port Handle 只表达“这里可以连接”，使用中性圆点，不用输入 / 输出三角形冒充数据流箭头。接口类型颜色由 edge 上的 `--interface-color` 统一提供给普通路径、React Flow 选中态和 `context-stroke` marker；第三方默认 selected stroke 不能成为第二颜色源。marker、Handle hover 和选中描边都属于可重建展示，不进入 JSON 或历史。
 
-端口连接点几何与标签排版同样正交。`layout/nodeGeometry` 是节点安全尺寸、标签估算宽度和水平 label rail 位置的唯一计算 Owner；`BlockNode` 从同一组已排序 Port 分别投影稳定 Handle 和独立标签按钮，不能为了排文字移动 source / target。left / right 标签沿各自侧边，top / bottom 标签在 Header / Owner 之外的内部轨道分配空间；常态只显示端口名，dataType 只在可读缩放下通过 hover / focus 渐进显示，完整事实仍可由 Properties 查看。已有 authored width / height 满足标签合同时必须原样保留；只有外部 JSON 或后续 resize 小于内容安全下限时，布局投影才钳制到可读尺寸，不能把展示修正反写 JSON。
+端口连接点几何与标签排版同样正交。文档中的 `port.side + port.offset` 是精确端口位置的唯一事实，`layout/nodeGeometry` 只负责把它投影成 Handle、标签、安全尺寸和路由锚点，并用同一纯函数把 Windows pointer 解析为最近卡片边、可读间距和可选比例吸附。`BlockNode` 只拥有当前 pointer gesture；Canvas 只拥有可丢弃预览并让相关线路实时重算；松手后的一个 `port/move` 才由 Editor 原子写回文档。外侧 Handle 始终只创建连接，拖动标签只移动端口，点击标签只进入 Inspector，三种输入不能共享隐式状态。已有 authored width / height 满足标签合同时必须原样保留；只有外部 JSON 或端口重新分布使尺寸小于内容安全下限时，布局投影才钳制到可读尺寸。
 
 模块尺寸编辑复用同一几何 Owner。`minimumNodeDimensions` 从四侧端口和内容区计算可读下限，Canvas 只把这个纯结果投影为四边 / 四角 resize 限制；最大值来自节点几何合同，pointer 网格、键盘移动 / resize 步长和背景点阵共同消费 `DESIGN_GRID_SIZE`。Shift pointer resize 由纯 `preserveNodeAspectRatio` 以 gesture 起始矩形、抓手方向和同一尺寸上下限求解，固定对侧角或对侧边中心；比例不进入文档，并优先于兄弟尺寸吸附。多选时，`selectionResizeBounds / selectionResizeLimits / resizeSelectionGroup` 只接受同父级、同 Level、具有唯一可编辑投影的模块，以一个冻结的组包围框计算全组可行 scale，再用同一仿射变换更新每个成员的位置和尺寸。已有外部 JSON 若暂时超出当前上下限仍可被选中，但只允许朝合法范围变化，不能因显示组选区而抛错。Canvas 只拥有可丢弃预览，松手后发出一次位置加尺寸意图；Editor 的 `node/resize` 或 `nodes/resize` 才原子写入 `node.layout.position / width / height / pinned`。左边或上边缩放会同时改变锚点和尺寸，因此不能只写 width / height，否则视觉边界与持久几何会漂移。展开的 hierarchy 容器尺寸由子图边界派生，跨父级选择没有共同坐标系，两者都不提供组选区 resize 把手。
 
@@ -248,7 +248,7 @@ performanceDesign fixture
 
 `BlockDesignDocument v2` 包含：
 
-- `schemaVersion`：当前精确值为 `"2.1"`。
+- `schemaVersion`：当前精确值为 `"2.2"`。
 - `id`、`title`、`summary`：文档身份与说明。
 - `entryLevelId`：入口 Level 的唯一引用。
 - `sourceRef`：可选的外部来源标签与链接。
@@ -311,6 +311,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 - Windows Save / Save As 使用相邻临时文件、flush 和 rename 完成原子替换；只有写入成功后 Editor 才把精确当前快照标记为 saved。
 - Export JSON 只导出副本，不改变当前文件绑定或 dirty 状态。
 - 新建、从开发 URL 或浏览器文件载入会显式清除桌面文件绑定；文件路径只留在对应窗口的主进程状态中。
+- Windows 更新由 Electron main 的单一状态机拥有；packaged NSIS 应用才读取构建内嵌的 GitHub provider 配置并检查、下载、安装，renderer 只能通过具名 preload 方法消费版本、进度和动作。开发版不联网，更新状态不进入设计 JSON。重启安装前由主进程检查全部窗口 dirty 状态；任一文档未保存或 Inspector 草稿未应用都会阻止安装。
 
 开发浏览器保留下载适配器，用于自动化验证，不是产品文件语义。当前仍没有崩溃后的自动恢复；恢复副本必须作为独立文件安全设计引入，不能把 localStorage 或临时 UI 状态当作正式设计事实源。
 
@@ -318,7 +319,7 @@ Level 拥有 `nodes`、`connections` 和布局偏好。模块拥有稳定 id、�
 
 - 布局输入只有文档、展开 Level、placement mode 和 revision；输出是可重建的 `LayoutResult`。
 - `layoutProjectionSignature` 由布局 Owner 枚举布局与 Canvas 真正消费的模块可见字段、端口、拓扑、接口类型和手工路由；文档 / Level 说明和 Inspector 合同正文不在该投影中。只有投影变化才重建 React Flow 图。
-- `layoutFrameSignature` 只包含会改变拓扑、端点、Port 或层级边界的框架事实，用于决定是否发出一次新的 Fit 命令；Canvas 以递增游标恰好消费一次，后续节点增删不得重放历史 Fit。直接 move / resize 和指定画布点的新建 / 粘贴已由用户给出当前视野，不能再次 Fit；点放置结果已完整可见时保持 viewport，只有碰撞避让后的最终卡片不可见才执行一次条件 reveal。可见标题变化同样不能冒充框架变化。
+- `layoutFrameSignature` 只包含会改变拓扑、端点集合或层级边界的框架事实，用于决定是否发出一次新的 Fit 命令；Port 在边上的精确位置只改变路由投影，不重构当前视野。Canvas 以递增游标恰好消费一次，后续节点增删不得重放历史 Fit。直接 move / resize / port move 和指定画布点的新建 / 粘贴已由用户给出当前视野，不能再次 Fit；点放置结果已完整可见时保持 viewport，只有碰撞避让后的最终卡片不可见才执行一次条件 reveal。可见标题变化同样不能冒充框架变化。
 - 每次纯文档布局可以生成新的对象，但 `reconcileLayoutResult` 按完整投影只复用语义未变化的 node / edge 引用。Canvas 再按 layout item、route 与 line-jump 引用投影 Flow 对象；frame 级路由状态只属于 Canvas，不能复制进每条 Edge 并造成全图失效。
 - Level 标题覆盖层与重型 React Flow 图分开渲染；工作区命令回调通过稳定边界读取最新事实，普通属性编辑不能因 callback identity 变化重映射全部节点和边。
 - Canvas selection 只在受影响的前后节点 / 边对象上投影 `selected`，未受影响的 Flow 元素保持引用稳定；React Flow 事件、配置对象和静态控件同样保持稳定，选择不能借回调或 JSX identity 触发全图协调。
@@ -455,7 +456,7 @@ export interface BlockDesignStudioProps {
 
 ## Schema 兼容策略
 
-当前写出版本由 `BLOCK_DESIGN_SCHEMA_VERSION` 唯一定义为 `2.1`。`parseBlockDesignDocument` 先交给 `model/migrations` 读取版本并逐步迁移，再用当前 Schema 做最终校验；IO 和 Studio 不判断版本。公开的不可变 `blockDesignSchemaCompatibility` 是支持矩阵：`2.0 -> 2.1` 为迁移，`2.1 -> 2.1` 为当前版本，其他版本不猜测兼容。
+当前写出版本由 `BLOCK_DESIGN_SCHEMA_VERSION` 唯一定义为 `2.2`。`parseBlockDesignDocument` 先交给 `model/migrations` 读取版本并逐步迁移，再用当前 Schema 做最终校验；IO 和 Studio 不判断版本。公开的不可变 `blockDesignSchemaCompatibility` 是支持矩阵：`2.0 -> 2.1 -> 2.2` 逐步迁移，`2.2 -> 2.2` 为当前版本，其他版本不猜测兼容。2.1 的端口 `order` 在迁移中按边、顺序和稳定名称转换为唯一的 `offset`，迁移后不保留第二份排序事实。
 
 ```text
 unknown JSON
@@ -464,22 +465,23 @@ unknown JSON
     ▼
 model/migrations
     │ 2.0 版本 Schema 校验 ─► migrateV20ToV21
+    │ 2.1 版本 Schema 校验 ─► migrateV21ToV22
     │ 未注册版本 ──────────────────► unsupported version issue
     ▼
 model/parseDesign
-    │ 当前 2.1 Schema 最终校验失败 ─► 不返回部分文档
+    │ 当前 2.2 Schema 最终校验失败 ─► 不返回部分文档
     ▼
-BlockDesignDocument 2.1
+BlockDesignDocument 2.2
 ```
 
-`legacy-v2.0.block-design.json` 与 `migrated-v2.1.block-design.json` 分别是迁移输入和精确输出 golden fixture。2.0 文件若伪装包含 2.1 才出现的 `routing`，旧版 Schema 会拒绝，而不是静默删除数据。
+`legacy-v2.0.block-design.json` 与 `migrated-v2.2.block-design.json` 分别是迁移输入和完整逐步迁移的精确输出 golden fixture。2.0 文件若伪装包含 2.1 才出现的 `routing`，旧版 Schema 会拒绝，而不是静默删除数据。
 
-当前 Zod object 对未声明字段默认执行剥离；除 2.0 `routing` 已明确拒绝外，2.1 及其他嵌套对象的未知字段应“严格拒绝”还是“保留后原样写回”仍是兼容与数据保留决策。确定该策略前不能宣称前向兼容，也不能在局部 Schema 中零散切换行为。
+当前 Zod object 对未声明字段默认执行剥离；除 2.0 `routing` 已明确拒绝外，2.2 及其他嵌套对象的未知字段应“严格拒绝”还是“保留后原样写回”仍是兼容与数据保留决策。确定该策略前不能宣称前向兼容，也不能在局部 Schema 中零散切换行为。
 
 后续兼容能力必须遵守：
 
 1. 文件中的 `schemaVersion` 是唯一版本判断来源。
-2. 每个旧版本由注册表中的独立、纯函数迁移到下一个版本，不在 UI 或 IO 中兼容字段。当前链路为 `2.0 -> 2.1`。
+2. 每个旧版本由注册表中的独立、纯函数迁移到下一个版本，不在 UI 或 IO 中兼容字段。当前链路为 `2.0 -> 2.1 -> 2.2`。
 3. 迁移前保留原始输入；迁移失败不能安装部分文档。
 4. 每条迁移使用 golden fixtures 验证输入、输出、幂等或明确的单向性。
 5. 破坏性字段、语义或引用变化提升主版本；向后兼容的可选字段提升次版本。

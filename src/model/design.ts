@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const BLOCK_DESIGN_SCHEMA_VERSION = "2.1" as const;
+export const BLOCK_DESIGN_SCHEMA_VERSION = "2.2" as const;
 
 export const portSideSchema = z.enum(["left", "right", "top", "bottom"]);
 export const portDirectionSchema = z.enum(["input", "output", "bidirectional"]);
@@ -37,7 +37,7 @@ export const portSchema = z.object({
   direction: portDirectionSchema,
   dataType: z.string().min(1).optional(),
   required: z.boolean().default(true),
-  order: z.number().int().nonnegative().optional(),
+  offset: z.number().finite().gt(0).lt(1),
 });
 
 export const endpointSchema = z.object({
