@@ -34,7 +34,8 @@ describe("RecentDesignService", () => {
     expect(entries[0].openedAt).toBe("2026-08-20T12:00:00.000Z");
     expect(await service.resolvePath(entries[0].id)).toBe(firstPath);
     const stored = await readFile(storagePath, "utf8");
-    expect(stored).toContain(firstPath);
+    const persisted = JSON.parse(stored) as { entries: Array<{ filePath: string }> };
+    expect(persisted.entries[0].filePath).toBe(firstPath);
     expect(stored).not.toContain("schemaVersion");
   });
 
