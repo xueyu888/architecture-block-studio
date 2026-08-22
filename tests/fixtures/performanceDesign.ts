@@ -86,7 +86,7 @@ export function performanceDesignDocument({
   });
 
   return {
-    schemaVersion: "2.2",
+    schemaVersion: "2.3",
     id: `performance-${scale}`,
     title: `Performance ${scale === "stress" ? "Stress" : "Large"} Design`,
     summary: `Deterministic ${nodeCount} module / ${connectionCount} connection performance fixture.`,

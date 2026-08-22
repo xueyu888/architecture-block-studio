@@ -254,7 +254,6 @@ describe("public design operations", () => {
       port: createPort({
         id: "requests",
         label: "Requests",
-        side: "left",
         direction: "input",
         required: true,
       }),
@@ -266,7 +265,6 @@ describe("public design operations", () => {
       portId: "requests",
       values: {
         label: "Commands",
-        side: "right",
         direction: "output",
         dataType: "Command",
         required: false,
@@ -282,7 +280,7 @@ describe("public design operations", () => {
       direction: "output",
       dataType: "Command",
       required: false,
-      offset: 0.75,
+      offset: 0.5,
     });
   });
 
@@ -299,7 +297,7 @@ describe("public design operations", () => {
         type: "port/add",
         levelId: "system",
         nodeId: "api",
-        port: createPort({ id, label: id, side: "right", direction: "output", required: false }),
+        port: createPort({ id, label: id, direction: "output", required: false }),
       });
     });
 
@@ -320,19 +318,15 @@ describe("public design operations", () => {
       levelId: "system",
       nodeId: "source",
       portId: "out",
-      side: "bottom",
       offset: 0.72,
     });
 
-    expect(moved.levels[0].nodes[0].ports[0]).toMatchObject({ side: "bottom", offset: 0.72 });
-    expect(document.levels[0].nodes[0].ports[0]).toMatchObject({ side: "right", offset: 0.5 });
     expect(moved.levels[0].nodes[1]).toBe(untouchedNode);
     expect(() => applyDesignOperation(document, {
       type: "port/move",
       levelId: "system",
       nodeId: "source",
       portId: "out",
-      side: "bottom",
       offset: 1,
     })).toThrow("greater than 0 and less than 1");
   });
@@ -346,7 +340,6 @@ describe("public design operations", () => {
       port: createPort({
         id: "alternate",
         label: "Alternate",
-        side: "right",
         direction: "output",
         required: false,
       }),
@@ -420,7 +413,6 @@ describe("operation invariants", () => {
     source.ports.push(createPort({
       id: "in",
       label: "Input",
-      side: "left",
       direction: "input",
       required: false,
     }));
@@ -428,7 +420,6 @@ describe("operation invariants", () => {
     target.ports.push(createPort({
       id: "in",
       label: "Input",
-      side: "left",
       direction: "input",
       required: false,
     }));
@@ -563,7 +554,6 @@ describe("reference cleanup", () => {
     secondParent.ports.push(createPort({
       id: "public",
       label: "Public",
-      side: "right",
       direction: "output",
       required: false,
     }));
@@ -596,7 +586,6 @@ describe("reference cleanup", () => {
     secondParent.ports.push(createPort({
       id: "public",
       label: "Public",
-      side: "right",
       direction: "output",
       required: false,
     }));

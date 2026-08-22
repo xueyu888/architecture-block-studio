@@ -136,7 +136,6 @@ import {
   type ConnectionRouting,
   type DesignIssue,
   type DirectConnectionDirection,
-  type PortSide,
 } from "../model";
 import type { StudioCommandAvailability, StudioCommands } from "./commands";
 import {
@@ -1546,11 +1545,10 @@ export function BlockDesignStudio({
     levelId: string,
     nodeId: string,
     portId: string,
-    side: PortSide,
     offset: number,
   ) => {
     if (!requireAppliedInspectorDraft("moving a port")) return false;
-    return Boolean(runOperation({ type: "port/move", levelId, nodeId, portId, side, offset }));
+    return Boolean(runOperation({ type: "port/move", levelId, nodeId, portId, offset }));
   }, [requireAppliedInspectorDraft, runOperation]);
 
   const createConnection = useCallback((connection: {

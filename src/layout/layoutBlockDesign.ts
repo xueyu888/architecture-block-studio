@@ -99,13 +99,8 @@ function elkPortId(nodeId: string, portId: string): string {
   return `${nodeId}::${portId}`;
 }
 
-function elkSide(side: PortSide): "WEST" | "EAST" | "NORTH" | "SOUTH" {
-  return {
-    left: "WEST",
-    right: "EAST",
-    top: "NORTH",
-    bottom: "SOUTH",
-  }[side] as "WEST" | "EAST" | "NORTH" | "SOUTH";
+function elkSide(side: PortSide): "WEST" | "EAST" {
+  return side === "left" ? "WEST" : "EAST";
 }
 
 function sortedPorts(ports: BlockPort[]): BlockPort[] {
@@ -526,9 +521,9 @@ async function composeLevel(
           },
           dropBounds: {
             x: BLOCK_NODE_GEOMETRY.expandedBorderWidth,
-            y: BLOCK_NODE_GEOMETRY.identityHeight,
+            y: BLOCK_NODE_GEOMETRY.headerHeight,
             width: item.width - BLOCK_NODE_GEOMETRY.expandedBorderWidth * 2,
-            height: item.height - BLOCK_NODE_GEOMETRY.identityHeight - BLOCK_NODE_GEOMETRY.expandedBorderWidth,
+            height: item.height - BLOCK_NODE_GEOMETRY.headerHeight - BLOCK_NODE_GEOMETRY.expandedBorderWidth,
           },
         }
       : undefined;

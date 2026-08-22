@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "2.2",
+  "schemaVersion": "2.3",
   "id": "aio.agent-runtime.v1",
   "title": "AIO Agent Runtime",
   "summary": "AIO Session 公开协议由 Rust Agent Core 提供；Tool System 拥有 Tool 定义、最小快照、统一执行和 Workflow Tool 实现。",
@@ -388,7 +388,7 @@
           "owner": "交互与展示",
           "ports": [
             { "id": "session-command", "label": "session.command", "side": "right", "direction": "output", "dataType": "JSON-RPC", "offset": 0.3333333333333333 },
-            { "id": "session-notification", "label": "session.notification", "side": "right", "direction": "input", "dataType": "DTO stream", "offset": 0.6666666666666666 }
+            { "id": "session-notification", "label": "session.notification", "side": "left", "direction": "input", "dataType": "DTO stream", "offset": 0.6666666666666666 }
           ],
           "inspector": {
             "principle": "交互与展示",
@@ -420,14 +420,14 @@
             ]
           },
           "ports": [
-            { "id": "session-command", "label": "session.command", "side": "left", "direction": "input", "dataType": "JSON-RPC", "offset": 0.32 },
-            { "id": "session-notification", "label": "session.notification", "side": "left", "direction": "output", "dataType": "DTO stream", "offset": 0.56 },
-            { "id": "project-lifecycle", "label": "project.lifecycle", "side": "bottom", "direction": "input", "dataType": "Integration RPC", "offset": 0.42 },
-            { "id": "knowledge-lifecycle", "label": "knowledge.lifecycle", "side": "bottom", "direction": "input", "dataType": "Integration RPC", "offset": 0.7 },
-            { "id": "tool-catalog", "label": "tool.catalog", "side": "right", "direction": "output", "dataType": "Port", "offset": 0.16 },
-            { "id": "tool-snapshot", "label": "tool.snapshot", "side": "right", "direction": "input", "dataType": "DTO", "offset": 0.3 },
-            { "id": "tool-invoke", "label": "tool.invoke", "side": "right", "direction": "output", "dataType": "Port", "offset": 0.44 },
-            { "id": "tool-outcome", "label": "tool.outcome", "side": "right", "direction": "input", "dataType": "DTO", "offset": 0.58 }
+            { "id": "session-command", "label": "session.command", "side": "left", "direction": "input", "dataType": "JSON-RPC", "offset": 0.3333333333333333 },
+            { "id": "session-notification", "label": "session.notification", "side": "right", "direction": "output", "dataType": "DTO stream", "offset": 0.75 },
+            { "id": "project-lifecycle", "label": "project.lifecycle", "side": "left", "direction": "input", "dataType": "Integration RPC", "offset": 0.5 },
+            { "id": "knowledge-lifecycle", "label": "knowledge.lifecycle", "side": "left", "direction": "input", "dataType": "Integration RPC", "offset": 0.8333333333333334 },
+            { "id": "tool-catalog", "label": "tool.catalog", "side": "right", "direction": "output", "dataType": "Port", "offset": 0.25 },
+            { "id": "tool-snapshot", "label": "tool.snapshot", "side": "left", "direction": "input", "dataType": "DTO", "offset": 0.16666666666666666 },
+            { "id": "tool-invoke", "label": "tool.invoke", "side": "right", "direction": "output", "dataType": "Port", "offset": 0.5 },
+            { "id": "tool-outcome", "label": "tool.outcome", "side": "left", "direction": "input", "dataType": "DTO", "offset": 0.6666666666666666 }
           ],
           "inspector": {
             "principle": "会话事实与在线执行循环的唯一 Owner",
@@ -435,7 +435,7 @@
             "boundary": "不拥有 ToolCatalog、Provider 实现或 Project/Knowledge 业务事实。",
             "failure": "所有状态转换以持久证据和 execution fence 为准。"
           },
-          "layout": { "position": { "x": 450, "y": 205 }, "width": 340, "height": 285, "pinned": true }
+          "layout": { "position": { "x": 550, "y": 205 }, "width": 340, "height": 285, "pinned": true }
         },
         {
           "id": "tool-system",
@@ -457,12 +457,12 @@
             ]
           },
           "ports": [
-            { "id": "tool-catalog", "label": "tool.catalog", "side": "left", "direction": "input", "dataType": "Port", "offset": 0.16 },
-            { "id": "tool-snapshot", "label": "tool.snapshot", "side": "left", "direction": "output", "dataType": "DTO", "offset": 0.3 },
-            { "id": "tool-invoke", "label": "tool.invoke", "side": "left", "direction": "input", "dataType": "Port", "offset": 0.44 },
-            { "id": "tool-outcome", "label": "tool.outcome", "side": "left", "direction": "output", "dataType": "DTO", "offset": 0.58 },
-            { "id": "plugin-registration", "label": "plugin.registration", "side": "bottom", "direction": "input", "dataType": "ToolDefinition", "offset": 0.4 },
-            { "id": "platform-registration", "label": "platform.registration", "side": "bottom", "direction": "input", "dataType": "ToolDefinition", "offset": 0.7 }
+            { "id": "tool-catalog", "label": "tool.catalog", "side": "left", "direction": "input", "dataType": "Port", "offset": 0.2 },
+            { "id": "tool-snapshot", "label": "tool.snapshot", "side": "right", "direction": "output", "dataType": "DTO", "offset": 0.3333333333333333 },
+            { "id": "tool-invoke", "label": "tool.invoke", "side": "left", "direction": "input", "dataType": "Port", "offset": 0.6 },
+            { "id": "tool-outcome", "label": "tool.outcome", "side": "right", "direction": "output", "dataType": "DTO", "offset": 0.6666666666666666 },
+            { "id": "plugin-registration", "label": "plugin.registration", "side": "left", "direction": "input", "dataType": "ToolDefinition", "offset": 0.4 },
+            { "id": "platform-registration", "label": "platform.registration", "side": "left", "direction": "input", "dataType": "ToolDefinition", "offset": 0.8 }
           ],
           "inspector": {
             "principle": "Tool 定义和一次执行的唯一 Owner",
@@ -470,7 +470,7 @@
             "boundary": "不拥有 Thread 状态机，不决定模型采样，不直接修改 Core Ledger。",
             "failure": "注册、授权、执行和输出失败统一落入具名 Tool 协议结果。"
           },
-          "layout": { "position": { "x": 1010, "y": 205 }, "width": 340, "height": 285, "pinned": true }
+          "layout": { "position": { "x": 1060, "y": 205 }, "width": 340, "height": 285, "pinned": true }
         },
         {
           "id": "project",
@@ -481,7 +481,7 @@
           "summary": "项目业务事实 / Lifecycle caller",
           "owner": "Project Owner",
           "ports": [
-            { "id": "session-lifecycle", "label": "session.lifecycle", "side": "top", "direction": "output", "dataType": "Integration RPC", "offset": 0.5 }
+            { "id": "session-lifecycle", "label": "session.lifecycle", "side": "right", "direction": "output", "dataType": "Integration RPC", "offset": 0.5 }
           ],
           "inspector": {
             "principle": "项目业务事实 Owner",
@@ -500,7 +500,7 @@
           "summary": "知识库业务事实 / Lifecycle caller",
           "owner": "Knowledge Owner",
           "ports": [
-            { "id": "session-lifecycle", "label": "session.lifecycle", "side": "top", "direction": "output", "dataType": "Integration RPC", "offset": 0.5 }
+            { "id": "session-lifecycle", "label": "session.lifecycle", "side": "right", "direction": "output", "dataType": "Integration RPC", "offset": 0.5 }
           ],
           "inspector": {
             "principle": "知识库业务事实 Owner",
@@ -519,7 +519,7 @@
           "summary": "ToolDefinition / Provider implementation",
           "owner": "Plugin Artifact",
           "ports": [
-            { "id": "tool-registration", "label": "tool.registration", "side": "top", "direction": "output", "dataType": "ToolDefinition", "offset": 0.5 }
+            { "id": "tool-registration", "label": "tool.registration", "side": "right", "direction": "output", "dataType": "ToolDefinition", "offset": 0.5 }
           ],
           "inspector": {
             "principle": "Plugin 能力来源",
@@ -538,7 +538,7 @@
           "summary": "内置业务能力 / Provider implementation",
           "owner": "Platform Module",
           "ports": [
-            { "id": "tool-registration", "label": "tool.registration", "side": "top", "direction": "output", "dataType": "ToolDefinition", "offset": 0.5 }
+            { "id": "tool-registration", "label": "tool.registration", "side": "right", "direction": "output", "dataType": "ToolDefinition", "offset": 0.5 }
           ],
           "inspector": {
             "principle": "Platform 能力适配",
@@ -594,10 +594,10 @@
           "owner": "会话命令协调",
           "ports": [
             { "id": "command", "label": "command", "side": "left", "direction": "input", "dataType": "SessionCommand", "offset": 0.5 },
-            { "id": "lifecycle-write", "label": "lifecycle.write", "side": "bottom", "direction": "output", "dataType": "LedgerCommand", "offset": 0.5 },
+            { "id": "lifecycle-write", "label": "lifecycle.write", "side": "right", "direction": "output", "dataType": "LedgerCommand", "offset": 0.3333333333333333 },
             { "id": "submission", "label": "submission", "side": "right", "direction": "output", "dataType": "Submission", "offset": 0.25 },
-            { "id": "snapshot-request", "label": "snapshot.request", "side": "right", "direction": "output", "dataType": "ToolSnapshotRequest", "offset": 0.5 },
-            { "id": "snapshot", "label": "snapshot", "side": "right", "direction": "input", "dataType": "ToolRegistrySnapshot", "offset": 0.75 }
+            { "id": "snapshot-request", "label": "snapshot.request", "side": "right", "direction": "output", "dataType": "ToolSnapshotRequest", "offset": 0.6666666666666666 },
+            { "id": "snapshot", "label": "snapshot", "side": "left", "direction": "input", "dataType": "ToolRegistrySnapshot", "offset": 0.75 }
           ],
           "inspector": { "principle": "会话命令协调", "purpose": "协调公开命令、Ledger 事务和内部 Submission。", "boundary": "不替 Ledger 持久事实，不替 SessionTask 执行模型循环。", "failure": "冲突和持久化失败时不提交执行。" },
           "layout": { "position": { "x": 350, "y": 90 }, "width": 270, "height": 220, "pinned": true }
@@ -641,11 +641,11 @@
           "summary": "StepContext / model / tool loop",
           "owner": "在线执行循环",
           "ports": [
-            { "id": "running-task", "label": "running.task", "side": "left", "direction": "input", "dataType": "RunningTask", "offset": 0.5 },
-            { "id": "context-request", "label": "context.request", "side": "bottom", "direction": "output", "dataType": "ContextBuildRequest", "offset": 0.25 },
-            { "id": "context-snapshot", "label": "context.snapshot", "side": "bottom", "direction": "input", "dataType": "ThreadContextSnapshot", "offset": 0.5 },
+            { "id": "running-task", "label": "running.task", "side": "left", "direction": "input", "dataType": "RunningTask", "offset": 0.3333333333333333 },
+            { "id": "context-request", "label": "context.request", "side": "right", "direction": "output", "dataType": "ContextBuildRequest", "offset": 0.25 },
+            { "id": "context-snapshot", "label": "context.snapshot", "side": "left", "direction": "input", "dataType": "ThreadContextSnapshot", "offset": 0.6666666666666666 },
             { "id": "tool-call", "label": "tool.call", "side": "right", "direction": "output", "dataType": "ToolCall", "offset": 0.5 },
-            { "id": "event", "label": "event", "side": "bottom", "direction": "output", "dataType": "Event", "offset": 0.75 }
+            { "id": "event", "label": "event", "side": "right", "direction": "output", "dataType": "Event", "offset": 0.75 }
           ],
           "inspector": { "principle": "在线模型与 Tool 循环", "purpose": "执行一次 Turn 的模型采样、Tool 调用和结果回灌循环。", "boundary": "不拥有 ToolCatalog，不绕过 Ledger 发布事实。", "failure": "失败、取消和中断产生可恢复执行证据。" },
           "layout": { "position": { "x": 1320, "y": 70 }, "width": 290, "height": 210, "pinned": true }
@@ -659,9 +659,9 @@
           "summary": "ThreadContextSnapshot / compaction projection",
           "owner": "上下文派生",
           "ports": [
-            { "id": "request", "label": "request", "side": "top", "direction": "input", "dataType": "ContextBuildRequest", "offset": 0.3333333333333333 },
-            { "id": "snapshot", "label": "snapshot", "side": "top", "direction": "output", "dataType": "ThreadContextSnapshot", "offset": 0.6666666666666666 },
-            { "id": "history", "label": "history", "side": "bottom", "direction": "input", "dataType": "PersistedItems", "offset": 0.5 }
+            { "id": "request", "label": "request", "side": "left", "direction": "input", "dataType": "ContextBuildRequest", "offset": 0.3333333333333333 },
+            { "id": "snapshot", "label": "snapshot", "side": "right", "direction": "output", "dataType": "ThreadContextSnapshot", "offset": 0.6666666666666666 },
+            { "id": "history", "label": "history", "side": "left", "direction": "input", "dataType": "PersistedItems", "offset": 0.5 }
           ],
           "inspector": { "principle": "上下文派生", "purpose": "从 Core 持久事实构造模型上下文。", "boundary": "不成为历史事实源，不接受外部 CoreThreadSnapshot。", "failure": "只使用完整持久证据。" },
           "layout": { "position": { "x": 1000, "y": 410 }, "width": 270, "height": 180, "pinned": true }
@@ -675,9 +675,9 @@
           "summary": "model-visible specs / ToolCallRuntime",
           "owner": "Core Tool 选择与调度",
           "ports": [
-            { "id": "tool-call", "label": "tool.call", "side": "top", "direction": "input", "dataType": "ToolCall", "offset": 0.5 },
+            { "id": "tool-call", "label": "tool.call", "side": "left", "direction": "input", "dataType": "ToolCall", "offset": 0.5 },
             { "id": "tool-invocation", "label": "tool.invoke", "side": "right", "direction": "output", "dataType": "ToolInvocation", "offset": 0.3333333333333333 },
-            { "id": "tool-outcome", "label": "tool.outcome", "side": "right", "direction": "input", "dataType": "ToolOutcome", "offset": 0.6666666666666666 }
+            { "id": "tool-outcome", "label": "tool.outcome", "side": "left", "direction": "input", "dataType": "ToolOutcome", "offset": 0.6666666666666666 }
           ],
           "inspector": { "principle": "Core Tool 选择与调度", "purpose": "将模型 ToolCall 约束到本 Turn 的 Snapshot。", "boundary": "不拥有 ToolDefinition 和 Provider。", "failure": "快照外调用和非法参数产生具名失败。" },
           "layout": { "position": { "x": 1330, "y": 410 }, "width": 260, "height": 180, "pinned": true }
@@ -692,9 +692,9 @@
           "owner": "Core-to-Tool 边界",
           "ports": [
             { "id": "snapshot-request", "label": "snapshot.request", "side": "left", "direction": "input", "dataType": "ToolSnapshotRequest", "offset": 0.2 },
-            { "id": "snapshot", "label": "snapshot", "side": "left", "direction": "output", "dataType": "ToolRegistrySnapshot", "offset": 0.4 },
+            { "id": "snapshot", "label": "snapshot", "side": "right", "direction": "output", "dataType": "ToolRegistrySnapshot", "offset": 0.4 },
             { "id": "tool-invocation", "label": "tool.invoke", "side": "left", "direction": "input", "dataType": "ToolInvocation", "offset": 0.6 },
-            { "id": "tool-outcome", "label": "tool.outcome", "side": "left", "direction": "output", "dataType": "ToolOutcome", "offset": 0.8 }
+            { "id": "tool-outcome", "label": "tool.outcome", "side": "right", "direction": "output", "dataType": "ToolOutcome", "offset": 0.8 }
           ],
           "inspector": { "principle": "Core-to-Tool 协议边界", "purpose": "把 Core Tool 调用交给 Tool System。", "boundary": "只交换协议 DTO，不暴露双方内部对象。", "failure": "传输失败与 Tool 安全失败分开。" },
           "layout": { "position": { "x": 1680, "y": 390 }, "width": 250, "height": 220, "pinned": true }
@@ -708,10 +708,10 @@
           "summary": "Thread / Turn / Item / Event / Attempt / Fence",
           "owner": "唯一持久事实源",
           "ports": [
-            { "id": "lifecycle-write", "label": "lifecycle.write", "side": "top", "direction": "input", "dataType": "LedgerCommand", "offset": 0.25 },
-            { "id": "event", "label": "event", "side": "top", "direction": "input", "dataType": "Event", "offset": 0.5 },
-            { "id": "history", "label": "history", "side": "top", "direction": "output", "dataType": "PersistedItems", "offset": 0.75 },
-            { "id": "committed-event", "label": "committed.event", "side": "left", "direction": "output", "dataType": "CommittedEvent", "offset": 0.5 }
+            { "id": "lifecycle-write", "label": "lifecycle.write", "side": "left", "direction": "input", "dataType": "LedgerCommand", "offset": 0.25 },
+            { "id": "event", "label": "event", "side": "left", "direction": "input", "dataType": "Event", "offset": 0.5 },
+            { "id": "history", "label": "history", "side": "right", "direction": "output", "dataType": "PersistedItems", "offset": 0.75 },
+            { "id": "committed-event", "label": "committed.event", "side": "right", "direction": "output", "dataType": "CommittedEvent", "offset": 0.5 }
           ],
           "inspector": { "principle": "Thread/Turn/Item 唯一事实源", "purpose": "持久化 Thread、Turn、Item、Attempt 和执行证据。", "boundary": "Tool System 和 UI 不能直接写入内部 Store。", "failure": "原子事务失败不留下部分业务状态。" },
           "layout": { "position": { "x": 820, "y": 760 }, "width": 300, "height": 205, "pinned": true }
@@ -725,8 +725,8 @@
           "summary": "streamCursor / resume / replay",
           "owner": "可重建投影",
           "ports": [
-            { "id": "committed-event", "label": "committed.event", "side": "right", "direction": "input", "dataType": "CommittedEvent", "offset": 0.5 },
-            { "id": "notification", "label": "notification", "side": "left", "direction": "output", "dataType": "Notification DTO", "offset": 0.5 }
+            { "id": "committed-event", "label": "committed.event", "side": "left", "direction": "input", "dataType": "CommittedEvent", "offset": 0.5 },
+            { "id": "notification", "label": "notification", "side": "right", "direction": "output", "dataType": "Notification DTO", "offset": 0.5 }
           ],
           "inspector": { "principle": "持久事实的可重建投影", "purpose": "从已提交 Ledger 事实投影 UI Notification。", "boundary": "不是第二事实源，不接收 UI 回写。", "failure": "投影可从 Ledger 重建。" },
           "layout": { "position": { "x": 440, "y": 780 }, "width": 280, "height": 165, "pinned": true }
@@ -740,7 +740,7 @@
           "summary": "Notification DTO / WebSocket stream",
           "owner": "Core 输出边界",
           "ports": [
-            { "id": "notification", "label": "notification", "side": "right", "direction": "input", "dataType": "Notification DTO", "offset": 0.5 }
+            { "id": "notification", "label": "notification", "side": "left", "direction": "input", "dataType": "Notification DTO", "offset": 0.5 }
           ],
           "inspector": { "principle": "Core-to-UI 输出边界", "purpose": "向 UI 输出可续传 Notification DTO。", "boundary": "不输出 Core raw events。", "failure": "断线后通过 cursor/resume 恢复。" },
           "layout": { "position": { "x": 80, "y": 790 }, "width": 240, "height": 145, "pinned": true }
@@ -814,7 +814,7 @@
             { "id": "catalog-query", "label": "catalog.query", "side": "left", "direction": "input", "dataType": "CatalogQuery", "offset": 0.3333333333333333 },
             { "id": "snapshot-request", "label": "snapshot.request", "side": "left", "direction": "input", "dataType": "ToolSnapshotRequest", "offset": 0.6666666666666666 },
             { "id": "resolved-definitions", "label": "resolved.defs", "side": "right", "direction": "output", "dataType": "ResolvedToolDefinition[]", "offset": 0.5 },
-            { "id": "definition-write", "label": "definition.write", "side": "bottom", "direction": "input", "dataType": "ToolDefinition", "offset": 0.5 }
+            { "id": "definition-write", "label": "definition.write", "side": "left", "direction": "input", "dataType": "ToolDefinition", "offset": 0.5 }
           ],
           "inspector": { "principle": "Tool 定义唯一事实源", "purpose": "拥有所有已登记、带版本的 ToolDefinition。", "boundary": "不持有 Core ToolRouter 或 Turn 状态。", "failure": "非法定义不能进入 Catalog。" },
           "layout": { "position": { "x": 680, "y": 70 }, "width": 270, "height": 185, "pinned": true }
@@ -872,9 +872,9 @@
           "owner": "唯一执行入口",
           "ports": [
             { "id": "invocation", "label": "invocation", "side": "left", "direction": "input", "dataType": "ToolInvocation", "offset": 0.3333333333333333 },
-            { "id": "child-invocation", "label": "child.invoke", "side": "bottom", "direction": "input", "dataType": "ToolInvocation", "offset": 0.5 },
+            { "id": "child-invocation", "label": "child.invoke", "side": "left", "direction": "input", "dataType": "ToolInvocation", "offset": 0.5 },
             { "id": "validated-invocation", "label": "validated", "side": "right", "direction": "output", "dataType": "ValidatedInvocation", "offset": 0.5 },
-            { "id": "outcome", "label": "outcome", "side": "left", "direction": "output", "dataType": "ToolOutcome", "offset": 0.6666666666666666 }
+            { "id": "outcome", "label": "outcome", "side": "right", "direction": "output", "dataType": "ToolOutcome", "offset": 0.6666666666666666 }
           ],
           "inspector": { "principle": "唯一 Tool 执行入口", "purpose": "完成每次 Tool 调用的统一前置校验。", "boundary": "任何 Provider 和 Workflow 子调用都不能绕过。", "failure": "校验失败直接返回结构化 Outcome。" },
           "layout": { "position": { "x": 350, "y": 390 }, "width": 270, "height": 215, "pinned": true }
@@ -904,8 +904,8 @@
           "owner": "Provider 路由",
           "ports": [
             { "id": "provider-route", "label": "provider.route", "side": "left", "direction": "input", "dataType": "ProviderInvocation", "offset": 0.5 },
-            { "id": "provider-invocation", "label": "provider.invoke", "side": "right", "direction": "output", "dataType": "ProviderInvocation", "offset": 0.5 },
-            { "id": "workflow-route", "label": "workflow.route", "side": "bottom", "direction": "output", "dataType": "WorkflowInvocation", "offset": 0.5 }
+            { "id": "provider-invocation", "label": "provider.invoke", "side": "right", "direction": "output", "dataType": "ProviderInvocation", "offset": 0.3333333333333333 },
+            { "id": "workflow-route", "label": "workflow.route", "side": "right", "direction": "output", "dataType": "WorkflowInvocation", "offset": 0.6666666666666666 }
           ],
           "inspector": { "principle": "Provider 路由", "purpose": "解析具体 Provider 或 Workflow 实现。", "boundary": "Provider 不能反向取得 Core。", "failure": "Provider 不可用时返回具名失败。" },
           "layout": { "position": { "x": 1030, "y": 410 }, "width": 260, "height": 185, "pinned": true }
@@ -933,8 +933,8 @@
           "summary": "WorkflowDefinition / linear step schedule",
           "owner": "Workflow Tool 实现",
           "ports": [
-            { "id": "workflow-route", "label": "workflow.route", "side": "top", "direction": "input", "dataType": "WorkflowInvocation", "offset": 0.5 },
-            { "id": "child-invocation", "label": "child.invoke", "side": "left", "direction": "output", "dataType": "ToolInvocation", "offset": 0.5 }
+            { "id": "workflow-route", "label": "workflow.route", "side": "left", "direction": "input", "dataType": "WorkflowInvocation", "offset": 0.5 },
+            { "id": "child-invocation", "label": "child.invoke", "side": "right", "direction": "output", "dataType": "ToolInvocation", "offset": 0.5 }
           ],
           "inspector": { "principle": "Workflow 是 Tool 实现", "purpose": "执行 implementationKind=workflow 的 Tool。", "boundary": "不是独立模块，不建立第二套 Agent loop。", "failure": "Step 结果汇总成父 ToolOutcome。" },
           "layout": { "position": { "x": 1030, "y": 760 }, "width": 280, "height": 175, "pinned": true }
@@ -963,7 +963,7 @@
           "owner": "定义写入口",
           "ports": [
             { "id": "tool-definition", "label": "tool.definition", "side": "left", "direction": "input", "dataType": "ToolDefinition", "offset": 0.5 },
-            { "id": "definition-write", "label": "definition.write", "side": "top", "direction": "output", "dataType": "ToolDefinition", "offset": 0.5 }
+            { "id": "definition-write", "label": "definition.write", "side": "right", "direction": "output", "dataType": "ToolDefinition", "offset": 0.5 }
           ],
           "inspector": { "principle": "Tool 定义唯一写入口", "purpose": "校验并登记 Plugin/Platform ToolDefinition。", "boundary": "不向 Core 动态注册 Tool。", "failure": "定义不完整时拒绝激活。" },
           "layout": { "position": { "x": 700, "y": 760 }, "width": 260, "height": 175, "pinned": true }
@@ -977,7 +977,7 @@
           "summary": "ToolOutcome / safeError / sourceRefs",
           "owner": "Tool 输出",
           "ports": [
-            { "id": "outcome", "label": "outcome", "side": "right", "direction": "input", "dataType": "ToolOutcome", "offset": 0.5 }
+            { "id": "outcome", "label": "outcome", "side": "left", "direction": "input", "dataType": "ToolOutcome", "offset": 0.5 }
           ],
           "inspector": { "principle": "Tool-to-Core 结果边界", "purpose": "把验证后的 ToolOutcome 返回 Core。", "boundary": "不改变 Turn 状态。", "failure": "内部错误不泄漏到稳定协议。" },
           "layout": { "position": { "x": 40, "y": 780 }, "width": 240, "height": 145, "pinned": true }

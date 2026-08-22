@@ -306,7 +306,6 @@ interface CanvasInnerProps {
     levelId: string,
     nodeId: string,
     portId: string,
-    side: PortPlacement["side"],
     offset: number,
   ) => boolean;
   onCreateConnection: (connection: {
@@ -1171,7 +1170,7 @@ const CanvasInner = memo(function CanvasInner({
   commitPortMoveCallbackRef.current = (flowNodeId, levelId, nodeId, portId, placement) => {
     const active = portMovePreviewRef.current;
     if (!active || active.flowNodeId !== flowNodeId || active.portId !== portId) return false;
-    const accepted = movePortRef.current(levelId, nodeId, portId, placement.side, placement.offset);
+    const accepted = movePortRef.current(levelId, nodeId, portId, placement.offset);
     portMovePreviewRef.current = undefined;
     const root = store.getState().domNode;
     if (root) {
@@ -1184,7 +1183,7 @@ const CanvasInner = memo(function CanvasInner({
         return baseline ? { ...baseline, selected: node.selected } : node;
       }));
     }
-    else setCanvasAnnouncement(`Moved port ${portId} to the ${placement.side} edge.`);
+    else setCanvasAnnouncement(`Moved port ${portId} along the ${placement.side} edge.`);
     return accepted;
   };
   cancelPortMoveCallbackRef.current = () => {

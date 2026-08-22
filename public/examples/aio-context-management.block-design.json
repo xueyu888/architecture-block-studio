@@ -1,0 +1,1341 @@
+{
+  "schemaVersion": "2.3",
+  "id": "aio.context-management.v2",
+  "title": "AIO Context Management",
+  "summary": "ContextManager 是 Canonical Context 的唯一逻辑写入者；Session 配置、Core 指令目录和持久化 Store 通过独立端口接入；生命周期与作用域正交表达。",
+  "entryLevelId": "context-management-boundary",
+  "sourceRef": {
+    "label": "docs/agent-runtime/aio-context-management-design.md",
+    "href": "https://github.com/xueyu888/aio/blob/session-xy/docs/agent-runtime/aio-context-management-design.md"
+  },
+  "interfaceDefinitions": {
+    "context.configuration.configure": {
+      "kind": "rpc",
+      "title": "thread/context/configure",
+      "protocol": "Core Wire",
+      "owner": "ContextConfigurationRegistry",
+      "principle": "Session 通过独立接口同步用户、项目与 Personality 选择的版本化快照。",
+      "purpose": "按 threadId 和 configurationRevision 接收 ThreadContextConfigurationSnapshot。",
+      "boundary": "不随 Submission 重传，不把 Registry 变成用户或项目配置的权威源。",
+      "failure": "同 revision 不同 digest 冲突；非法作用域或缺失 digest 时拒绝。",
+      "code": "{\n  \"threadId\": \"thread_42\",\n  \"snapshot\": {\n    \"configurationRevision\": \"cfg_18\",\n    \"digest\": \"sha256:...\",\n    \"instructionSnapshots\": [],\n    \"personalitySelection\": null\n  }\n}",
+      "codeLanguage": "jsonc",
+      "attributes": {
+        "lifecycle": "Thread configuration revision",
+        "scope": "User / Project / Thread"
+      }
+    },
+    "context.configuration.resolve": {
+      "kind": "port",
+      "title": "ContextConfigurationRegistry.resolve",
+      "protocol": "Core internal",
+      "owner": "ContextConfigurationRegistry",
+      "principle": "ContextManager 只解析 TurnContextInput 精确引用的配置版本。",
+      "purpose": "按 threadId 和 configurationRevision 读取不可变配置快照。",
+      "boundary": "不能用最新版本替换 Submission 指定的版本。",
+      "failure": "引用版本不存在时返回 contextConfigurationUnavailable。",
+      "code": "resolve(thread_id, configuration_revision) -> ThreadContextConfigurationSnapshot",
+      "codeLanguage": "text",
+      "attributes": {}
+    },
+    "context.manager.api": {
+      "kind": "port",
+      "title": "ContextManager Public API",
+      "protocol": "Core internal",
+      "owner": "ContextManager",
+      "principle": "所有 Canonical 语义变更和 Prompt 构建都只能通过 ContextManager 公开方法。",
+      "purpose": "向 Runtime 暴露创建、恢复、安装、提交、压缩、构建、结束和只读查询能力。",
+      "boundary": "调用方不能取得内部可变 Region、ContextCommit 或 Store 实现。",
+      "failure": "配置、Catalog、校验或 Store 失败时不发布新 revision。",
+      "code": "ContextManager::create(thread_id)\nContextManager::restore(thread_id)\nContextManager::fork(source_thread_id, source_revision, target_thread_id)\nmanager.install(turn_context_input)\nmanager.commit_items(complete_items)\nmanager.compact(request)\nmanager.build_prompt(capability)\nmanager.close(turn_id)\nmanager.snapshot()",
+      "codeLanguage": "text",
+      "attributes": {
+        "rust-shape": "concrete struct with private fields",
+        "writer": "single logical writer"
+      }
+    },
+    "context.catalog.request": {
+      "kind": "port",
+      "title": "CoreInstructionCatalogPort.snapshot",
+      "protocol": "Core internal",
+      "owner": "CoreInstructionCatalog",
+      "principle": "ContextManager 通过稳定 Port 请求 Core 自有指令定义。",
+      "purpose": "按模型选择与 Personality ID 取得版本化指令快照。",
+      "boundary": "ContextManager 不读取配置文件路径或目录结构。",
+      "failure": "请求的模型或 Personality 不存在时明确失败。",
+      "code": "pub trait CoreInstructionCatalogPort {\n    fn snapshot(&self, request: CatalogSnapshotRequest)\n        -> Result<Vec<InstructionSnapshot>, CatalogError>;\n}",
+      "codeLanguage": "rust",
+      "attributes": {
+        "dispatch": "dynamic adapter is allowed"
+      }
+    },
+    "context.store.load": {
+      "kind": "port",
+      "title": "CoreContextStore.load",
+      "protocol": "Context persistence port",
+      "owner": "CoreContextStore",
+      "principle": "恢复读取与追加写入是两种独立语义。",
+      "purpose": "按 threadId 返回完整 PersistedContextHistory。",
+      "boundary": "不经过配置 Registry、Collector 或 install 输入。",
+      "failure": "revision 链断裂或记录损坏时恢复失败。",
+      "code": "load(thread_id) -> PersistedContextHistory",
+      "codeLanguage": "text",
+      "attributes": {}
+    },
+    "context.store.append": {
+      "kind": "port",
+      "title": "CoreContextStore.append",
+      "protocol": "Context persistence port",
+      "owner": "CoreContextStore",
+      "principle": "Store 按 expectedRevision 原子追加 ContextCommit。",
+      "purpose": "在 ContextManager 发布内存状态前持久化下一 revision。",
+      "boundary": "Store 不解释 mutation 的业务合法性，也不生成 Prompt。",
+      "failure": "revision 冲突、写入或 flush 失败时整体拒绝。",
+      "code": "append(thread_id, expected_revision, commit) -> ContextAppendReceipt",
+      "codeLanguage": "text",
+      "attributes": {}
+    },
+    "context.prompt.output": {
+      "kind": "dto",
+      "title": "Prompt",
+      "protocol": "Model input",
+      "owner": "ContextManager.build_prompt",
+      "principle": "Prompt 是可重建的 Sampling 派生物。",
+      "purpose": "承载模型本次真正收到的 instructions、input 和 tools。",
+      "boundary": "不持久化，不拥有 modelSelection、ReasoningEffort 或 ExecutionLimits。",
+      "failure": "构建失败时不得开始 Sampling。",
+      "code": "type Prompt = {\n  instructions: ProviderInstruction[]\n  input: ProviderInputItem[]\n  tools: ProviderToolDefinition[]\n}",
+      "codeLanguage": "typescript",
+      "attributes": {
+        "lifecycle": "Sampling",
+        "scope": "Turn",
+        "canonical": "false"
+      }
+    }
+  },
+  "levels": [
+    {
+      "id": "context-management-boundary",
+      "title": "Context Management Boundary",
+      "description": "只展开 Context Management；Session 与 Runtime 是调用端，Catalog 与 Store 通过稳定端口接入。",
+      "nodes": [
+        {
+          "id": "session-configuration-source",
+          "title": "Session Configuration Source",
+          "kind": "external-port",
+          "tone": "neutral",
+          "summary": "用户 / 项目配置的权威来源",
+          "ports": [
+            {
+              "id": "configure",
+              "label": "configure",
+              "side": "right",
+              "direction": "output",
+              "dataType": "ThreadContextConfigurationSnapshot",
+              "required": true,
+              "offset": 0.35
+            }
+          ],
+          "inspector": {
+            "principle": "决定用户长期指令、项目指令和 Personality 选择。",
+            "purpose": "在首次使用或配置变化时同步版本化快照。",
+            "boundary": "不写 Canonical Context，不决定 Core 自有指令。",
+            "failure": "配置未确认前不提交引用该 revision 的 Turn。"
+          },
+          "layout": {
+            "position": {
+              "x": 80,
+              "y": 50
+            },
+            "width": 270,
+            "height": 150,
+            "pinned": true
+          }
+        },
+        {
+          "id": "runtime-context-client",
+          "title": "Runtime Context Client",
+          "kind": "external-port",
+          "tone": "neutral",
+          "summary": "只调用公开 API，不拥有 Context",
+          "ports": [
+            {
+              "id": "manager-api",
+              "label": "ContextManager API",
+              "side": "right",
+              "direction": "output",
+              "dataType": "ContextManagerApi",
+              "required": true,
+              "offset": 0.5
+            }
+          ],
+          "inspector": {
+            "principle": "驱动 Turn，但不保存第二份 Canonical Context。",
+            "purpose": "调用 create、restore、fork、install、commitItems、compact、build_prompt、close 和 snapshot。",
+            "boundary": "不取得 ContextCommit、Region 可变引用或 Store 实现。",
+            "failure": "任一 Context 操作失败时停止相应阶段。"
+          },
+          "layout": {
+            "position": {
+              "x": 80,
+              "y": 350
+            },
+            "width": 270,
+            "height": 150,
+            "pinned": true
+          }
+        },
+        {
+          "id": "context-configuration-registry",
+          "title": "ContextConfigurationRegistry",
+          "kind": "context-config",
+          "tone": "core",
+          "summary": "按 Thread + revision 接收和解析配置",
+          "ports": [
+            {
+              "id": "configure",
+              "label": "configure",
+              "side": "left",
+              "direction": "input",
+              "dataType": "ThreadContextConfigurationSnapshot",
+              "required": true,
+              "offset": 0.3333333333333333
+            },
+            {
+              "id": "resolve",
+              "label": "resolve",
+              "side": "left",
+              "direction": "input",
+              "dataType": "ConfigurationResolveRequest",
+              "required": true,
+              "offset": 0.6666666666666666
+            }
+          ],
+          "inspector": {
+            "principle": "保存 Session 配置快照的 Core 接收副本。",
+            "purpose": "为 install 精确解析 contextConfigurationRevision。",
+            "boundary": "不是配置权威源，不进入 Canonical Context。",
+            "failure": "同 revision 不同 digest 冲突；缺失 revision 明确失败。"
+          },
+          "layout": {
+            "position": {
+              "x": 980,
+              "y": 50
+            },
+            "width": 320,
+            "height": 190,
+            "pinned": true
+          }
+        },
+        {
+          "id": "core-instruction-catalog",
+          "title": "CoreInstructionCatalog",
+          "kind": "catalog-port",
+          "tone": "core",
+          "summary": "Core-owned 指令定义",
+          "ports": [
+            {
+              "id": "request",
+              "label": "snapshot.request",
+              "side": "left",
+              "direction": "input",
+              "dataType": "CatalogSnapshotRequest",
+              "required": true,
+              "offset": 0.5
+            }
+          ],
+          "inspector": {
+            "principle": "唯一解析模型基础、平台和 Personality 定义。",
+            "purpose": "通过 Port 返回版本化 System 作用域 snapshots。",
+            "boundary": "文件、数据库或发布包只是 Adapter；Catalog 不拥有 Session 配置。",
+            "failure": "缺失定义或 digest 异常时 install 失败。"
+          },
+          "layout": {
+            "position": {
+              "x": 980,
+              "y": 290
+            },
+            "width": 290,
+            "height": 160,
+            "pinned": true
+          }
+        },
+        {
+          "id": "context-manager",
+          "title": "ContextManager",
+          "kind": "context-owner",
+          "tone": "core",
+          "summary": "Canonical 唯一写入者 · 进入可展开",
+          "hierarchy": {
+            "childLevelId": "context-manager-internals",
+            "portBindings": [
+              {
+                "parentPortId": "public-api",
+                "childEndpoint": {
+                  "nodeId": "context-manager-core",
+                  "portId": "public-api"
+                }
+              },
+              {
+                "parentPortId": "config-resolve",
+                "childEndpoint": {
+                  "nodeId": "context-manager-core",
+                  "portId": "config-resolve"
+                }
+              },
+              {
+                "parentPortId": "catalog-request",
+                "childEndpoint": {
+                  "nodeId": "context-manager-core",
+                  "portId": "catalog-request"
+                }
+              },
+              {
+                "parentPortId": "store-load",
+                "childEndpoint": {
+                  "nodeId": "context-manager-core",
+                  "portId": "store-load"
+                }
+              },
+              {
+                "parentPortId": "store-append",
+                "childEndpoint": {
+                  "nodeId": "context-manager-core",
+                  "portId": "store-append"
+                }
+              },
+              {
+                "parentPortId": "prompt",
+                "childEndpoint": {
+                  "nodeId": "prompt",
+                  "portId": "prompt"
+                }
+              }
+            ]
+          },
+          "ports": [
+            {
+              "id": "public-api",
+              "label": "ContextManager API",
+              "side": "left",
+              "direction": "input",
+              "dataType": "ContextManagerApi",
+              "required": true,
+              "offset": 0.5
+            },
+            {
+              "id": "config-resolve",
+              "label": "configuration.resolve",
+              "side": "right",
+              "direction": "output",
+              "dataType": "ConfigurationResolveRequest",
+              "required": true,
+              "offset": 0.15
+            },
+            {
+              "id": "catalog-request",
+              "label": "catalog.request",
+              "side": "right",
+              "direction": "output",
+              "dataType": "CatalogSnapshotRequest",
+              "required": true,
+              "offset": 0.325
+            },
+            {
+              "id": "store-load",
+              "label": "store.load",
+              "side": "right",
+              "direction": "output",
+              "dataType": "ContextLoadRequest",
+              "required": true,
+              "offset": 0.5
+            },
+            {
+              "id": "store-append",
+              "label": "store.append",
+              "side": "right",
+              "direction": "output",
+              "dataType": "ContextCommit",
+              "required": true,
+              "offset": 0.675
+            },
+            {
+              "id": "prompt",
+              "label": "Prompt",
+              "side": "right",
+              "direction": "output",
+              "dataType": "Prompt",
+              "required": true,
+              "offset": 0.85
+            }
+          ],
+          "inspector": {
+            "principle": "拥有 Canonical Context 的合法变换与发布决定。",
+            "purpose": "安装 Turn、提交完整 Item、压缩、构建 Prompt、结束 Turn 和提供只读快照。",
+            "boundary": "不执行模型或 Tool，不读取 Session 配置文件，不解释 Store 物理实现。",
+            "failure": "Store 成功前不 publish；依赖失败时保持旧 revision。"
+          },
+          "layout": {
+            "position": {
+              "x": 460,
+              "y": 250
+            },
+            "width": 400,
+            "height": 360,
+            "pinned": true
+          }
+        },
+        {
+          "id": "core-context-store",
+          "title": "CoreContextStore",
+          "kind": "persistence-port",
+          "tone": "core",
+          "summary": "唯一恢复来源 · 不解释业务 mutation",
+          "ports": [
+            {
+              "id": "load",
+              "label": "load",
+              "side": "left",
+              "direction": "input",
+              "dataType": "ContextLoadRequest",
+              "required": true,
+              "offset": 0.3333333333333333
+            },
+            {
+              "id": "append",
+              "label": "append",
+              "side": "left",
+              "direction": "input",
+              "dataType": "ContextCommit",
+              "required": true,
+              "offset": 0.6666666666666666
+            }
+          ],
+          "inspector": {
+            "principle": "持久化和返回 ContextCommit revision 链。",
+            "purpose": "为 restore 提供历史，为 mutation 提供原子 append。",
+            "boundary": "load 与 append 返回不同 DTO；不决定业务变化是否合法。",
+            "failure": "冲突、损坏或写入失败都显式返回错误。"
+          },
+          "layout": {
+            "position": {
+              "x": 980,
+              "y": 470
+            },
+            "width": 310,
+            "height": 220,
+            "pinned": true
+          }
+        },
+        {
+          "id": "sampling-prompt",
+          "title": "Prompt",
+          "kind": "derived-resource",
+          "tone": "neutral",
+          "summary": "Derived · Sampling 生命周期",
+          "ports": [
+            {
+              "id": "prompt",
+              "label": "Prompt",
+              "side": "left",
+              "direction": "input",
+              "dataType": "Prompt",
+              "required": true,
+              "offset": 0.5
+            }
+          ],
+          "inspector": {
+            "principle": "表示一次 Sampling 实际交给模型的派生输入。",
+            "purpose": "承载 instructions、input 和 tools。",
+            "boundary": "不持久化，不反向修改 Canonical Context。",
+            "failure": "构建失败时 Sampling 不开始。",
+            "attributes": {
+              "lifetime": "Sampling",
+              "scope": "Turn"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 980,
+              "y": 760
+            },
+            "width": 250,
+            "height": 130,
+            "pinned": true
+          }
+        }
+      ],
+      "connections": [
+        {
+          "id": "session-configures-registry",
+          "interfaceId": "context.configuration.configure",
+          "label": "独立配置同步",
+          "source": {
+            "nodeId": "session-configuration-source",
+            "portId": "configure"
+          },
+          "target": {
+            "nodeId": "context-configuration-registry",
+            "portId": "configure"
+          }
+        },
+        {
+          "id": "runtime-calls-context-manager",
+          "interfaceId": "context.manager.api",
+          "label": "公开方法",
+          "source": {
+            "nodeId": "runtime-context-client",
+            "portId": "manager-api"
+          },
+          "target": {
+            "nodeId": "context-manager",
+            "portId": "public-api"
+          }
+        },
+        {
+          "id": "manager-resolves-configuration",
+          "interfaceId": "context.configuration.resolve",
+          "label": "精确解析 revision",
+          "source": {
+            "nodeId": "context-manager",
+            "portId": "config-resolve"
+          },
+          "target": {
+            "nodeId": "context-configuration-registry",
+            "portId": "resolve"
+          }
+        },
+        {
+          "id": "manager-requests-core-instructions",
+          "interfaceId": "context.catalog.request",
+          "label": "请求 Core-owned 指令",
+          "source": {
+            "nodeId": "context-manager",
+            "portId": "catalog-request"
+          },
+          "target": {
+            "nodeId": "core-instruction-catalog",
+            "portId": "request"
+          }
+        },
+        {
+          "id": "manager-loads-store",
+          "interfaceId": "context.store.load",
+          "label": "restore/load",
+          "source": {
+            "nodeId": "context-manager",
+            "portId": "store-load"
+          },
+          "target": {
+            "nodeId": "core-context-store",
+            "portId": "load"
+          }
+        },
+        {
+          "id": "manager-appends-store",
+          "interfaceId": "context.store.append",
+          "label": "expectedRevision + commit",
+          "source": {
+            "nodeId": "context-manager",
+            "portId": "store-append"
+          },
+          "target": {
+            "nodeId": "core-context-store",
+            "portId": "append"
+          }
+        },
+        {
+          "id": "manager-builds-prompt",
+          "interfaceId": "context.prompt.output",
+          "label": "Derived / Sampling",
+          "source": {
+            "nodeId": "context-manager",
+            "portId": "prompt"
+          },
+          "target": {
+            "nodeId": "sampling-prompt",
+            "portId": "prompt"
+          }
+        }
+      ],
+      "layout": {
+        "direction": "RIGHT",
+        "spacing": 44,
+        "layerSpacing": 96
+      }
+    },
+    {
+      "id": "context-manager-internals",
+      "title": "ContextManager Internals",
+      "description": "具体 ContextManager 通过私有状态实现公开方法；外部依赖保持 Port，Prompt 保持派生。",
+      "parentLevelId": "context-management-boundary",
+      "nodes": [
+        {
+          "id": "context-manager-core",
+          "title": "ContextManager Core",
+          "kind": "domain-owner",
+          "tone": "core",
+          "summary": "具体 struct · 私有字段 · 唯一 writer",
+          "ports": [
+            {
+              "id": "public-api",
+              "label": "ContextManager API",
+              "side": "left",
+              "direction": "input",
+              "dataType": "ContextManagerApi",
+              "required": true,
+              "offset": 0.5
+            },
+            {
+              "id": "config-resolve",
+              "label": "configuration.resolve",
+              "side": "right",
+              "direction": "output",
+              "dataType": "ConfigurationResolveRequest",
+              "required": true,
+              "offset": 0.4
+            },
+            {
+              "id": "catalog-request",
+              "label": "catalog.request",
+              "side": "right",
+              "direction": "output",
+              "dataType": "CatalogSnapshotRequest",
+              "required": true,
+              "offset": 0.6
+            },
+            {
+              "id": "store-load",
+              "label": "store.load",
+              "side": "right",
+              "direction": "output",
+              "dataType": "ContextLoadRequest",
+              "required": true,
+              "offset": 0.2
+            },
+            {
+              "id": "store-append",
+              "label": "store.append",
+              "side": "right",
+              "direction": "output",
+              "dataType": "ContextCommit",
+              "required": true,
+              "offset": 0.8
+            }
+          ],
+          "inspector": {
+            "principle": "决定 Canonical mutation 是否合法以及何时发布 revision。",
+            "purpose": "执行 install、commitItems、compact、build_prompt、close 和 snapshot。",
+            "boundary": "不是 trait object；内部状态不通过公开字段泄漏。",
+            "failure": "prepare 或 Store 失败时维持当前 revision。",
+            "code": "pub struct ContextManager {\n    state: CanonicalContext,\n    store: Arc<dyn CoreContextStore>,\n    catalog: Arc<dyn CoreInstructionCatalogPort>,\n}\n\n// Public methods are implemented on this concrete type.",
+            "codeLanguage": "rust",
+            "attributes": {
+              "dispatch": "concrete type; dependencies may use dyn Trait"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 40,
+              "y": 50
+            },
+            "width": 390,
+            "height": 340,
+            "pinned": true
+          }
+        },
+        {
+          "id": "canonical-context",
+          "title": "Canonical Context",
+          "kind": "canonical-state",
+          "tone": "core",
+          "summary": "持久化 · 可恢复 · 进入可展开",
+          "hierarchy": {
+            "childLevelId": "canonical-context-regions",
+            "portBindings": []
+          },
+          "ports": [],
+          "inspector": {
+            "principle": "保存 Thread 下一次运行必须继续使用的规范事实。",
+            "purpose": "承载 Header、Thread Region 与 Turn Region。",
+            "boundary": "Prompt、缓存和 Session 配置接收副本不属于 Canonical。",
+            "failure": "revision 链不完整时不能恢复为可运行状态。"
+          },
+          "layout": {
+            "position": {
+              "x": 520,
+              "y": 50
+            },
+            "width": 320,
+            "height": 170,
+            "pinned": true
+          }
+        },
+        {
+          "id": "prompt",
+          "title": "Prompt",
+          "kind": "derived-state",
+          "tone": "neutral",
+          "summary": "Sampling 派生 · 用后即弃",
+          "ports": [
+            {
+              "id": "prompt",
+              "label": "Prompt",
+              "side": "right",
+              "direction": "output",
+              "dataType": "Prompt",
+              "required": true,
+              "offset": 0.5
+            }
+          ],
+          "inspector": {
+            "principle": "只表示当前 Sampling 的模型输入。",
+            "purpose": "由确定 revision 组合 instructions、input 与 tools。",
+            "boundary": "不是第五个 Canonical Region，不推进 revision。",
+            "failure": "预算或资源读取失败时不输出半成品。",
+            "code": "instructions[]\ninput[]\ntools[]",
+            "codeLanguage": "text",
+            "attributes": {
+              "lifetime": "Sampling",
+              "scope": "Turn"
+            }
+          },
+          "layout": {
+            "position": {
+              "x": 545,
+              "y": 300
+            },
+            "width": 270,
+            "height": 170,
+            "pinned": true
+          }
+        }
+      ],
+      "connections": [],
+      "layout": {
+        "direction": "DOWN",
+        "spacing": 48,
+        "layerSpacing": 100
+      }
+    },
+    {
+      "id": "canonical-context-regions",
+      "title": "Canonical Context Regions",
+      "description": "生命周期决定驻留时间，作用域决定事实对谁或哪里生效；两者通过属性正交组合。",
+      "parentLevelId": "context-manager-internals",
+      "nodes": [
+        {
+          "id": "canonical-context-root",
+          "title": "Canonical Revision",
+          "kind": "canonical-root",
+          "tone": "core",
+          "summary": "一个 revision 展开为五个区域",
+          "ports": [],
+          "inspector": {
+            "principle": "一个 contextRevision 同时标识完整 Canonical 状态。",
+            "purpose": "作为五个区域的共同版本边界。",
+            "boundary": "Header 是版本元数据；Region 是业务资源。",
+            "failure": "任一区域与 revision 不一致时整个快照无效。"
+          },
+          "layout": {
+            "width": 350,
+            "height": 220,
+            "pinned": false
+          }
+        },
+        {
+          "id": "canonical-header",
+          "title": "Canonical Context Header",
+          "kind": "canonical-metadata",
+          "tone": "core",
+          "summary": "LIFETIME THREAD · SCOPE THREAD",
+          "ports": [],
+          "inspector": {
+            "principle": "只保存 Thread 标识和 Canonical revision 元数据。",
+            "purpose": "支撑并发保护、恢复和确定 revision 的 Prompt 构建。",
+            "boundary": "不是业务 Region，不保存资源内容。",
+            "failure": "threadId 或 revision 非法时 Context 不可用。",
+            "code": "threadId\ncontextRevision",
+            "codeLanguage": "text",
+            "attributes": {
+              "lifetime": "Thread",
+              "scope": "Thread"
+            }
+          },
+          "layout": {
+            "width": 260,
+            "height": 150,
+            "pinned": false
+          }
+        },
+        {
+          "id": "conversation-region",
+          "title": "ConversationRegion",
+          "kind": "canonical-region",
+          "tone": "core",
+          "summary": "LIFETIME THREAD · SCOPE THREAD · 进入可展开",
+          "hierarchy": {
+            "childLevelId": "conversation-region-items",
+            "portBindings": []
+          },
+          "ports": [],
+          "inspector": {
+            "principle": "保存完整、可恢复的模型可见语义 Item。",
+            "purpose": "延续用户、助手、Tool 与 Compaction 历史。",
+            "boundary": "stream delta、半截参数和 Provider envelope 不进入。",
+            "failure": "不完整 Item 或 ToolCall/ToolResult 失配时拒绝。",
+            "attributes": {
+              "lifetime": "Thread",
+              "scope": "Thread"
+            }
+          },
+          "layout": {
+            "width": 300,
+            "height": 170,
+            "pinned": false
+          }
+        },
+        {
+          "id": "resource-region",
+          "title": "ResourceRegion",
+          "kind": "canonical-region",
+          "tone": "core",
+          "summary": "LIFETIME THREAD · SCOPE RESOURCE REF · 进入可展开",
+          "hierarchy": {
+            "childLevelId": "resource-region-items",
+            "portBindings": []
+          },
+          "ports": [],
+          "inspector": {
+            "principle": "保存稳定资源引用与来源映射，不保存大内容 bytes。",
+            "purpose": "让 build_prompt 按 immutableVersion 或 digest 读取所需片段。",
+            "boundary": "本期没有 ResourceMaterializationCache。",
+            "failure": "引用无法重取或 digest 不一致时读取失败。",
+            "attributes": {
+              "lifetime": "Thread",
+              "scope": "ResourceRef -> User / Project / Thread"
+            }
+          },
+          "layout": {
+            "width": 320,
+            "height": 180,
+            "pinned": false
+          }
+        },
+        {
+          "id": "instruction-region",
+          "title": "InstructionRegion",
+          "kind": "canonical-region",
+          "tone": "core",
+          "summary": "LIFETIME TURN · SCOPES SYSTEM / PROJECT / USER · 进入可展开",
+          "hierarchy": {
+            "childLevelId": "instruction-region-items",
+            "portBindings": []
+          },
+          "ports": [],
+          "inspector": {
+            "principle": "保存本 Turn 冻结的五类具名 InstructionSnapshot。",
+            "purpose": "按稳定优先级组合模型可见指令。",
+            "boundary": "当前用户请求仍在 ConversationRegion，不复制进来。",
+            "failure": "snapshot 版本、digest 或作用域非法时 install 失败。",
+            "attributes": {
+              "lifetime": "Turn",
+              "scope": "System / Project / User"
+            }
+          },
+          "layout": {
+            "width": 340,
+            "height": 190,
+            "pinned": false
+          }
+        },
+        {
+          "id": "turn-environment-region",
+          "title": "TurnEnvironmentRegion",
+          "kind": "canonical-region",
+          "tone": "core",
+          "summary": "LIFETIME TURN · MULTI-SCOPE · 进入可展开",
+          "hierarchy": {
+            "childLevelId": "turn-environment-region-items",
+            "portBindings": []
+          },
+          "ports": [],
+          "inspector": {
+            "principle": "保存当前 Turn 怎样执行的完整冻结环境。",
+            "purpose": "承载模型、身份、Mention、Tool 和资源访问快照。",
+            "boundary": "同一 Turn 内不热更新；Sampling 参数不复制进 Prompt。",
+            "failure": "任何必要快照缺失时 Turn 不得开始。",
+            "attributes": {
+              "lifetime": "Turn",
+              "scope": "User / Project / Thread / Turn / Resource"
+            }
+          },
+          "layout": {
+            "width": 340,
+            "height": 190,
+            "pinned": false
+          }
+        }
+      ],
+      "connections": [],
+      "layout": {
+        "direction": "DOWN",
+        "spacing": 38,
+        "layerSpacing": 90
+      }
+    },
+    {
+      "id": "conversation-region-items",
+      "title": "ConversationRegion Items",
+      "description": "完整语义 Item；全部驻留 Thread，作用域均为当前 Thread。",
+      "parentLevelId": "canonical-context-regions",
+      "nodes": [
+        {
+          "id": "conversation-root",
+          "title": "ConversationRegion",
+          "kind": "region-root",
+          "tone": "core",
+          "summary": "THREAD LIFETIME · THREAD SCOPE",
+          "ports": [],
+          "inspector": {
+            "principle": "只接受完整、可恢复的语义 Item。",
+            "purpose": "作为五类 Conversation Item 的父区域。",
+            "boundary": "不接收 streaming delta 或半成品。",
+            "failure": "Item 不完整时不推进 revision。"
+          }
+        },
+        {
+          "id": "user-input-item",
+          "title": "UserInputItem",
+          "kind": "context-item",
+          "tone": "neutral",
+          "summary": "SCOPE THREAD",
+          "ports": [],
+          "inspector": {
+            "principle": "保存 Session 已接受的当前用户消息。",
+            "purpose": "作为模型历史中的 user message。",
+            "boundary": "用户长期偏好不在这里。",
+            "failure": "输入 schema 非法时 install 失败。"
+          }
+        },
+        {
+          "id": "agent-message-item",
+          "title": "AgentMessageItem",
+          "kind": "context-item",
+          "tone": "neutral",
+          "summary": "SCOPE THREAD · thinking + answer",
+          "ports": [],
+          "inspector": {
+            "principle": "保存完整模型消息。",
+            "purpose": "统一承载 thinking 与回答正文。",
+            "boundary": "不建立独立 ReasoningItem。",
+            "failure": "未完成 stream 不进入 Context。"
+          }
+        },
+        {
+          "id": "tool-call-item",
+          "title": "ToolCallItem",
+          "kind": "context-item",
+          "tone": "neutral",
+          "summary": "SCOPE THREAD · complete call",
+          "ports": [],
+          "inspector": {
+            "principle": "保存模型生成并经 Core 校验的完整 ToolCall。",
+            "purpose": "让后续 ToolResult 通过 callId 配对。",
+            "boundary": "半截 Tool 参数不进入。",
+            "failure": "参数不完整或 callId 冲突时拒绝。"
+          }
+        },
+        {
+          "id": "tool-result-item",
+          "title": "ToolResultItem",
+          "kind": "context-item",
+          "tone": "neutral",
+          "summary": "SCOPE THREAD · safe result",
+          "ports": [],
+          "inspector": {
+            "principle": "保存安全、结构化、可进入模型历史的 Tool 结果。",
+            "purpose": "与 ToolCall 成对供后续 Prompt 使用。",
+            "boundary": "原始大输出进入 Artifact / Audit，不原样写入。",
+            "failure": "没有对应 ToolCall 或结果不完整时拒绝。"
+          }
+        },
+        {
+          "id": "compaction-item",
+          "title": "CompactionItem",
+          "kind": "context-item",
+          "tone": "neutral",
+          "summary": "SCOPE THREAD · append-only summary",
+          "ports": [],
+          "inspector": {
+            "principle": "追加可追溯的历史压缩结果。",
+            "purpose": "在 Prompt 中代替其覆盖的原始 Item。",
+            "boundary": "不删除或改写原始历史。",
+            "failure": "覆盖范围或来源 revision 非法时拒绝。"
+          }
+        }
+      ],
+      "connections": [],
+      "layout": {
+        "direction": "DOWN",
+        "spacing": 34,
+        "layerSpacing": 82
+      }
+    },
+    {
+      "id": "resource-region-items",
+      "title": "ResourceRegion Items",
+      "description": "资源只以引用与来源映射进入 Canonical；具体作用域由 ResourceRef 指定。",
+      "parentLevelId": "canonical-context-regions",
+      "nodes": [
+        {
+          "id": "resource-root",
+          "title": "ResourceRegion",
+          "kind": "region-root",
+          "tone": "core",
+          "summary": "THREAD LIFETIME · RESOURCE-DEFINED SCOPE",
+          "ports": [],
+          "inspector": {
+            "principle": "保存 ResourceMapping，不保存物化内容。",
+            "purpose": "作为四类资源引用的父区域。",
+            "boundary": "PDF bytes、OCR 中间结果和 Tool 原始 payload 不进入。",
+            "failure": "缺少 locator、版本或 digest 时不能保证重取。"
+          }
+        },
+        {
+          "id": "user-attachment-ref",
+          "title": "UserAttachmentRef",
+          "kind": "resource-ref",
+          "tone": "neutral",
+          "summary": "SCOPE USER / PROJECT / THREAD",
+          "ports": [],
+          "inspector": {
+            "principle": "标识用户附加到会话的稳定资源。",
+            "purpose": "让模型按需调用 Attachment Tool 读取。",
+            "boundary": "附件全文不自动进入 Prompt。",
+            "failure": "资源不存在或不可访问时读取失败。"
+          }
+        },
+        {
+          "id": "retrieval-chunk-ref",
+          "title": "RetrievalChunkRef",
+          "kind": "resource-ref",
+          "tone": "neutral",
+          "summary": "SCOPE FROM RESOURCE REF",
+          "ports": [],
+          "inspector": {
+            "principle": "引用 Attachment、Knowledge 或 App 检索得到的片段。",
+            "purpose": "支持按页码、块号或 digest 重取模型使用内容。",
+            "boundary": "不是语义检索索引本身。",
+            "failure": "来源版本变化且无 digest 时不可复现。"
+          }
+        },
+        {
+          "id": "tool-artifact-ref",
+          "title": "ToolArtifactRef",
+          "kind": "resource-ref",
+          "tone": "neutral",
+          "summary": "SCOPE FROM RESOURCE REF",
+          "ports": [],
+          "inspector": {
+            "principle": "引用 Tool 生成的大型或外置产物。",
+            "purpose": "在 Context 中只保留摘要、定位符和读取方式。",
+            "boundary": "Artifact Store 才拥有完整 bytes。",
+            "failure": "Artifact 不可读取时只保留可解释错误。"
+          }
+        },
+        {
+          "id": "source-ref",
+          "title": "SourceRef",
+          "kind": "resource-ref",
+          "tone": "neutral",
+          "summary": "SCOPE FROM RESOURCE REF",
+          "ports": [],
+          "inspector": {
+            "principle": "标识模型内容的可追溯来源。",
+            "purpose": "保存来源 Owner、位置和版本信息。",
+            "boundary": "不替内容 Owner 保存正文。",
+            "failure": "来源无法验证时不能宣称可追溯。"
+          }
+        }
+      ],
+      "connections": [],
+      "layout": {
+        "direction": "DOWN",
+        "spacing": 34,
+        "layerSpacing": 82
+      }
+    },
+    {
+      "id": "instruction-region-items",
+      "title": "InstructionRegion Items",
+      "description": "五类指令全部驻留一个 Turn；各自作用域独立标注。",
+      "parentLevelId": "canonical-context-regions",
+      "nodes": [
+        {
+          "id": "instruction-root",
+          "title": "InstructionRegion",
+          "kind": "region-root",
+          "tone": "core",
+          "summary": "TURN LIFETIME · SYSTEM / PROJECT / USER SCOPES",
+          "ports": [],
+          "inspector": {
+            "principle": "安装并冻结五类具名 InstructionSnapshot。",
+            "purpose": "按模型基础、平台、项目、用户偏好与 Personality 组织指令。",
+            "boundary": "作用域不决定驻留时间。",
+            "failure": "snapshot 不完整时不安装整个 Turn。"
+          }
+        },
+        {
+          "id": "model-base-instruction",
+          "title": "model_base",
+          "kind": "instruction-snapshot",
+          "tone": "neutral",
+          "summary": "SCOPE SYSTEM · SOURCE CORE CATALOG",
+          "ports": [],
+          "inspector": {
+            "principle": "表达模型运行所需的基础行为约束。",
+            "purpose": "作为最高优先级模型基础指令。",
+            "boundary": "不由 Session 或项目修改。",
+            "failure": "Catalog 缺失时 install 失败。"
+          }
+        },
+        {
+          "id": "platform-instruction",
+          "title": "platform",
+          "kind": "instruction-snapshot",
+          "tone": "neutral",
+          "summary": "SCOPE SYSTEM · SOURCE CORE CATALOG",
+          "ports": [],
+          "inspector": {
+            "principle": "表达 AIO 平台与开发者级行为规则。",
+            "purpose": "约束模型怎样使用 Tool、资源和输出。",
+            "boundary": "不承载某个项目的业务规则。",
+            "failure": "Catalog 版本非法时 install 失败。"
+          }
+        },
+        {
+          "id": "project-instruction",
+          "title": "project",
+          "kind": "instruction-snapshot",
+          "tone": "neutral",
+          "summary": "SCOPE PROJECT · SOURCE 项目指令.md",
+          "ports": [],
+          "inspector": {
+            "principle": "表达当前项目范围内的稳定规则。",
+            "purpose": "由 Session 配置快照安装到当前 Turn。",
+            "boundary": "项目模块拥有源文件，Registry 只接收 snapshot。",
+            "failure": "revision 或 digest 不一致时拒绝。"
+          }
+        },
+        {
+          "id": "user-preference-instruction",
+          "title": "user_preference",
+          "kind": "instruction-snapshot",
+          "tone": "neutral",
+          "summary": "SCOPE USER · SOURCE USER PREFERENCES",
+          "ports": [],
+          "inspector": {
+            "principle": "表达用户长期偏好。",
+            "purpose": "在不覆盖高优先级规则时影响当前 Turn。",
+            "boundary": "不等于当前用户消息。",
+            "failure": "用户作用域无法确认时拒绝。"
+          }
+        },
+        {
+          "id": "personality-instruction",
+          "title": "personality",
+          "kind": "instruction-snapshot",
+          "tone": "neutral",
+          "summary": "SCOPE SYSTEM · SELECTED BY USER / PROJECT / THREAD",
+          "ports": [],
+          "inspector": {
+            "principle": "保存 Core Catalog 提供的 Personality 定义。",
+            "purpose": "只影响表达方式。",
+            "boundary": "定义属于 System；选择事实另存于 TurnEnvironmentRegion。",
+            "failure": "选择的 Personality ID 不存在时 install 失败。"
+          }
+        }
+      ],
+      "connections": [],
+      "layout": {
+        "direction": "DOWN",
+        "spacing": 34,
+        "layerSpacing": 82
+      }
+    },
+    {
+      "id": "turn-environment-region-items",
+      "title": "TurnEnvironmentRegion Items",
+      "description": "所有项驻留当前 Turn，但作用域分别来自 User、Project、Thread、Turn 或 Resource。",
+      "parentLevelId": "canonical-context-regions",
+      "nodes": [
+        {
+          "id": "environment-root",
+          "title": "TurnEnvironmentRegion",
+          "kind": "region-root",
+          "tone": "core",
+          "summary": "TURN LIFETIME · ORTHOGONAL SCOPES",
+          "ports": [],
+          "inspector": {
+            "principle": "完整冻结当前 Turn 的执行环境。",
+            "purpose": "作为十类环境事实的父区域。",
+            "boundary": "生命周期统一为 Turn，不代表所有项作用域相同。",
+            "failure": "必要环境事实缺失时 install 失败。"
+          },
+          "layout": {
+            "width": 410,
+            "height": 280,
+            "pinned": false
+          }
+        },
+        {
+          "id": "turn-identity",
+          "title": "TurnIdentity",
+          "kind": "turn-fact",
+          "tone": "neutral",
+          "summary": "SCOPE TURN",
+          "ports": [],
+          "inspector": {
+            "principle": "关联当前 Turn 与其 UserInputItem。",
+            "purpose": "防止环境快照绑定到错误 Turn。",
+            "boundary": "不替代 Thread ID 或 Context revision。",
+            "failure": "标识不一致时 install 失败。"
+          }
+        },
+        {
+          "id": "configuration-revision",
+          "title": "contextConfigurationRevision",
+          "kind": "turn-fact",
+          "tone": "neutral",
+          "summary": "SCOPE THREAD · REFERENCES REGISTRY",
+          "ports": [],
+          "inspector": {
+            "principle": "记录本 Turn 安装所依据的精确 Session 配置版本。",
+            "purpose": "支持重放、诊断与配置一致性。",
+            "boundary": "不保存 Registry 可变状态。",
+            "failure": "引用版本无法解析时 install 失败。"
+          }
+        },
+        {
+          "id": "personality-selection",
+          "title": "PersonalitySelection",
+          "kind": "turn-fact",
+          "tone": "neutral",
+          "summary": "SCOPE USER / PROJECT / THREAD",
+          "ports": [],
+          "inspector": {
+            "principle": "记录谁在哪个范围选择了哪个 Personality。",
+            "purpose": "决定从 Core Catalog 安装哪个定义。",
+            "boundary": "选择不是 Personality 定义本身。",
+            "failure": "作用域或 Personality ID 非法时 install 失败。"
+          }
+        },
+        {
+          "id": "model-selection",
+          "title": "ModelSelection",
+          "kind": "turn-fact",
+          "tone": "neutral",
+          "summary": "SCOPE TURN · SAMPLING PARAM",
+          "ports": [],
+          "inspector": {
+            "principle": "冻结当前 Turn 使用的模型。",
+            "purpose": "作为 Sampling 参数并参与 Catalog snapshot 选择。",
+            "boundary": "不复制进 Prompt 内容。",
+            "failure": "模型不可用时不开始 Sampling。"
+          }
+        },
+        {
+          "id": "reasoning-effort",
+          "title": "ReasoningEffort",
+          "kind": "turn-fact",
+          "tone": "neutral",
+          "summary": "SCOPE TURN · SAMPLING PARAM",
+          "ports": [],
+          "inspector": {
+            "principle": "冻结当前 Turn 的推理强度参数。",
+            "purpose": "传给 ModelClient.sample。",
+            "boundary": "不是模型可见文字，也不是 Reasoning Summary。",
+            "failure": "模型不支持该值时采样失败。"
+          }
+        },
+        {
+          "id": "execution-limits",
+          "title": "ExecutionLimits",
+          "kind": "turn-fact",
+          "tone": "neutral",
+          "summary": "SCOPE TURN · RUNTIME CONTROL",
+          "ports": [],
+          "inspector": {
+            "principle": "冻结当前 Turn 的执行边界。",
+            "purpose": "控制时长、步骤与其他运行限制。",
+            "boundary": "不作为普通 Prompt 内容。",
+            "failure": "限制配置非法时 install 失败。"
+          }
+        },
+        {
+          "id": "actor-context",
+          "title": "ActorContext",
+          "kind": "turn-fact",
+          "tone": "neutral",
+          "summary": "SCOPE USER",
+          "ports": [],
+          "inspector": {
+            "principle": "保存已认证 Session 冻结的操作者身份事实。",
+            "purpose": "为 Tool 与资源操作提供执行身份。",
+            "boundary": "不作为普通文字注入 Prompt。",
+            "failure": "身份缺失或不可信时 Turn 不开始。"
+          }
+        },
+        {
+          "id": "mentions",
+          "title": "Mention[]",
+          "kind": "turn-fact",
+          "tone": "neutral",
+          "summary": "SCOPE TURN · EXPLICIT USER TARGET",
+          "ports": [],
+          "inspector": {
+            "principle": "记录用户本条消息明确 @ 的 App、Tool 或 Resource。",
+            "purpose": "把显式指向写入本次 Prompt。",
+            "boundary": "不决定 Tool 是否可用；可用性来自 ToolRegistrySnapshot。",
+            "failure": "Mention 无法解析稳定 ID 时 Session 不应提交。"
+          }
+        },
+        {
+          "id": "tool-registry-snapshot",
+          "title": "ToolRegistrySnapshot",
+          "kind": "turn-fact",
+          "tone": "neutral",
+          "summary": "SCOPE TURN · AVAILABLE CAPABILITY",
+          "ports": [],
+          "inspector": {
+            "principle": "保存本 Turn 可供模型调用的 Tool 定义集合。",
+            "purpose": "作为 build_prompt 的 tools 输入。",
+            "boundary": "Mention 只是显式指向，不建立第二份可用性事实。",
+            "failure": "Tool 定义不完整时 install 失败。"
+          }
+        },
+        {
+          "id": "resource-access-snapshot",
+          "title": "TurnResourceAccessSnapshot",
+          "kind": "turn-fact",
+          "tone": "neutral",
+          "summary": "SCOPE TURN + RESOURCE REF",
+          "ports": [],
+          "inspector": {
+            "principle": "保存 Session 提前计算的资源访问等级。",
+            "purpose": "执行时判断 read、write 或 manage。",
+            "boundary": "Core 不重新读取权限系统；当前没有逐次询问流程。",
+            "failure": "目标 ResourceRef 无授权条目时拒绝操作。"
+          }
+        }
+      ],
+      "connections": [],
+      "layout": {
+        "direction": "DOWN",
+        "spacing": 30,
+        "layerSpacing": 80
+      }
+    }
+  ]
+}

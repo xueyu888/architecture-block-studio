@@ -395,7 +395,7 @@ function moduleNode(module, edges) {
       return {
         id: modulePortId(edge, "target"),
         label: source.shortTitle,
-        side: "right",
+        side: "left",
         direction: "input",
         dataType: `${edge.declarations.length} import declarations`,
         required: true,
@@ -407,7 +407,7 @@ function moduleNode(module, edges) {
       return {
         id: modulePortId(edge, "source"),
         label: target.shortTitle,
-        side: "left",
+        side: "right",
         direction: "output",
         dataType: `${edge.declarations.length} import declarations`,
         required: true,
@@ -534,7 +534,7 @@ function scopeNode({ id, title, childLevelId, summary, principle, boundary, sour
 function createDocument() {
   const { sourceFiles, edges } = dependencyEdges();
   return {
-    schemaVersion: "2.2",
+    schemaVersion: "2.3",
     id: "architecture-block-studio.source-architecture.v1",
     title: "Architecture Block Studio — Source Architecture",
     summary: `Generated from ${sourceFiles.length} managed source files and ${edges.length} verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.`,

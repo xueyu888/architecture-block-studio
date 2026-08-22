@@ -46,7 +46,7 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 
 | 类别 | 唯一 Owner | 示例 | 是否保存到设计 JSON |
 | --- | --- | --- | --- |
-| 设计事实 | `BlockDesignDocument` | 模块、端口、连接、Level、`side + offset`、waypoints | 是 |
+| 设计事实 | `BlockDesignDocument` | 模块、端口方向与纵向 `offset`、连接、Level、waypoints | 是 |
 | 编辑状态 | Editor | 历史、saved baseline、dirty | 否 |
 | 派生结构 | model / layout / routing | DRC、邻接关系、模块坐标、端口锚点、自动直线 | 否 |
 | 工作区状态 | Studio / Dock / Canvas | 选择、展开、视图根、面板尺寸、语言、zoom | 否 |
@@ -58,6 +58,8 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 ## 布局与连线
 
 布局输入只有文档、展开 Level 与 placement mode，输出可重建的 `LayoutResult`。ELK 自动位置是派生结果；只有用户移动、缩放、对齐或分布后的几何才经 Editor 写回 `node.layout`。
+
+接口方向表达调用发起权：连接源必须是调用方的 output，连接目标必须是提供方的 input。参数、返回值与错误同属一个 `InterfaceDefinition`；主动回调、事件或命令必须建立另一条反向 Interface。内部状态所有权和层级包含关系不属于调用，不能伪装成连接。
 
 连线遵守更小的二分合同：
 
@@ -77,11 +79,11 @@ Menu / Toolbar / Keyboard / Canvas / Inspector
 
 ## 端口与直接操作
 
-`layout/nodeGeometry` 是端口锚点和卡片内容安全尺寸的唯一几何 Owner。CSS 只投影相同变量：边框、中心 Identity、Owner band、端口 Handle 和四边 rail 安全区不能各写一套魔数。上下安全区取两侧所需深度的较大值，左右安全区同理；因此单边密集端口可以扩大派生卡片，却不能把模块身份推离几何中心。
+`layout/nodeGeometry` 是端口锚点和卡片内容安全尺寸的唯一几何 Owner。CSS 只投影相同变量：顶部 Identity、Owner band、端口 Handle 和左右 rail 安全区不能各写一套魔数。左侧只容纳 input，右侧只容纳 output；密集端口可扩大派生卡片，但不能覆盖顶部模块身份或底部 Owner。
 
-外侧圆形 Handle 只创建或重连接口。端口名称是唯一移动入口，其透明命中区通过 `--canvas-inverse-zoom` 保持约 30 个屏幕像素；不会再出现独立移动抓手。左 / 右端口名称横排，顶 / 底端口名称竖排并向卡片内部展开；模块身份位于卡片几何中心，四条边都只承担端口。
+外侧圆形 Handle 只创建或重连接口。端口名称是唯一移动入口，其透明命中区通过 `--canvas-inverse-zoom` 保持约 30 个屏幕像素；不会再出现独立移动抓手。端口只能沿逻辑侧纵向移动；input 永远在左，output 永远在右。方向变化由 Editor 同时派生新侧边和安全空位，Canvas 不能单独改 `side`。
 
-拖动期间 `side + offset` 只是预览，相关线路读取同一份预览端点。松手只提交一次 `port/move`；Escape、pointercancel、窗口失焦或无实际移动都不写文档。
+拖动期间 `offset` 只是预览，相关线路读取同一份预览端点。松手只提交一次 `port/move`；Escape、pointercancel、窗口失焦或无实际移动都不写文档。
 
 ## 选择、命令与视口
 
@@ -146,7 +148,7 @@ flowchart LR
 
 ## Schema 兼容策略
 
-当前写出 `BlockDesignDocument 2.2`，读取链可迁移 2.0 与 2.1。新增字段必须先明确所有权、默认值、迁移和失败语义；未知或非法结构不能由 UI 猜测。
+当前写出 `BlockDesignDocument 2.3`，读取链可迁移 2.0、2.1 与 2.2。2.3 只接受单向端口，并由 `direction` 唯一派生 `side`：input → left，output → right。2.2 的双向端口只有在连接角色或父子绑定能唯一证明方向时才迁移；无角色或冲突角色会明确失败，不能由 UI 猜测。
 
 手动 waypoints 仍属于连接所在 Level，相邻点必须共享 x 或 y。自动直线不写入 JSON，因此未来改变展示样式不会制造数据迁移。
 

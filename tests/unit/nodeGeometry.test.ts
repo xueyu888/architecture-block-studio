@@ -1,14 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   BLOCK_NODE_GEOMETRY,
-  balancedPortClearance,
   baseNodeDimensions,
-  horizontalPortRailDepth,
   minimumNodeDimensions,
   portAnchorOffset,
   portLabelWidth,
-  portRailOffset,
-  portsForSide,
   preserveNodeAspectRatio,
   resolvePortPlacement,
 } from "../../src/layout";
@@ -17,8 +13,8 @@ import { createBlock, createPort } from "../../src/editor/designEditor";
 describe("block node geometry", () => {
   it("uses the rendered border box and handle edge as the routing anchor", () => {
     const ports = [
-      createPort({ id: "first", label: "First", side: "right", direction: "output", required: true }),
-      createPort({ id: "second", label: "Second", side: "right", direction: "output", required: true }),
+      createPort({ id: "first", label: "First", direction: "output", required: true }),
+      createPort({ id: "second", label: "Second", direction: "output", required: true }),
     ];
     ports[0].offset = 1 / 3;
     ports[1].offset = 2 / 3;
@@ -44,7 +40,7 @@ describe("block node geometry", () => {
     });
   });
 
-  it("uses fixed chip-pin slots across the edge and reserves label depth inward", () => {
+  it("derives the right edge from output direction and reserves readable label width", () => {
     const node = createBlock({ id: "module", title: "Module" });
     node.layout.width = 120;
     node.layout.height = 80;
@@ -53,7 +49,6 @@ describe("block node geometry", () => {
         const port = createPort({
           id: `port-${order}`,
           label,
-          side: "top",
           direction: "output",
           required: false,
         });
@@ -62,23 +57,10 @@ describe("block node geometry", () => {
       },
     );
 
-    const ports = portsForSide(node.ports, "top");
     const dimensions = baseNodeDimensions(node);
-    const centers = ports.map((_, index) => dimensions.width * portRailOffset(ports, index) / 100);
-    const slotRadius = BLOCK_NODE_GEOMETRY.horizontalPortSlotWidth / 2;
 
-    expect(dimensions).toEqual({ width: 180, height: 358 });
-    expect(horizontalPortRailDepth(ports)).toBe(134);
-    expect(balancedPortClearance(node.ports)).toEqual({
-      horizontalRailDepth: 134,
-      verticalLabelWidth: 0,
-    });
-    expect(centers[0] - slotRadius).toBeGreaterThanOrEqual(BLOCK_NODE_GEOMETRY.horizontalRailPadding);
-    expect(centers[1] - centers[0]).toBeGreaterThanOrEqual(
-      BLOCK_NODE_GEOMETRY.horizontalPortSlotWidth + BLOCK_NODE_GEOMETRY.horizontalPortGap,
-    );
-    expect(dimensions.width - (centers[2] + slotRadius))
-      .toBeGreaterThanOrEqual(BLOCK_NODE_GEOMETRY.horizontalRailPadding);
+    expect(node.ports.every((port) => port.side === "right")).toBe(true);
+    expect(dimensions).toEqual({ width: 270, height: 180 });
   });
 
   it("reserves vertical slots for dense side ports without changing document data", () => {
@@ -87,7 +69,6 @@ describe("block node geometry", () => {
       const port = createPort({
         id: `port-${index}`,
         label: `event-${index}`,
-        side: "right",
         direction: "output",
         required: false,
       });
@@ -95,14 +76,14 @@ describe("block node geometry", () => {
       node.ports.push(port);
     }
 
-    expect(baseNodeDimensions(node).height).toBe(180);
+    expect(baseNodeDimensions(node).height).toBe(270);
     expect(node.layout).toEqual({ pinned: false });
   });
 
   it("expands the card when authored side offsets are too close to render distinctly", () => {
     const node = createBlock({ id: "module", title: "Module" });
-    const first = createPort({ id: "first", label: "First", side: "right", direction: "output", required: false });
-    const second = createPort({ id: "second", label: "Second", side: "right", direction: "output", required: false });
+    const first = createPort({ id: "first", label: "First", direction: "output", required: false });
+    const second = createPort({ id: "second", label: "Second", direction: "output", required: false });
     first.offset = 0.49;
     second.offset = 0.51;
     node.ports.push(first, second);
@@ -112,20 +93,20 @@ describe("block node geometry", () => {
 
   it("preserves authored geometry when it already satisfies the label contract", () => {
     const node = createBlock({ id: "module", title: "Module" });
-    node.layout.width = 236;
+    node.layout.width = 260;
     node.layout.height = 132;
     node.ports.push(
-      createPort({ id: "in", label: "Input", side: "left", direction: "input", required: false }),
-      createPort({ id: "out", label: "Output", side: "right", direction: "output", required: false }),
+      createPort({ id: "in", label: "Input", direction: "input", required: false }),
+      createPort({ id: "out", label: "Output", direction: "output", required: false }),
     );
 
-    expect(baseNodeDimensions(node)).toEqual({ width: 236, height: 132 });
+    expect(baseNodeDimensions(node)).toEqual({ width: 260, height: 132 });
   });
 
-  it("maps the pointer to the closest edge and keeps neighboring labels separated", () => {
+  it("keeps an input on the left edge while moving its vertical offset", () => {
     const ports = [
-      createPort({ id: "moving", label: "Moving", side: "left", direction: "input", required: false }),
-      createPort({ id: "fixed", label: "Fixed", side: "right", direction: "output", required: false }),
+      createPort({ id: "moving", label: "Moving", direction: "input", required: false }),
+      createPort({ id: "fixed", label: "Fixed", direction: "input", required: false }),
     ];
     ports[1].offset = 0.5;
 
@@ -134,13 +115,13 @@ describe("block node geometry", () => {
       ports,
       "moving",
       { x: 236, y: 80 },
-    )).toEqual({ side: "right", offset: 0.3375 });
+    )).toEqual({ side: "left", offset: 0.3375 });
     expect(resolvePortPlacement(
       { width: 240, height: 160 },
       ports,
       "moving",
       { x: 120, y: 3 },
-    )).toEqual({ side: "top", offset: 0.5 });
+    )).toEqual({ side: "left", offset: 0.2813 });
   });
 
   it("preserves resize proportions around the opposite corner and clamps both dimensions together", () => {

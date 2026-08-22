@@ -160,13 +160,13 @@ function validateConnection(
   const sourcePort = resolveEndpoint(index, connection, "source", issues);
   const targetPort = resolveEndpoint(index, connection, "target", issues);
 
-  if (sourcePort?.direction === "input") {
+  if (sourcePort && sourcePort.direction !== "output") {
     issue(
       issues,
       "error",
       "BD-SOURCE-DIRECTION",
-      `Input-only port ${connection.source.nodeId}.${sourcePort.id} cannot be a connection source.`,
-      "Use an output or bidirectional source port, or reverse the connection endpoints.",
+      `Input port ${connection.source.nodeId}.${sourcePort.id} cannot be a connection source.`,
+      "Use an output source port, or reverse the connection endpoints.",
       {
         levelId: index.level.id,
         nodeId: connection.source.nodeId,
@@ -176,13 +176,13 @@ function validateConnection(
     );
   }
 
-  if (targetPort?.direction === "output") {
+  if (targetPort && targetPort.direction !== "input") {
     issue(
       issues,
       "error",
       "BD-TARGET-DIRECTION",
-      `Output-only port ${connection.target.nodeId}.${targetPort.id} cannot be a connection target.`,
-      "Use an input or bidirectional target port, or reverse the connection endpoints.",
+      `Output port ${connection.target.nodeId}.${targetPort.id} cannot be a connection target.`,
+      "Use an input target port, or reverse the connection endpoints.",
       {
         levelId: index.level.id,
         nodeId: connection.target.nodeId,

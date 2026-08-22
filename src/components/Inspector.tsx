@@ -12,7 +12,6 @@ import type {
   InterfaceKind,
   ModuleInterfaceDirection,
   PortDirection,
-  PortSide,
 } from "../model";
 import type { StudioCommand } from "../studio/commands";
 import { useStudioLocale } from "../i18n/StudioLocale";
@@ -419,7 +418,7 @@ function NodeEditor({ document, level, node, onOperation, onDelete, onDraftChang
           <span>Canvas size</span>
           <strong>{`${canvasSize.width} × ${canvasSize.height}`}</strong>
         </div>
-        <p>Drag an edge or corner handle to resize; hold Shift to preserve the original proportions, taking priority over sibling-size snapping. Movement and resize use the visible 16-pixel design grid, while nearby alignment and equal-size guides take priority on their matching axis. Start the direct gesture, then hold Alt for unrestricted precision placement without grid or guide snapping. Alt held before pointerdown forces a selection box; Alt-click without dragging cycles through overlapping objects. On the Canvas, Tab / Shift + Tab traverses visible diagram objects, Alt + Tab selects the visible parent, Enter enters this module's controls, and Escape returns to the module. With the module focused, Ctrl/Cmd + Shift + Arrow changes width or height by 16 design pixels. Apply current property changes first.</p>
+        <p>Drag an edge or corner handle to resize; hold Shift to preserve the original proportions, taking priority over sibling-size snapping. Movement and resize use an invisible 16-pixel design grid, while nearby alignment and equal-size guides take priority on their matching axis. Start the direct gesture, then hold Alt for unrestricted precision placement without grid or guide snapping. Alt held before pointerdown forces a selection box; Alt-click without dragging cycles through overlapping objects. On the Canvas, Tab / Shift + Tab traverses visible diagram objects, Alt + Tab selects the visible parent, Enter enters this module's controls, and Escape returns to the module. With the module focused, Ctrl/Cmd + Shift + Arrow changes width or height by 16 design pixels. Apply current property changes first.</p>
       </section>
       <ConnectedInterfaces document={document} level={level} node={node} onSelect={onSelect} />
       <ContractFields value={inspector} onChange={setInspector} />
@@ -439,13 +438,11 @@ function PortEditor({ level, node, port, onOperation, onDelete, onDraftChange }:
   const { t } = useStudioLocale();
   const [label, setLabel] = useState(port.label);
   const [direction, setDirection] = useState<PortDirection>(port.direction);
-  const [side, setSide] = useState<PortSide>(port.side);
   const [dataType, setDataType] = useState(port.dataType ?? "");
   const [required, setRequired] = useState(port.required);
   useReportDraft(
     label !== port.label ||
       direction !== port.direction ||
-      side !== port.side ||
       (dataType.trim() || undefined) !== port.dataType ||
       required !== port.required,
     onDraftChange,
@@ -456,18 +453,13 @@ function PortEditor({ level, node, port, onOperation, onDelete, onDraftChange }:
       levelId: level.id,
       nodeId: node.id,
       portId: port.id,
-      values: { label, direction, side, dataType: dataType.trim() || undefined, required, offset: port.offset },
+      values: { label, direction, dataType: dataType.trim() || undefined, required, offset: port.offset },
     })}>
       <Field label={t("dialog.portId")}><input value={port.id} disabled /></Field>
       <Field label={t("inspector.label")} value={label} onChange={setLabel} required />
-      <div className="bd-inspector-form-row">
-        <Field label={t("dialog.direction")}><select value={direction} onChange={(event) => setDirection(event.target.value as PortDirection)}>
-          <option value="input">{t("dialog.input")}</option><option value="output">{t("dialog.output")}</option><option value="bidirectional">{t("dialog.bidirectional")}</option>
-        </select></Field>
-        <Field label={t("dialog.side")}><select value={side} onChange={(event) => setSide(event.target.value as PortSide)}>
-          <option value="left">{t("dialog.left")}</option><option value="right">{t("dialog.right")}</option><option value="top">{t("dialog.top")}</option><option value="bottom">{t("dialog.bottom")}</option>
-        </select></Field>
-      </div>
+      <Field label={t("dialog.direction")}><select value={direction} onChange={(event) => setDirection(event.target.value as PortDirection)}>
+        <option value="input">{t("dialog.input")}</option><option value="output">{t("dialog.output")}</option>
+      </select></Field>
       <Field label={t("dialog.dataType")} value={dataType} onChange={setDataType} />
       <label className="bd-check-field"><input type="checkbox" checked={required} onChange={(event) => setRequired(event.target.checked)} /><span>{t("dialog.required")}</span></label>
     </EditorForm>

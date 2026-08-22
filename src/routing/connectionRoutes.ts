@@ -73,13 +73,8 @@ function endpoint(frame: AbsoluteNodeFrame, handleId: string | null | undefined)
 }
 
 function positionForSide(side: PortSide, reversed: boolean): Position {
-  const effective = reversed
-    ? side === "left" ? "right" : side === "right" ? "left" : side === "top" ? "bottom" : "top"
-    : side;
-  if (effective === "left") return Position.Left;
-  if (effective === "right") return Position.Right;
-  if (effective === "top") return Position.Top;
-  return Position.Bottom;
+  const effective = reversed ? side === "left" ? "right" : "left" : side;
+  return effective === "left" ? Position.Left : Position.Right;
 }
 
 function parentOrigin(frame: AbsoluteNodeFrame, frames: ReadonlyMap<string, AbsoluteNodeFrame>): RoutePoint {

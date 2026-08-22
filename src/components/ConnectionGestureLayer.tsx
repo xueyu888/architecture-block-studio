@@ -18,9 +18,7 @@ export interface ConnectionGestureFeedback {
 type PointerTargetStatus = "searching" | "valid" | "invalid";
 
 function requiredPortDescription(direction: ConnectablePortEndpoint["direction"]): string {
-  if (direction === "input") return "an output or bidirectional port";
-  if (direction === "output") return "an input or bidirectional port";
-  return "another compatible port";
+  return direction === "input" ? "an output port" : "an input port";
 }
 
 function statusCopy(

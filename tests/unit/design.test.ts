@@ -18,7 +18,7 @@ const legacyFixturePath = fileURLToPath(
   new URL("../fixtures/legacy-v2.0.block-design.json", import.meta.url),
 );
 const migratedFixturePath = fileURLToPath(
-  new URL("../fixtures/migrated-v2.2.block-design.json", import.meta.url),
+  new URL("../fixtures/migrated-v2.3.block-design.json", import.meta.url),
 );
 const v21FixturePath = fileURLToPath(
   new URL("../fixtures/migrated-v2.1.block-design.json", import.meta.url),
@@ -27,15 +27,16 @@ const v21FixturePath = fileURLToPath(
 describe("BlockDesignDocument contract", () => {
   test("publishes the complete supported input compatibility matrix", () => {
     expect(blockDesignSchemaCompatibility).toEqual([
-      { inputVersion: "2.0", outputVersion: "2.2", mode: "migrate" },
-      { inputVersion: "2.1", outputVersion: "2.2", mode: "migrate" },
-      { inputVersion: "2.2", outputVersion: "2.2", mode: "current" },
+      { inputVersion: "2.0", outputVersion: "2.3", mode: "migrate" },
+      { inputVersion: "2.1", outputVersion: "2.3", mode: "migrate" },
+      { inputVersion: "2.2", outputVersion: "2.3", mode: "migrate" },
+      { inputVersion: "2.3", outputVersion: "2.3", mode: "current" },
     ]);
     expect(Object.isFrozen(blockDesignSchemaCompatibility)).toBe(true);
     expect(blockDesignSchemaCompatibility.every(Object.isFrozen)).toBe(true);
   });
 
-  test("migrates the 2.0 golden input through every step to the exact 2.2 golden output", async () => {
+  test("migrates the 2.0 golden input through every step to the exact 2.3 golden output", async () => {
     const legacy = JSON.parse(await readFile(legacyFixturePath, "utf8"));
     const before = structuredClone(legacy);
     const expected = JSON.parse(await readFile(migratedFixturePath, "utf8"));
@@ -46,14 +47,45 @@ describe("BlockDesignDocument contract", () => {
     expect(legacy).toEqual(before);
   });
 
-  test("migrates a 2.1 document to the same exact 2.2 output", async () => {
+  test("migrates a 2.1 document to the same exact 2.3 output", async () => {
     const v21 = JSON.parse(await readFile(v21FixturePath, "utf8"));
     const expected = JSON.parse(await readFile(migratedFixturePath, "utf8"));
 
     expect(parseBlockDesignDocument(v21)).toEqual(expected);
   });
 
-  test.each(["1.0", "2.3", "3.0"])("rejects unsupported schema version %s at the version boundary", (schemaVersion) => {
+  test("migrates 2.2 port placement from logical direction instead of preserving a contradictory side", async () => {
+    const legacy = JSON.parse(await readFile(new URL("../fixtures/migrated-v2.2.block-design.json", import.meta.url), "utf8"));
+    legacy.levels[0].nodes[0].ports[0].side = "left";
+    legacy.levels[0].nodes[1].ports[0].side = "top";
+
+    const migrated = parseBlockDesignDocument(legacy);
+
+    expect(migrated.levels[0].nodes[0].ports[0]).toMatchObject({ direction: "output", side: "right" });
+    expect(migrated.levels[0].nodes[1].ports[0]).toMatchObject({ direction: "input", side: "left" });
+  });
+
+  test("infers an unambiguous legacy bidirectional port from its connection role", async () => {
+    const legacy = JSON.parse(await readFile(new URL("../fixtures/migrated-v2.2.block-design.json", import.meta.url), "utf8"));
+    legacy.levels[0].nodes[0].ports[0].direction = "bidirectional";
+
+    expect(parseBlockDesignDocument(legacy).levels[0].nodes[0].ports[0]).toMatchObject({
+      direction: "output",
+      side: "right",
+    });
+  });
+
+  test("rejects an ambiguous legacy bidirectional port instead of inventing a call direction", async () => {
+    const legacy = JSON.parse(await readFile(new URL("../fixtures/migrated-v2.2.block-design.json", import.meta.url), "utf8"));
+    legacy.levels[0].connections = [];
+    legacy.levels[0].nodes[0].ports[0].direction = "bidirectional";
+
+    expect(() => parseBlockDesignDocument(legacy)).toThrow(
+      "split it into one input port and one output port before migrating to 2.3",
+    );
+  });
+
+  test.each(["1.0", "2.4", "3.0"])("rejects unsupported schema version %s at the version boundary", (schemaVersion) => {
     const document = { ...createBlankDesign("version-test", "Version Test"), schemaVersion };
 
     try {
@@ -63,7 +95,7 @@ describe("BlockDesignDocument contract", () => {
       expect(error).toBeInstanceOf(ZodError);
       expect((error as ZodError).issues).toContainEqual(expect.objectContaining({
         path: ["schemaVersion"],
-        message: `Unsupported BlockDesignDocument schemaVersion "${schemaVersion}". Supported versions: 2.0, 2.1, 2.2.`,
+        message: `Unsupported BlockDesignDocument schemaVersion "${schemaVersion}". Supported versions: 2.0, 2.1, 2.2, 2.3.`,
       }));
     }
   });

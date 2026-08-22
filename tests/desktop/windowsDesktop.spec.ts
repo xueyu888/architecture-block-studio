@@ -87,7 +87,7 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     });
     expect(await window.evaluate(
       () => window.architectureBlockStudioDesktop!.getUpdateState(),
-    )).toEqual({ status: "unsupported", currentVersion: "0.5.0" });
+    )).toEqual({ status: "unsupported", currentVersion: "0.5.1" });
     await expect(window.locator(".bd-desktop-update")).toHaveCount(0);
     expect(await window.evaluate(
       () => window.architectureBlockStudioDesktop!.listRecentDesigns(),
@@ -141,16 +141,18 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     const routeGeometryBeforePortMove = await window.locator(".bd-interface-route").evaluateAll(
       (paths) => paths.map((path) => path.getAttribute("d")),
     );
+    const commandPortStyleBefore = await commandPort.getAttribute("style");
     await window.mouse.move(portCenter.x, portCenter.y);
     await window.screenshot({
       path: resolve(screenshotDirectory, "windows-port-label-drag.png"),
       animations: "disabled",
     });
     await window.mouse.down();
-    await window.mouse.move(agentBounds!.x + agentBounds!.width * 0.36, agentBounds!.y + 2, { steps: 12 });
+    await window.mouse.move(agentBounds!.x + agentBounds!.width - 2, agentBounds!.y + agentBounds!.height * 0.7, { steps: 12 });
     await expect(window.locator(".bd-react-flow")).toHaveAttribute("data-port-move-active", "true");
     await window.mouse.up();
-    await expect(commandPort).toHaveClass(/bd-port-top/);
+    await expect(commandPort).toHaveClass(/bd-port-right/);
+    await expect.poll(() => commandPort.getAttribute("style")).not.toBe(commandPortStyleBefore);
     await expect(window.locator(".bd-react-flow")).toHaveAttribute("data-routing-mode", "direct");
     await expect.poll(async () => window.locator(".bd-interface-route").evaluateAll(
       (paths) => paths.map((path) => path.getAttribute("d")),
@@ -167,8 +169,10 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     });
     await window.keyboard.press("Control+Z");
     await expect(commandPort).toHaveClass(/bd-port-right/);
+    await expect.poll(() => commandPort.getAttribute("style")).toBe(commandPortStyleBefore);
     await window.keyboard.press("Control+Shift+Z");
-    await expect(commandPort).toHaveClass(/bd-port-top/);
+    await expect(commandPort).toHaveClass(/bd-port-right/);
+    await expect.poll(() => commandPort.getAttribute("style")).not.toBe(commandPortStyleBefore);
     await window.keyboard.press("Control+Z");
     await expect(commandPort).toHaveClass(/bd-port-right/);
     await expect.poll(() => canvasTransform(window)).toBe(viewportAfterPortMove);

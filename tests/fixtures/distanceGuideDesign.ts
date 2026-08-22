@@ -30,7 +30,7 @@ function interfaceDefinition(title: string): InterfaceDefinition {
 
 export function distanceGuideDesignDocument(): BlockDesignDocument {
   return {
-    schemaVersion: "2.2",
+    schemaVersion: "2.3",
     id: "distance-guide-proof",
     title: "Equal Distance Guide Proof",
     summary: "A moving module snaps between its nearest overlapping neighbors.",
@@ -99,7 +99,7 @@ export function distanceGuideDesignDocument(): BlockDesignDocument {
 
 export function groupDistanceGuideDesignDocument(): BlockDesignDocument {
   return {
-    schemaVersion: "2.2",
+    schemaVersion: "2.3",
     id: "group-distance-guide-proof",
     title: "Group Equal Distance Guide Proof",
     summary: "A differently sized module group snaps as one spacing subject.",
@@ -153,7 +153,7 @@ export function groupDistanceGuideDesignDocument(): BlockDesignDocument {
           owner: "Runtime Team",
           ports: [
             { id: "in", label: "ingress", side: "left", direction: "input", required: true, offset: 0.5 },
-            { id: "out", label: "internal", side: "bottom", direction: "output", required: true, offset: 0.5 },
+            { id: "out", label: "internal", side: "right", direction: "output", required: true, offset: 0.5 },
           ],
           inspector: inspector("Represent the compact member of the moving group."),
           layout: { position: { x: 320, y: 160 }, width: 192, height: 144, pinned: true },
@@ -165,7 +165,7 @@ export function groupDistanceGuideDesignDocument(): BlockDesignDocument {
           tone: "tool",
           owner: "Tool Team",
           ports: [
-            { id: "in", label: "internal", side: "top", direction: "input", required: true, offset: 0.5 },
+            { id: "in", label: "internal", side: "left", direction: "input", required: true, offset: 0.5 },
             { id: "out", label: "egress", side: "right", direction: "output", required: true, offset: 0.5 },
           ],
           inspector: inspector("Represent the larger member and preserve relative geometry."),

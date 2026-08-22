@@ -14,7 +14,7 @@ function inspector(purpose: string): BlockNode["inspector"] {
 
 export function connectionPreviewDesignDocument(): BlockDesignDocument {
   return {
-    schemaVersion: "2.2",
+    schemaVersion: "2.3",
     id: "scene-aware-connection-preview",
     title: "Scene-Aware Connection Preview",
     summary: "A deliberate center obstacle proves that live pointer routing consumes the full scene.",

@@ -14,7 +14,7 @@ function inspector(purpose: string): BlockNode["inspector"] {
 
 export function viewportAutoPanDesignDocument(): BlockDesignDocument {
   return {
-    schemaVersion: "2.2",
+    schemaVersion: "2.3",
     id: "viewport-auto-pan-proof",
     title: "Viewport Edge Auto-Pan",
     summary: "A sparse, obstruction-free scene for reviewing continuous route editing at the viewport edge.",
@@ -37,7 +37,7 @@ export function viewportAutoPanDesignDocument(): BlockDesignDocument {
     levels: [{
       id: "system",
       title: "Viewport Interaction Proof",
-      description: "Two right-facing ports leave a clear routing corridor to the viewport edge.",
+      description: "An output-right to input-left connection leaves a clear horizontal corridor to the viewport edge.",
       layout: { direction: "DOWN", spacing: 120, layerSpacing: 180 },
       connections: [{
         id: "review-flow",
@@ -72,13 +72,13 @@ export function viewportAutoPanDesignDocument(): BlockDesignDocument {
           ports: [{
             id: "review-in",
             label: "review.flow",
-            side: "right",
+            side: "left",
             direction: "input",
             required: true,
             offset: 0.5,
           }],
           inspector: inspector("Accept one reviewed architecture fact."),
-          layout: { position: { x: 120, y: 450 }, width: 300, height: 170, pinned: true },
+          layout: { position: { x: 720, y: 80 }, width: 300, height: 170, pinned: true },
         },
       ],
     }],

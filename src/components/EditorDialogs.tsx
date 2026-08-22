@@ -12,7 +12,6 @@ import type {
   InterfaceKind,
   NormalizedConnectionEndpoints,
   PortDirection,
-  PortSide,
 } from "../model";
 import { useStudioLocale } from "../i18n/StudioLocale";
 import { useDialogFocus } from "./useDialogFocus";
@@ -211,7 +210,6 @@ export function AddPortDialog({
     id: string;
     label: string;
     direction: PortDirection;
-    side: PortSide;
     dataType: string;
     required: boolean;
   }) => void;
@@ -224,31 +222,24 @@ export function AddPortDialog({
     idFromName: idFromLabel,
   });
   const [direction, setDirection] = useState<PortDirection>("input");
-  const [side, setSide] = useState<PortSide>("left");
   const [dataType, setDataType] = useState("");
   const [required, setRequired] = useState(true);
   useLayoutEffect(() => {
     if (!open) return;
     setDirection("input");
-    setSide("left");
     setDataType("");
     setRequired(true);
   }, [open]);
   return (
     <DialogShell open={open} title={t("dialog.addPortTo", { title: blockTitle })} submitLabel={t("dialog.addPort")} error={error} onClose={onClose} onSubmit={(event) => {
       event.preventDefault();
-      onCreate({ id: draft.id.trim(), label: draft.name.trim(), direction, side, dataType: dataType.trim(), required });
+      onCreate({ id: draft.id.trim(), label: draft.name.trim(), direction, dataType: dataType.trim(), required });
     }}>
       <TextField label={t("dialog.portLabel")} value={draft.name} onChange={draft.changeName} required autoFocus />
       <TextField label={t("dialog.portId")} value={draft.id} onChange={draft.changeId} required />
-      <div className="bd-form-row">
-        <label className="bd-form-field"><span>{t("dialog.direction")}</span><select value={direction} onChange={(event) => setDirection(event.target.value as PortDirection)}>
-          <option value="input">{t("dialog.input")}</option><option value="output">{t("dialog.output")}</option><option value="bidirectional">{t("dialog.bidirectional")}</option>
-        </select></label>
-        <label className="bd-form-field"><span>{t("dialog.side")}</span><select value={side} onChange={(event) => setSide(event.target.value as PortSide)}>
-          <option value="left">{t("dialog.left")}</option><option value="right">{t("dialog.right")}</option><option value="top">{t("dialog.top")}</option><option value="bottom">{t("dialog.bottom")}</option>
-        </select></label>
-      </div>
+      <label className="bd-form-field"><span>{t("dialog.direction")}</span><select value={direction} onChange={(event) => setDirection(event.target.value as PortDirection)}>
+        <option value="input">{t("dialog.input")}</option><option value="output">{t("dialog.output")}</option>
+      </select></label>
       <TextField label={t("dialog.dataType")} value={dataType} onChange={setDataType} placeholder={t("common.optional")} />
       <label className="bd-check-field"><input type="checkbox" checked={required} onChange={(event) => setRequired(event.target.checked)} /><span>{t("dialog.required")}</span></label>
     </DialogShell>

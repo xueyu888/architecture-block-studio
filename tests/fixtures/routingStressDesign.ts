@@ -6,10 +6,10 @@ const HUB_WIDTH = 5_000;
 const HUB_HEIGHT = 3_500;
 const SATELLITE_WIDTH = 180;
 const SATELLITE_HEIGHT = 112;
-const PORTS_PER_SIDE = 25;
+const PORTS_PER_SIDE = 50;
 
 function hubPort(side: PortSide, index: number): BlockPort {
-  const incoming = side === "left" || side === "top";
+  const incoming = side === "left";
   return {
     id: `${side}-${index.toString().padStart(2, "0")}`,
     label: `${side}.${index.toString().padStart(2, "0")}`,
@@ -23,13 +23,13 @@ function hubPort(side: PortSide, index: number): BlockPort {
 function portCoordinate(side: PortSide, index: number): { x: number; y: number } {
   const fraction = (index + 1) / (PORTS_PER_SIDE + 1);
   return {
-    x: HUB_X + (side === "top" || side === "bottom" ? HUB_WIDTH * fraction : side === "left" ? 0 : HUB_WIDTH),
-    y: HUB_Y + (side === "left" || side === "right" ? HUB_HEIGHT * fraction : side === "top" ? 0 : HUB_HEIGHT),
+    x: HUB_X + (side === "left" ? 0 : HUB_WIDTH),
+    y: HUB_Y + HUB_HEIGHT * fraction,
   };
 }
 
 export function routingStressDesignDocument(): BlockDesignDocument {
-  const sides: PortSide[] = ["left", "right", "top", "bottom"];
+  const sides: PortSide[] = ["left", "right"];
   const ports = sides.flatMap((side) =>
     Array.from({ length: PORTS_PER_SIDE }, (_, index) => hubPort(side, index))
   );
@@ -42,21 +42,14 @@ export function routingStressDesignDocument(): BlockDesignDocument {
     const satellitePort: BlockPort = {
       id: "link",
       label: "link",
-      side: port.side === "left" ? "right"
-        : port.side === "right" ? "left"
-          : port.side === "top" ? "bottom"
-            : "top",
+      side: port.side === "left" ? "right" : "left",
       direction: hubIsSource ? "input" : "output",
       required: false,
       offset: 0.5,
     };
     const position = port.side === "left"
       ? { x: 800, y: coordinate.y - SATELLITE_HEIGHT / 2 }
-      : port.side === "right"
-        ? { x: 6_400, y: coordinate.y - SATELLITE_HEIGHT / 2 }
-        : port.side === "top"
-          ? { x: coordinate.x - SATELLITE_WIDTH / 2, y: 600 }
-          : { x: coordinate.x - SATELLITE_WIDTH / 2, y: 4_800 };
+      : { x: 6_400, y: coordinate.y - SATELLITE_HEIGHT / 2 };
     connections.push({
       id: `hub-${port.side}-${index.toString().padStart(2, "0")}`,
       interfaceId: "stress.flow",
@@ -93,7 +86,7 @@ export function routingStressDesignDocument(): BlockDesignDocument {
   });
 
   return {
-    schemaVersion: "2.2",
+    schemaVersion: "2.3",
     id: "routing-skew-stress",
     title: "Routing Skew Stress",
     summary: "One 100-connection hub surrounded by 100 one-connection modules.",

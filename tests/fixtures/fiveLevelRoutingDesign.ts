@@ -151,7 +151,7 @@ export function fiveLevelRoutingDesignDocument(): BlockDesignDocument {
     });
   }
   return {
-    schemaVersion: "2.2",
+    schemaVersion: "2.3",
     id: "five-level-routing-stress",
     title: "Five-Level Routing Stress",
     summary: "Two sparse typed flows, five nested hierarchy boundaries, and exhaustive route auditing.",

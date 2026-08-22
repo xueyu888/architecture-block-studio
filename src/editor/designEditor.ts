@@ -3,6 +3,7 @@ import {
   connectionEndpointsEqual,
   nodeSchema,
   parseBlockDesignDocument,
+  portSideForDirection,
   type BlockConnection,
   type BlockDesignDocument,
   type BlockNode,
@@ -14,7 +15,6 @@ import {
   type InterfaceDefinition,
   type InterfaceKind,
   type PortDirection,
-  type PortSide,
 } from "../model";
 import { insertDesignFragment, type DesignFragment } from "./designFragment";
 import { isAuthorId } from "./identifiers";
@@ -37,7 +37,6 @@ export interface BlockDraft {
 export interface PortDraft {
   id: string;
   label: string;
-  side: PortSide;
   direction: PortDirection;
   dataType?: string;
   required: boolean;
@@ -64,7 +63,6 @@ export interface PortMove {
   levelId: string;
   nodeId: string;
   portId: string;
-  side: PortSide;
   offset: number;
 }
 
@@ -104,7 +102,7 @@ export type DesignOperation =
       levelId: string;
       nodeId: string;
       portId: string;
-      values: Omit<BlockPort, "id">;
+      values: Omit<BlockPort, "id" | "side">;
     }
   | { type: "port/delete"; levelId: string; nodeId: string; portId: string }
   | { type: "hierarchy/add"; levelId: string; nodeId: string; childLevel: DesignLevel }
@@ -165,9 +163,9 @@ function requirePort(node: BlockNode, portId: string): BlockPort {
   return node.ports.find((port) => port.id === portId) ?? editError(`Port ${node.id}.${portId} does not exist.`);
 }
 
-function nextPortOffset(ports: readonly BlockPort[], side: PortSide): number {
+function nextPortOffset(ports: readonly BlockPort[], direction: PortDirection): number {
   const occupied = ports
-    .filter((port) => port.side === side)
+    .filter((port) => port.direction === direction)
     .map((port) => port.offset)
     .sort((left, right) => left - right);
   const boundaries = [0, ...occupied, 1];
@@ -229,7 +227,6 @@ function applyNodeGeometryOperation(
         ...node,
         ports: node.ports.map((port) => port.id !== operation.portId ? port : {
           ...port,
-          side: operation.side,
           offset: operation.offset,
         }),
       })),
@@ -517,13 +514,20 @@ export function applyDesignOperation(
       }
       node.ports.push({
         ...operation.port,
-        offset: nextPortOffset(node.ports, operation.port.side),
+        offset: nextPortOffset(node.ports, operation.port.direction),
       });
       break;
     }
     case "port/update": {
-      const port = requirePort(requireNode(requireLevel(next, operation.levelId), operation.nodeId), operation.portId);
-      Object.assign(port, operation.values);
+      const node = requireNode(requireLevel(next, operation.levelId), operation.nodeId);
+      const port = requirePort(node, operation.portId);
+      const directionChanged = port.direction !== operation.values.direction;
+      Object.assign(port, operation.values, {
+        side: portSideForDirection(operation.values.direction),
+        offset: directionChanged
+          ? nextPortOffset(node.ports.filter((candidate) => candidate.id !== port.id), operation.values.direction)
+          : port.offset,
+      });
       break;
     }
     case "port/delete": {
@@ -719,7 +723,7 @@ export function createPort(draft: PortDraft): BlockPort {
   return {
     id: draft.id,
     label: draft.label.trim() || draft.id,
-    side: draft.side,
+    side: portSideForDirection(draft.direction),
     direction: draft.direction,
     dataType: draft.dataType?.trim() || undefined,
     required: draft.required,

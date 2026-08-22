@@ -2,7 +2,7 @@
 
 ## 当前成熟度
 
-当前版本为 **0.5.0 Windows 桌面版**：核心本地编辑闭环、层级聚焦、依赖审查、专业图形操作、DRC、Schema 迁移、canonical JSON 文件流与压力观测已经成立。Iteration 102–113 完成安全 Electron 壳、原生文件、更新、最近设计、五语界面、固定 Dock、标题直编、位置化粘贴 / 新建和五层直接操作；Iteration 114 删除复杂自动避障、Worker、线桥和路由证书，把自动连线收敛为两点直线，并保留用户 waypoint 的正交手动编辑。renderer 的 70 个受管源码文件继续生成五层架构 JSON，并双向闭合 30 条 import。崩溃恢复、历史容量策略、固定 CI 性能预算、商业代码签名与更高阶审查工作流仍未达到生产级。
+当前版本为 **0.5.1 Windows 桌面版**：核心本地编辑闭环、层级聚焦、依赖审查、专业图形操作、DRC、Schema 迁移、canonical JSON 文件流与压力观测已经成立。Iteration 102–114 完成安全 Electron 壳、原生文件、更新、最近设计、五语界面、固定 Dock、位置化编辑、五层直接操作和可预测的简洁连线；Iteration 115 把接口归一为“谁发起调用”的单向契约，模块名保持顶部，input 固定左侧、output 固定右侧，并完成 Schema 2.3 与 AIO Context 示例的语义校正。renderer 的受管源码仍由仓库适配器生成多层架构 JSON 并闭合 import。崩溃恢复、历史容量策略、固定 CI 性能预算、商业代码签名与更高阶审查工作流仍未达到生产级。
 
 路线图记录真实完成的迭代，不用计划数量冒充执行数量。长期目标可以拆成 100 个小步，但每一行都必须对应实际代码、验证或文档证据。
 
@@ -20,7 +20,7 @@ P0 未收敛前不扩展协作或服务端事实源。源码分析作为适配�
 
 | 优先级 | 状态 | 事项 | 事实 / 验收方向 |
 | --- | --- | --- | --- |
-| P0 | 进行中 | Schema 生命周期 | Iteration 8–9 建立 `2.0 -> 2.1` 纯迁移与路径合同；Iteration 26 完成 model-owned 逐步迁移注册表、不可变支持矩阵、输入 / 输出 golden fixtures 和非法版本合同；2.1 全局未知字段应严格拒绝还是保留写回仍待明确 |
+| P0 | 进行中 | Schema 生命周期 | Iteration 8–9 建立 `2.0 -> 2.1` 纯迁移与路径合同；Iteration 26 完成 model-owned 逐步迁移注册表、不可变支持矩阵、输入 / 输出 golden fixtures 和非法版本合同；Iteration 115 增加 `2.2 -> 2.3` 接口方向迁移，只在连接角色或父子绑定能唯一证明时推导旧双向端口，真正歧义明确拒绝；全局未知字段应严格拒绝还是保留写回仍待明确 |
 | P0 | 已完成 | 文件输出稳定性 | Iteration 27 让无序 record 使用 canonical key order，设计数组保持原顺序；Save、Save As、Export 与 dirty baseline 共用同一序列化合同 |
 | P0 | 已完成 | 最近设计 | Iteration 112 在 Electron main 的 `userData` 中只保存最近 10 个文件引用和打开时间；renderer 只获得 opaque id 与展示摘要。成功 Open / Save 后更新，失效文件重开时明确提示并移除，不复制 JSON、不改变 dirty / Undo 或当前文件绑定 |
 | P0 | 待设计 | 崩溃恢复 | Windows 关闭前保护已成立，但仍没有异常崩溃后的自动恢复副本 |
@@ -38,7 +38,7 @@ P0 未收敛前不扩展协作或服务端事实源。源码分析作为适配�
 | P1 | 已完成 | 端点方向与端口文字 | Iteration 63 让每条真实连接只在 JSON target 显示一个语义箭头并把 Port Handle 改为中性连接点；Iteration 64 将稳定 Handle 与四侧标签轨道拆开，端口名、Header、Owner 和线路端点不再争用同一几何空间 |
 | P1 | 已完成 | 模块尺寸直接编辑 | Iteration 66 以 `node.layout.position / width / height` 为唯一持久几何，提供单模块四边 / 四角 pointer resize、内容安全下限、Ctrl/Cmd + Shift + Arrow 精调、路由跟随、Undo / Redo、保存和草稿拒绝恢复；Iteration 98 用同一几何事实补齐同父级多模块统一八向 resize 与一次 `nodes/resize` |
 | P1 | 已完成 | 模块标题直接编辑 | Iteration 103 对照 draw.io 的 `startEditingAtCell` 动作边界，让选中模块通过 F2 或双击 Header 标题进入局部输入；临时字符串只属于当前输入会话，提交仍由 Editor 的一次具名 `node/rename` 写入唯一文档事实，Escape、空值和 Inspector 草稿冲突不会写入 |
-| P2 | 已完成 | 连线可读性与手动路由 | Iteration 114 以可解释的两点直线替换复杂自动避障、Worker、lane、线桥和证书；选中线高亮并可用鼠标 / 键盘物化为保存 waypoints 的正交手动路线。端口名称成为唯一移动入口，命中区保持约 30 CSS px，顶 / 底端口使用垂直 chip |
+| P2 | 已完成 | 连线可读性与手动路由 | Iteration 114 以可解释的两点直线替换复杂自动避障、Worker、lane、线桥和证书；选中线高亮并可用鼠标 / 键盘物化为保存 waypoints 的正交手动路线。Iteration 115 让端口名称成为唯一纵向移动入口，命中区保持约 30 CSS px，并由 direction 唯一派生左 / 右边 |
 | P2 | 进行中 | 图形直接操作 | 单线段 / 折点 / 端点编辑、模块与组 resize、框选、多选、吸附、对齐、分布、位置化 Add Module Here / toolbar drag、子图 Copy / Cut / Paste / Paste Here / Duplicate、右键菜单、层级 Enter / Exit / Home 与依赖邻域审查已沿同一文档 / Editor / Selection 合同成立；仍需继续用真实复杂架构场景对照 draw.io，不能把局部能力数量冒充同等级整体体验 |
 | P2 | 已完成 | 多尺度总览可读性 | Iteration 41 从 viewport 唯一派生 detail level；低缩放只隐藏不可读的次级文字，保留模块标题、端口名、把手和线路，放大自动恢复完整细节 |
 | P2 | 已完成 | 高频命令效率 | Iteration 55 已建立菜单字符定位，Iteration 59 已统一命令 Tooltip；Iteration 61 用 `Ctrl/⌘ K` 建立可搜索命令面板，名称、快捷键、可用性、禁用原因和执行仍只来自 `StudioCommands`，高频动作不再依赖记忆菜单分类或跨工作区 Tab |
@@ -239,7 +239,9 @@ Iteration 63–72 的实现顺序只会因 P0 或上一轮证据揭示的新根�
 | Iteration 112 | Windows 日常使用仍缺最近文件、界面语言和侧栏收纳；端口标签虽可拖动，但低缩放下命中困难，连接 Handle 与移动动作容易混淆。若把这些偏好写进设计或让 renderer 持有完整路径，会污染架构事实与桌面安全边界 | `StudioLocaleProvider` 唯一拥有五语目录和本机偏好，所有核心工作台文案从消息 key 派生；Dock 显隐继续只写 workspace layout。端口外侧新增 inverse-zoom 的 22 CSS px 独立移动抓手，标签可继续拖动，圆形 Handle 只负责连接；同一 `side + offset` 预览最终只提交一个 `port/move`。`RecentDesignService` 在 Electron main 的 `userData` 中只保存最多 10 个文件引用，renderer 只用 opaque id 重开，成功 Open / Save 后才更新 | 233 / 233 unit（35 files）；1921-module build；Chromium 92 / 92 + Firefox 91 / 91 = 183 / 183；Electron 1 / 1。低缩放真实鼠标拖端口验证命中区、跨边、实时路线、dirty 与 Undo；最近文件覆盖重载持久化、去重、顺序、并发首次写入、失效清理和无 JSON 副本；源码 29 routes / 406 pairs、Hub 100 / 4,950、五层与 1000 / 2000 全量复验；两张 Windows 截图人工复核 | 设计 JSON 仍唯一拥有模块、端口和接口；语言、Dock、最近路径、gesture、路线预览与测试证据各留在自己的边界。用户内容和技术 ID 不翻译。未增加移动端；商业签名、崩溃恢复和固定 CI 性能预算仍是明确保留项 |
 | Iteration 113 | Dock 的通用浮动能力与本产品固定工作台目标冲突：Properties 可以漂到画布中央，原右栏留下空槽，且没有可靠拖回或关闭路径；只补一个关闭按钮会继续保留错误状态机 | `createDefaultLayout` 生成唯一 canonical panel topology；保存布局只保留该拓扑内的尺寸、折叠和激活状态。恢复时统一提取 center / 四边 / floating / popout 的 panel placement 与 canonical topology 比较，异常就恢复并重写默认布局；Dockview 禁止 DnD，删除 Float 命令和五语死文案 | 233 / 233 unit（35 files）；1921-module build；Chromium 93 / 93 + Firefox 92 / 92 = 185 / 185；Electron 1 / 1。自动化构造旧版 floating Properties，刷新后断言中央无浮动 panel、Properties 回到右侧、持久布局已清除 floating group；Windows 截图人工复核 | 固定 topology 只由代码默认布局拥有，localStorage 不是第二拓扑事实源；迁移与显隐都不触碰设计 JSON、History、dirty、selection 或画布路线。窗口仍支持尺寸、折叠、恢复和最大化，但不再提供无产品价值的任意 Dock 编排 |
 
-| Iteration 114 | 自动避障体系代码量大、测试慢，仍会生成绕线、回钩和遮挡；端口额外抓手也让界面更乱。用户需要可预测的直接线路，并能亲自决定具体走向 | 删除 scene router、routing scene、verifier、line jumps、obstacle catalog、live / committed Worker 和 Optimize Routing；`projectConnectionRoutes` 成为唯一自动几何 Owner：无 waypoint 恰好两点，有 waypoint 恢复正交折线。端口文字以 inverse zoom 保持 30 CSS px 命中区，顶 / 底端口使用垂直 chip。布局首帧缺端点时暂不投影，不伪造坐标或崩溃；Inspector 通过同一 `baseNodeDimensions` 显示实际画布尺寸 | 207 / 207 unit 与 production build 通过；完整 Chromium 91 / 93 后暴露并修复派生尺寸显示问题，相关 3 / 3 focused 回归通过；200 / 400 场景首次可交互 1220 ms，缩放提交只投影 2 个节点与 6 条受影响线路；Electron 1 / 1。默认双展开、五层 20 线、偏斜 Hub 100 线、端口低缩放拖动、直线选中、键盘物化手动路线、预览 / 提交和最终截图均复核 | `BlockDesignDocument` 仍唯一拥有端点、作者尺寸和用户 waypoints；布局从作者尺寸与端口可读性下限派生实际几何，连接投影不持有状态，Canvas 只显示和发出编辑意图。历史迭代的避障记录保留为演进证据，但不再描述当前合同；本轮随四边中心卡片升级发布 v0.5.0 |
+| Iteration 114 | 自动避障体系代码量大、测试慢，仍会生成绕线、回钩和遮挡；端口额外抓手也让界面更乱。用户需要可预测的直接线路，并能亲自决定具体走向 | 删除 scene router、routing scene、verifier、line jumps、obstacle catalog、live / committed Worker 和 Optimize Routing；`projectConnectionRoutes` 成为唯一自动几何 Owner：无 waypoint 恰好两点，有 waypoint 恢复正交折线。端口文字以 inverse zoom 保持 30 CSS px 命中区。布局首帧缺端点时暂不投影，不伪造坐标或崩溃；Inspector 通过同一 `baseNodeDimensions` 显示实际画布尺寸 | 207 / 207 unit 与 production build 通过；完整 Chromium 91 / 93 后暴露并修复派生尺寸显示问题，相关 3 / 3 focused 回归通过；200 / 400 场景首次可交互 1220 ms，缩放提交只投影 2 个节点与 6 条受影响线路；Electron 1 / 1。默认双展开、五层 20 线、偏斜 Hub 100 线、端口低缩放拖动、直线选中、键盘物化手动路线、预览 / 提交和最终截图均复核 | `BlockDesignDocument` 仍唯一拥有端点、作者尺寸和用户 waypoints；布局从作者尺寸与端口可读性下限派生实际几何，连接投影不持有状态，Canvas 只显示和发出编辑意图。历史迭代的避障记录保留为演进证据；本轮一度产出的四边中心卡片已被 Iteration 115 的调用契约取代 |
+
+| Iteration 115 | 四边中心卡片与接口调用语义冲突；双向端口、返回值反向箭头和所有权线混淆“谁调用谁”，旧四边归并还会导致端口碰撞与卡片异常放大 | `BlockDesignDocument 2.3` 只允许 `output/right → input/left`；direction 为唯一逻辑事实并派生 side，offset 保留用户纵向位置。标题回到顶部，端口以 IN / OUT 明示角色；方向变更自动换侧并选择安全空位。旧双向端口只在连接或父子绑定能唯一证明角色时迁移，否则拒绝。AIO Context 删除返回线、Canonical 所有权线、Region 成员线与伪 `build_prompt` 反向接口 | 214 / 214 unit、typecheck、desktop typecheck 与 production build 通过；完整 Chromium 93 / 94 一次通过，唯一截图选线分支修正后 1 / 1 回归闭合；Windows Electron 1 / 1。AIO Context、100 线 Hub、五层、低缩放端口拖动与自动平移均通过；`interface-direction-context.png`、`directional-side-ports.png` 和 Windows 截图逐图复核 | 参数、返回值与错误始终留在一个 InterfaceDefinition；主动回调 / 事件是反向新 Interface，所有权 / 层级不生成 Connection。文档、迁移、Editor、布局、DRC、示例和测试共用同一契约，v0.5.1 取代语义错误的 v0.5.0 |
 
 ## 本目标收尾后的保留项
 

@@ -1,9 +1,13 @@
 import { z } from "zod";
 
-export const BLOCK_DESIGN_SCHEMA_VERSION = "2.2" as const;
+export const BLOCK_DESIGN_SCHEMA_VERSION = "2.3" as const;
 
-export const portSideSchema = z.enum(["left", "right", "top", "bottom"]);
-export const portDirectionSchema = z.enum(["input", "output", "bidirectional"]);
+export const portSideSchema = z.enum(["left", "right"]);
+export const portDirectionSchema = z.enum(["input", "output"]);
+
+export function portSideForDirection(direction: "input" | "output"): "left" | "right" {
+  return direction === "input" ? "left" : "right";
+}
 export const interfaceKindSchema = z.enum([
   "rpc",
   "dto",
@@ -38,6 +42,14 @@ export const portSchema = z.object({
   dataType: z.string().min(1).optional(),
   required: z.boolean().default(true),
   offset: z.number().finite().gt(0).lt(1),
+}).superRefine((port, context) => {
+  const requiredSide = portSideForDirection(port.direction);
+  if (port.side === requiredSide) return;
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ["side"],
+    message: `${port.direction} ports must be placed on the ${requiredSide} edge.`,
+  });
 });
 
 export const endpointSchema = z.object({

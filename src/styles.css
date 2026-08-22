@@ -709,10 +709,7 @@ button { color: inherit; }
 
 .bd-block-content {
   position: absolute;
-  display: flex;
   min-width: 0;
-  align-items: center;
-  justify-content: center;
 }
 
 .bd-block-identity {
@@ -761,10 +758,6 @@ button { color: inherit; }
 }
 .bd-port-rail-left { left: 0; }
 .bd-port-rail-right { right: 0; }
-.bd-port-rail-top,
-.bd-port-rail-bottom { right: 0; left: 0; height: 0; }
-.bd-port-rail-top { top: 0; }
-.bd-port-rail-bottom { bottom: 0; }
 
 .bd-port {
   position: absolute;
@@ -776,12 +769,12 @@ button { color: inherit; }
 
 .bd-port-left { left: 0; transform: translateY(-50%); }
 .bd-port-right { right: 0; flex-direction: row-reverse; transform: translateY(-50%); }
-.bd-port-top { top: 0; transform: translateX(-50%); }
-.bd-port-bottom { bottom: 0; transform: translateX(-50%); }
 
 .bd-port-label {
   --port-pointer-target: calc(30px * var(--canvas-inverse-zoom, 1));
   display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
   gap: 1px;
   width: var(--port-label-width);
   border: 0;
@@ -818,18 +811,20 @@ button { color: inherit; }
 }
 
 .bd-port-label-left { left: var(--port-side-label-inset); transform: translateY(-50%); }
-.bd-port-label-right { right: var(--port-side-label-inset); transform: translateY(-50%); text-align: right; }
-.bd-port-label-top,
-.bd-port-label-bottom {
-  width: var(--port-horizontal-chip-width);
-  height: var(--port-label-width);
-  min-height: 0;
-  padding: 0;
-  transform: translateX(-50%);
-  text-align: center;
+.bd-port-label-right {
+  right: var(--port-side-label-inset);
+  grid-template-columns: minmax(0, 1fr) auto;
+  transform: translateY(-50%);
+  text-align: right;
 }
-.bd-port-label-top { top: 4px; }
-.bd-port-label-bottom { bottom: 4px; }
+.bd-port-label-right .bd-port-direction { order: 2; }
+.bd-port-label-right .bd-port-name { order: 1; }
+
+.bd-port-direction {
+  color: var(--block-color);
+  font: 700 6px/1.2 Arial, sans-serif;
+  letter-spacing: 0.04em;
+}
 
 .bd-port-label span,
 .bd-port-label small {
@@ -838,16 +833,6 @@ button { color: inherit; }
   white-space: nowrap;
 }
 
-.bd-port-label-top > span,
-.bd-port-label-bottom > span {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: var(--port-label-width);
-  transform: translate(-50%, -50%) rotate(90deg);
-  text-align: center;
-}
-.bd-port-label-bottom > span { transform: translate(-50%, -50%) rotate(-90deg); }
 
 .react-flow__controls {
   overflow: hidden;
@@ -1676,35 +1661,31 @@ button { color: inherit; }
 .bd-block.is-expanded > .bd-port-rail { pointer-events: auto; }
 
 .bd-block-content {
-  inset: var(--port-horizontal-rail-depth) max(20px, calc(var(--port-vertical-label-width) + 7px));
+  inset: 0;
   z-index: 1;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
-  justify-items: center;
   gap: 6px;
   text-align: center;
   pointer-events: none;
 }
 
 .bd-block-identity {
-  grid-row: 2;
+  position: absolute;
+  inset: 0 0 auto;
   min-width: 0;
-  max-width: 100%;
-  min-height: var(--block-identity-height);
+  height: var(--block-header-height);
   display: grid;
-  grid-template-columns: 17px minmax(0, auto) 17px;
+  grid-template-columns: 17px minmax(0, 1fr) 17px;
   align-items: center;
   gap: 6px;
-  padding: 6px 9px;
+  padding: 0 9px;
   color: var(--ink);
-  border: 1px solid color-mix(in srgb, var(--block-color) 25%, var(--divider-soft));
-  border-radius: 5px;
+  border-bottom: 1px solid color-mix(in srgb, var(--block-color) 25%, var(--divider-soft));
+  border-radius: var(--radius-medium) var(--radius-medium) 0 0;
   background: color-mix(in srgb, var(--block-fill) 72%, #fff);
-  box-shadow: 0 1px 4px rgba(31, 43, 55, 0.08);
   pointer-events: auto;
 }
 
-.bd-block-heading { min-width: 0; display: grid; justify-items: center; gap: 3px; text-align: center; }
+.bd-block-heading { min-width: 0; display: flex; align-items: baseline; gap: 7px; text-align: left; }
 .bd-block-heading h3 { min-width: 0; max-width: 100%; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; line-height: 1.1; letter-spacing: -0.01em; }
 .bd-block-title-editor {
   min-width: 56px;
@@ -1739,17 +1720,20 @@ button { color: inherit; }
 }
 
 .bd-block-body {
-  grid-row: 1;
-  align-self: end;
-  max-width: min(420px, 86%);
-  padding: 0;
+  position: absolute;
+  inset: calc(var(--block-header-height) + 8px)
+    max(20px, calc(var(--port-right-label-width) + 7px))
+    calc(var(--block-owner-band-height) + 8px)
+    max(20px, calc(var(--port-left-label-width) + 7px));
+  display: grid;
+  place-items: center;
   text-align: center;
 }
 .bd-block-body p { margin: 0; color: var(--text-muted); font-size: 9px; line-height: 1.4; }
 .bd-block-owner {
-  grid-row: 3;
-  align-self: start;
-  max-width: min(360px, 82%);
+  inset: auto max(20px, calc(var(--port-right-label-width) + 7px)) 2px
+    max(20px, calc(var(--port-left-label-width) + 7px));
+  height: var(--block-owner-band-height);
   color: var(--text-subtle);
   font-size: 8px;
 }
@@ -1768,13 +1752,14 @@ button { color: inherit; }
 .bd-hierarchy-watermark span { font-size: 8px; text-transform: uppercase; }
 
 .bd-block.is-expanded > .bd-block-content {
-  inset: max(8px, calc(var(--port-horizontal-rail-depth) + 6px))
-    max(20px, calc(var(--port-vertical-label-width) + 7px)) auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  justify-content: flex-start;
+  inset: 0;
+}
+
+.bd-block.is-expanded .bd-hierarchy-watermark {
+  position: absolute;
+  top: calc(var(--block-header-height) + 5px);
+  right: 8px;
+  left: 8px;
 }
 
 .bd-port-label {
@@ -1825,11 +1810,6 @@ button { color: inherit; }
 }
 
 .bd-port-label-right small { right: 0; left: auto; }
-.bd-port-label-top small,
-.bd-port-label-bottom small {
-  top: 0;
-  left: calc(100% + 3px);
-}
 .bd-react-flow:not([data-detail-level="overview"]) .bd-port-label:hover small,
 .bd-react-flow:not([data-detail-level="overview"]) .bd-port-label:focus-visible small { display: block; }
 
@@ -1896,16 +1876,6 @@ button { color: inherit; }
 .bd-port-right .bd-port-handle-anchor-right.react-flow__handle {
   inset: 50% 0 auto auto;
   transform: translate(150%, -50%);
-}
-
-.bd-port-top .bd-port-handle-anchor-top.react-flow__handle {
-  inset: 0 auto auto 50%;
-  transform: translate(-50%, -150%);
-}
-
-.bd-port-bottom .bd-port-handle-anchor-bottom.react-flow__handle {
-  inset: auto auto 0 50%;
-  transform: translate(-50%, 150%);
 }
 
 .react-flow__edge-path { stroke-width: 2; stroke-linecap: square; stroke-linejoin: miter; }

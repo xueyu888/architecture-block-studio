@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "2.2",
+  "schemaVersion": "2.3",
   "id": "architecture-block-studio.source-architecture.v1",
   "title": "Architecture Block Studio — Source Architecture",
   "summary": "Generated from 70 managed source files and 30 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
@@ -460,7 +460,7 @@
             {
               "id": "used-by-canvas",
               "label": "Canvas",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "5 import declarations",
               "required": true,
@@ -469,7 +469,7 @@
             {
               "id": "used-by-editor",
               "label": "Editor",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "4 import declarations",
               "required": true,
@@ -478,7 +478,7 @@
             {
               "id": "used-by-io",
               "label": "I/O",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "2 import declarations",
               "required": true,
@@ -487,7 +487,7 @@
             {
               "id": "used-by-layout",
               "label": "Layout",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "5 import declarations",
               "required": true,
@@ -496,7 +496,7 @@
             {
               "id": "used-by-protocols",
               "label": "Protocols",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "1 import declarations",
               "required": true,
@@ -505,7 +505,7 @@
             {
               "id": "used-by-routing",
               "label": "Connections",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "1 import declarations",
               "required": true,
@@ -514,7 +514,7 @@
             {
               "id": "used-by-studio",
               "label": "Studio",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "2 import declarations",
               "required": true,
@@ -523,7 +523,7 @@
             {
               "id": "used-by-workbench",
               "label": "Workbench",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "8 import declarations",
               "required": true,
@@ -572,7 +572,7 @@
             {
               "id": "used-by-app",
               "label": "App",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "1 import declarations",
               "required": true,
@@ -581,7 +581,7 @@
             {
               "id": "used-by-editor",
               "label": "Editor",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "1 import declarations",
               "required": true,
@@ -590,7 +590,7 @@
             {
               "id": "used-by-studio",
               "label": "Studio",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "4 import declarations",
               "required": true,
@@ -599,7 +599,7 @@
             {
               "id": "used-by-workbench",
               "label": "Workbench",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "1 import declarations",
               "required": true,
@@ -608,7 +608,7 @@
             {
               "id": "depends-model",
               "label": "Model",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "2 import declarations",
               "required": true,
@@ -657,7 +657,7 @@
             {
               "id": "used-by-canvas",
               "label": "Canvas",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "1 import declarations",
               "required": true,
@@ -666,7 +666,7 @@
             {
               "id": "used-by-studio",
               "label": "Studio",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "2 import declarations",
               "required": true,
@@ -675,7 +675,7 @@
             {
               "id": "used-by-workbench",
               "label": "Workbench",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "1 import declarations",
               "required": true,
@@ -684,7 +684,7 @@
             {
               "id": "depends-io",
               "label": "I/O",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
@@ -693,7 +693,7 @@
             {
               "id": "depends-model",
               "label": "Model",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "4 import declarations",
               "required": true,
@@ -742,7 +742,7 @@
             {
               "id": "used-by-canvas",
               "label": "Canvas",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "6 import declarations",
               "required": true,
@@ -751,7 +751,7 @@
             {
               "id": "used-by-routing",
               "label": "Connections",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "1 import declarations",
               "required": true,
@@ -760,7 +760,7 @@
             {
               "id": "used-by-studio",
               "label": "Studio",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "2 import declarations",
               "required": true,
@@ -769,7 +769,7 @@
             {
               "id": "used-by-workbench",
               "label": "Workbench",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "1 import declarations",
               "required": true,
@@ -778,7 +778,7 @@
             {
               "id": "depends-model",
               "label": "Model",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "5 import declarations",
               "required": true,
@@ -827,7 +827,7 @@
             {
               "id": "used-by-canvas",
               "label": "Canvas",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "3 import declarations",
               "required": true,
@@ -836,7 +836,7 @@
             {
               "id": "depends-layout",
               "label": "Layout",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
@@ -845,7 +845,7 @@
             {
               "id": "depends-model",
               "label": "Model",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
@@ -894,7 +894,7 @@
             {
               "id": "used-by-app",
               "label": "App",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "1 import declarations",
               "required": true,
@@ -903,7 +903,7 @@
             {
               "id": "used-by-canvas",
               "label": "Canvas",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "3 import declarations",
               "required": true,
@@ -912,7 +912,7 @@
             {
               "id": "used-by-studio",
               "label": "Studio",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "6 import declarations",
               "required": true,
@@ -921,7 +921,7 @@
             {
               "id": "used-by-workbench",
               "label": "Workbench",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "21 import declarations",
               "required": true,
@@ -930,7 +930,7 @@
             {
               "id": "depends-model",
               "label": "Model",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
@@ -979,7 +979,7 @@
             {
               "id": "used-by-canvas",
               "label": "Canvas",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "3 import declarations",
               "required": true,
@@ -988,7 +988,7 @@
             {
               "id": "used-by-studio",
               "label": "Studio",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "12 import declarations",
               "required": true,
@@ -997,7 +997,7 @@
             {
               "id": "depends-editor",
               "label": "Editor",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
@@ -1006,7 +1006,7 @@
             {
               "id": "depends-io",
               "label": "I/O",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
@@ -1015,7 +1015,7 @@
             {
               "id": "depends-layout",
               "label": "Layout",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
@@ -1024,7 +1024,7 @@
             {
               "id": "depends-model",
               "label": "Model",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "8 import declarations",
               "required": true,
@@ -1033,7 +1033,7 @@
             {
               "id": "depends-protocols",
               "label": "Protocols",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "21 import declarations",
               "required": true,
@@ -1082,7 +1082,7 @@
             {
               "id": "used-by-studio",
               "label": "Studio",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "1 import declarations",
               "required": true,
@@ -1091,7 +1091,7 @@
             {
               "id": "depends-editor",
               "label": "Editor",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
@@ -1100,7 +1100,7 @@
             {
               "id": "depends-layout",
               "label": "Layout",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "6 import declarations",
               "required": true,
@@ -1109,7 +1109,7 @@
             {
               "id": "depends-model",
               "label": "Model",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "5 import declarations",
               "required": true,
@@ -1118,7 +1118,7 @@
             {
               "id": "depends-protocols",
               "label": "Protocols",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "3 import declarations",
               "required": true,
@@ -1127,7 +1127,7 @@
             {
               "id": "depends-routing",
               "label": "Connections",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "3 import declarations",
               "required": true,
@@ -1136,7 +1136,7 @@
             {
               "id": "depends-workbench",
               "label": "Workbench",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "3 import declarations",
               "required": true,
@@ -1185,7 +1185,7 @@
             {
               "id": "used-by-app",
               "label": "App",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "1 import declarations",
               "required": true,
@@ -1194,7 +1194,7 @@
             {
               "id": "depends-canvas",
               "label": "Canvas",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
@@ -1203,7 +1203,7 @@
             {
               "id": "depends-editor",
               "label": "Editor",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "2 import declarations",
               "required": true,
@@ -1212,7 +1212,7 @@
             {
               "id": "depends-io",
               "label": "I/O",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "4 import declarations",
               "required": true,
@@ -1221,7 +1221,7 @@
             {
               "id": "depends-layout",
               "label": "Layout",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "2 import declarations",
               "required": true,
@@ -1230,7 +1230,7 @@
             {
               "id": "depends-model",
               "label": "Model",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "2 import declarations",
               "required": true,
@@ -1239,7 +1239,7 @@
             {
               "id": "depends-protocols",
               "label": "Protocols",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "6 import declarations",
               "required": true,
@@ -1248,7 +1248,7 @@
             {
               "id": "depends-workbench",
               "label": "Workbench",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "12 import declarations",
               "required": true,
@@ -1297,7 +1297,7 @@
             {
               "id": "used-by-bootstrap",
               "label": "Bootstrap",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "1 import declarations",
               "required": true,
@@ -1346,7 +1346,7 @@
             {
               "id": "used-by-bootstrap",
               "label": "Bootstrap",
-              "side": "right",
+              "side": "left",
               "direction": "input",
               "dataType": "1 import declarations",
               "required": true,
@@ -1355,7 +1355,7 @@
             {
               "id": "depends-io",
               "label": "I/O",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
@@ -1364,7 +1364,7 @@
             {
               "id": "depends-protocols",
               "label": "Protocols",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
@@ -1373,7 +1373,7 @@
             {
               "id": "depends-studio",
               "label": "Studio",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
@@ -1422,7 +1422,7 @@
             {
               "id": "depends-app",
               "label": "App",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
@@ -1431,7 +1431,7 @@
             {
               "id": "depends-styles",
               "label": "Tokens",
-              "side": "left",
+              "side": "right",
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,

@@ -59,11 +59,11 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 - 使用 **Ctrl/⌘ C、Ctrl/⌘ X、Ctrl/⌘ V、Ctrl/⌘ D** 或 Edit 菜单复制、剪切、粘贴和 Duplicate 同层模块子图；内部接口、接口合同和完整子设计一起进入片段，外部连接明确排除，Cut 的源图删除只形成一次 Undo。
 - 选中一个或多个同层模块后按住 **Ctrl/⌘ 拖动**，可在指针落点直接克隆完整子图；原模块只作拖动预览，新模块、内部接口与后代 Level 作为一次原子编辑提交。
 - 选中自动直线后拖动中点菱形，或用方向键调整，即可物化为带端口短桩和清晰中央主干的正交手动路线；线段与折点可继续拖动，waypoints 随 JSON 保存，也可随时恢复为两点直线。
-- 端口名称本身就是唯一移动入口，没有额外抓手。透明命中区不随画布缩小，始终保持约 30 个屏幕像素；拖动文字即可沿卡片四边换边和调整位置。左 / 右名称横排，顶 / 底名称竖排；相对两边使用对称安全区，模块名称始终保持在卡片几何中心。外侧圆点仍只负责创建连接。
+- 模块名称、类型和层级入口固定在卡片顶部；输入端口固定在左侧，输出端口固定在右侧，并以 `IN / OUT` 明示逻辑角色。端口名称是唯一移动入口，透明命中区不随画布缩小，始终保持约 30 个屏幕像素；拖动文字可沿当前逻辑侧上下调整。切换方向时 Editor 会把端口原子移动到对应侧并选择安全空位，外侧圆点仍只负责创建连接。
 - 从端口拉线或拖动既有线路端点时，画布会实时标出起点、合法候选与非法目标，并显示一条直接预览线。按 **Esc**、移出画布或落到非法端口都会完整销毁预览会话，不改 JSON、不污染 Undo / Redo。
 - 选中接口后可从 **Design、命令面板或 Inspector** 打开 `Reconnect Interface`，仅用键盘重新选择源 / 目标端口；端点未变化时不会产生历史，真正变化后会清除旧端点拥有的手工路线，并完整进入 Undo / Redo 与保存链。
 - 画布不显示线中标签；端口承担局部识别，点击连线后由 Inspector 展示完整合同。
-- 选中模块后按 **F2**，或直接双击卡片中心 Identity 中的标题，即可原位改名；**Enter / 失焦**提交一次可撤销文档编辑，**Escape**取消且不产生历史。Properties、Hierarchy、保存 JSON 和代码审查视图都从同一个模块标题事实重新派生。
+- 选中模块后按 **F2**，或直接双击卡片顶部 Header 中的标题，即可原位改名；**Enter / 失焦**提交一次可撤销文档编辑，**Escape**取消且不产生历史。Properties、Hierarchy、保存 JSON 和代码审查视图都从同一个模块标题事实重新派生。
 - 通过 Undo / Redo、事务性加载和 dirty 状态保护编辑过程。
 
 ![Windows 桌面画布内直接编辑模块标题](docs/screenshots/windows-inline-title-editing.png)
@@ -264,10 +264,12 @@ pnpm dev --host 127.0.0.1 --port 4317
 
 1. 选择 **File → New Design** 创建空白设计。
 2. 添加模块，并填写 Owner、Purpose、Boundary 与 Failure。
-3. 为模块添加 input、output 或 bidirectional 端口。
+3. 为模块添加 input 或 output 端口；input 自动位于左侧，output 自动位于右侧。
 4. 从输出端口拖向输入端口，或选择 **Design → Add Interface** 用键盘选择端点，然后补全类型化接口合同。
 5. 点击连线，在右侧 Inspector 审查名称、方向、Owner 与失败行为。
 6. 运行 DRC，使用 **Save** 或 **Save As** 写入 `.block-design.json` 文件。
+
+接口方向表示“谁发起调用”，不表示参数或返回值的数据流向：`source.output → target.input` 是唯一合法连接。方法参数、返回值和错误都属于同一个接口合同；如果目标模块会主动回调或发送事件，应另建一条反向 Interface。模块内部所有权和层级展开不是调用，不画成 Interface。
 
 ## 加载自己的设计
 
@@ -281,6 +283,8 @@ pnpm dev --host 127.0.0.1 --port 4317
 开发渲染器仍保留 URL、`?design=<encoded-url>` 与 `initialDocument` / `initialDesignUrl` 入口，供自动化、嵌入实验和适配器验证使用；它们不是另一套正式产品文件模型。
 
 内置示例位于 [`public/examples/aio-agent-runtime.block-design.json`](public/examples/aio-agent-runtime.block-design.json)，可以复制、修改或换成自己的文档。加载是事务性的：新文件只有在解析成功后才会替换当前设计；无效文件不会破坏正在编辑的内容。
+
+[`public/examples/aio-context-management.block-design.json`](public/examples/aio-context-management.block-design.json) 展示了完整的调用方向建模：Runtime 调用 ContextManager，ContextManager 再调用 Registry、Catalog 与 Store；方法返回值保留在对应合同内，Canonical Context 的所有权和 Region 成员关系不伪装成反向接口。
 
 仓库还提供一份由当前源码生成的五层架构示例：[`public/examples/architecture-block-studio.block-design.json`](public/examples/architecture-block-studio.block-design.json)。启动开发服务器后，可以直接打开：
 
@@ -337,7 +341,7 @@ pnpm desktop:package:win
 - 当前是本地单人工作台，不包含账号、服务端存储、多人协作或冲突合并。
 - 产品只支持 Windows x64 桌面端；浏览器只作为渲染内核与开发测试入口，不规划移动端。
 - Windows Save / Save As 只经受限 preload 与原生对话框访问 `.json` 文件；最近设计的路径引用只保存在 Electron `userData`，renderer 只接收展示摘要，路径和界面语言都不进入设计 JSON。
-- 当前写出 `BlockDesignDocument 2.2`，可逐步读取并迁移 `2.0`、`2.1`；2.2 用端口 `side + offset` 保存用户决定的精确边缘位置。尚未提供 v1 或 Draw.io 导入器。
+- 当前写出 `BlockDesignDocument 2.3`，可逐步读取并迁移 `2.0`、`2.1`、`2.2`。2.3 以 `direction` 作为端口逻辑事实：input 派生为 left，output 派生为 right；`offset` 保存用户决定的纵向位置。旧双向端口只有在连接或层级绑定能唯一证明角色时才自动迁移，否则会要求先拆成两个单向端口，绝不猜测。尚未提供 v1 或 Draw.io 导入器。
 - 当前安装包未签名；代码签名证书与 SmartScreen 信誉仍是后续发行基础设施事项。
 - 可视化审查补充模块与接口视角，不替代逐行 Code Review、测试、静态分析或安全审计。
 

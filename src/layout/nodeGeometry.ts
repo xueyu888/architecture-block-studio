@@ -15,11 +15,6 @@ export interface PortPlacementPoint {
   y: number;
 }
 
-export interface BalancedPortClearance {
-  horizontalRailDepth: number;
-  verticalLabelWidth: number;
-}
-
 export interface NodeResizeRect extends NodeDimensions {
   x: number;
   y: number;
@@ -44,21 +39,16 @@ export const BLOCK_NODE_GEOMETRY = {
   minimumHeight: 112,
   maximumWidth: 32_768,
   maximumHeight: 32_768,
-  identityHeight: 32,
+  headerHeight: 32,
   ownerBandHeight: 18,
   minimumBodyHeight: 40,
   sidePortSlotHeight: 26,
-  horizontalPortSlotWidth: 24,
-  centerContentWidth: 64,
-  horizontalRailPadding: 12,
-  horizontalPortGap: 4,
-  horizontalLabelInset: 4,
-  horizontalPortChipWidth: 18,
+  centerContentWidth: 144,
   sidePortLabelHeight: 18,
   sidePortLabelInset: 7,
   portLabelMinimumWidth: 38,
   portLabelMaximumWidth: 126,
-  portLabelPadding: 10,
+  portLabelPadding: 25,
   asciiGlyphWidth: 4.8,
   wideGlyphWidth: 8,
   borderWidth: 1,
@@ -136,12 +126,9 @@ export function portAnchorOffset(
     ? BLOCK_NODE_GEOMETRY.expandedBorderWidth
     : BLOCK_NODE_GEOMETRY.borderWidth;
   const handleRadius = BLOCK_NODE_GEOMETRY.portHandleSize / 2;
-  const horizontal = borderWidth + (dimensions.width - borderWidth * 2) * fraction;
   const vertical = borderWidth + (dimensions.height - borderWidth * 2) * fraction;
   if (port.side === "left") return { x: borderWidth - handleRadius, y: vertical };
-  if (port.side === "right") return { x: dimensions.width - borderWidth + handleRadius, y: vertical };
-  if (port.side === "top") return { x: horizontal, y: borderWidth - handleRadius };
-  return { x: horizontal, y: dimensions.height - borderWidth + handleRadius };
+  return { x: dimensions.width - borderWidth + handleRadius, y: vertical };
 }
 
 function glyphWidth(character: string): number {
@@ -165,17 +152,6 @@ export function portsForSide(ports: readonly BlockPort[], side: PortSide): Block
   return ports
     .filter((port) => port.side === side)
     .sort((left, right) => left.offset - right.offset || left.label.localeCompare(right.label) || left.id.localeCompare(right.id));
-}
-
-export function portRailOffset(ports: readonly BlockPort[], index: number): number {
-  return (ports[index]?.offset ?? 0.5) * 100;
-}
-
-/** Vertical depth reserved inside a top/bottom rail for chip-style labels. */
-export function horizontalPortRailDepth(ports: readonly BlockPort[]): number {
-  if (ports.length === 0) return 0;
-  return Math.max(...ports.map((port) => portLabelWidth(port.label)))
-    + BLOCK_NODE_GEOMETRY.horizontalLabelInset * 2;
 }
 
 function nearestFreeCoordinate(
@@ -216,25 +192,15 @@ export function resolvePortPlacement(
 ): PortPlacement {
   const port = ports.find((candidate) => candidate.id === portId);
   if (!port) throw new Error(`Port ${portId} is not present in the supplied node geometry.`);
-  const x = Math.max(0, Math.min(dimensions.width, point.x));
   const y = Math.max(0, Math.min(dimensions.height, point.y));
-  const distances: readonly [PortSide, number][] = [
-    ["left", x],
-    ["right", dimensions.width - x],
-    ["top", y],
-    ["bottom", dimensions.height - y],
-  ];
-  const closestDistance = Math.min(...distances.map(([, distance]) => distance));
-  const tiedSides = distances.filter(([, distance]) => Math.abs(distance - closestDistance) < 0.5);
-  const side = (tiedSides.find(([candidate]) => candidate === port.side) ?? tiedSides[0])[0];
-  const vertical = side === "left" || side === "right";
-  const length = vertical ? dimensions.height : dimensions.width;
-  const desiredCoordinate = vertical ? y : x;
-  const ownRadius = vertical
-    ? BLOCK_NODE_GEOMETRY.sidePortSlotHeight / 2
-    : BLOCK_NODE_GEOMETRY.horizontalPortSlotWidth / 2;
-  const minimum = Math.min(length / 2, ownRadius + BLOCK_NODE_GEOMETRY.borderWidth);
-  const maximum = Math.max(length / 2, length - ownRadius - BLOCK_NODE_GEOMETRY.borderWidth);
+  const side = port.side;
+  const length = dimensions.height;
+  const desiredCoordinate = y;
+  const ownRadius = BLOCK_NODE_GEOMETRY.sidePortSlotHeight / 2;
+  const minimumInset = BLOCK_NODE_GEOMETRY.headerHeight + ownRadius;
+  const maximumInset = BLOCK_NODE_GEOMETRY.ownerBandHeight + ownRadius;
+  const minimum = Math.min(length / 2, minimumInset);
+  const maximum = Math.max(length / 2, length - maximumInset);
   const snappedCoordinate = disableSnap
     ? desiredCoordinate
     : [0.25, 0.5, 0.75]
@@ -244,9 +210,7 @@ export function resolvePortPlacement(
     .filter((candidate) => candidate.id !== portId && candidate.side === side)
     .map((candidate) => ({
       center: candidate.offset * length,
-      radius: vertical
-        ? BLOCK_NODE_GEOMETRY.sidePortSlotHeight / 2
-        : BLOCK_NODE_GEOMETRY.horizontalPortSlotWidth / 2,
+      radius: BLOCK_NODE_GEOMETRY.sidePortSlotHeight / 2,
     }));
   const coordinate = nearestFreeCoordinate(
     snappedCoordinate,
@@ -258,32 +222,13 @@ export function resolvePortPlacement(
   return { side, offset: Math.round((coordinate / length) * 10_000) / 10_000 };
 }
 
-function horizontalRailWidth(ports: readonly BlockPort[]): number {
-  if (ports.length === 0) return 0;
-  const sorted = [...ports].sort((left, right) => left.offset - right.offset);
-  const radius = BLOCK_NODE_GEOMETRY.horizontalPortSlotWidth / 2;
-  const requirements = [
-    ...sorted.map((port) =>
-      (radius + BLOCK_NODE_GEOMETRY.horizontalRailPadding) / port.offset
-    ),
-    ...sorted.map((port) =>
-      (radius + BLOCK_NODE_GEOMETRY.horizontalRailPadding) / (1 - port.offset)
-    ),
-    ...sorted.slice(1).map((port, index) =>
-      (radius * 2 + BLOCK_NODE_GEOMETRY.horizontalPortGap) /
-      (port.offset - sorted[index].offset)
-    ),
-  ];
-  return Math.ceil(Math.max(...requirements));
-}
-
 function verticalRailHeight(ports: readonly BlockPort[]): number {
   if (ports.length === 0) return 0;
   const sorted = [...ports].sort((left, right) => left.offset - right.offset);
   const radius = BLOCK_NODE_GEOMETRY.sidePortSlotHeight / 2;
   const requirements = [
-    ...sorted.map((port) => radius / port.offset),
-    ...sorted.map((port) => radius / (1 - port.offset)),
+    ...sorted.map((port) => (BLOCK_NODE_GEOMETRY.headerHeight + radius) / port.offset),
+    ...sorted.map((port) => (BLOCK_NODE_GEOMETRY.ownerBandHeight + radius) / (1 - port.offset)),
     ...sorted.slice(1).map((port, index) =>
       (radius * 2) / (port.offset - sorted[index].offset)
     ),
@@ -295,55 +240,22 @@ function sideLabelWidth(ports: readonly BlockPort[]): number {
   return ports.reduce((width, port) => Math.max(width, portLabelWidth(port.label)), 0);
 }
 
-/**
- * Reserves equal clear space on opposing edges so card identity remains at the
- * geometric center even when ports are authored on only one edge. Port facts
- * remain side + offset; this is derived presentation geometry only.
- */
-export function balancedPortClearance(ports: readonly BlockPort[]): BalancedPortClearance {
-  const leftPorts = portsForSide(ports, "left");
-  const rightPorts = portsForSide(ports, "right");
-  const topPorts = portsForSide(ports, "top");
-  const bottomPorts = portsForSide(ports, "bottom");
-  return {
-    horizontalRailDepth: Math.max(
-      horizontalPortRailDepth(topPorts),
-      horizontalPortRailDepth(bottomPorts),
-    ),
-    verticalLabelWidth: Math.max(sideLabelWidth(leftPorts), sideLabelWidth(rightPorts)),
-  };
-}
-
 export function minimumNodeDimensions(node: BlockNode): NodeDimensions {
   const leftPorts = portsForSide(node.ports, "left");
   const rightPorts = portsForSide(node.ports, "right");
-  const topPorts = portsForSide(node.ports, "top");
-  const bottomPorts = portsForSide(node.ports, "bottom");
   const sidePortCount = Math.max(leftPorts.length, rightPorts.length);
-  const { horizontalRailDepth, verticalLabelWidth } = balancedPortClearance(node.ports);
+  const leftLabelWidth = sideLabelWidth(leftPorts);
+  const rightLabelWidth = sideLabelWidth(rightPorts);
   const contentWidth = Math.max(
-    horizontalRailWidth(topPorts),
-    horizontalRailWidth(bottomPorts),
-    verticalLabelWidth * 2 + BLOCK_NODE_GEOMETRY.centerContentWidth,
+    leftLabelWidth + BLOCK_NODE_GEOMETRY.centerContentWidth + rightLabelWidth,
   );
-  const contentHeight = horizontalRailDepth
-    + BLOCK_NODE_GEOMETRY.identityHeight
+  const contentHeight = BLOCK_NODE_GEOMETRY.headerHeight
     + Math.max(BLOCK_NODE_GEOMETRY.minimumBodyHeight, sidePortCount * BLOCK_NODE_GEOMETRY.sidePortSlotHeight)
-    + BLOCK_NODE_GEOMETRY.ownerBandHeight
-    + horizontalRailDepth;
+    + BLOCK_NODE_GEOMETRY.ownerBandHeight;
   const sideRailHeight = Math.max(verticalRailHeight(leftPorts), verticalRailHeight(rightPorts));
-  const sideLabelHeight = sidePortCount === 0
-    ? 0
-    : horizontalRailDepth
-      + BLOCK_NODE_GEOMETRY.identityHeight
-      + 9
-      + horizontalRailDepth
-      + BLOCK_NODE_GEOMETRY.ownerBandHeight
-      + 9
-      + Math.max(0, sidePortCount - 1) * 22;
   return {
     width: Math.max(BLOCK_NODE_GEOMETRY.minimumWidth, contentWidth),
-    height: Math.max(BLOCK_NODE_GEOMETRY.minimumHeight, contentHeight, sideLabelHeight, sideRailHeight),
+    height: Math.max(BLOCK_NODE_GEOMETRY.minimumHeight, contentHeight, sideRailHeight),
   };
 }
 

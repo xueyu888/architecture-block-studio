@@ -49,11 +49,11 @@ Architecture Block Studio 的质量标准不是“页面能打开”，而是设
 
 ## 端口与图形操作
 
-- 输入 / 输出语义由文档方向拥有；常规布局建议 input 在左、output 在右，但用户可把端口放在四边。
+- 输入 / 输出语义由文档方向拥有；input 必须在左、output 必须在右，`side` 只能由 `direction` 派生。
 - 圆形 Handle 只负责创建连接；端口名称是唯一移动入口。
 - 端口名称透明命中区必须通过 inverse zoom 保持约 30 CSS px，低缩放仍能直接抓取。
-- 顶 / 底端口显示为向卡片内部展开的垂直 chip，不能推低 Header 或盖住线路。
-- 端口拖动越过角点可换边，相连线路实时跟随，pointerup 只提交一次 `side + offset`。
+- input / output 端口分别固定在左 / 右轨道，标签水平排布且不能推低 Header、盖住线路或越过卡片内容安全区。
+- 端口拖动只调整逻辑侧上的纵向 `offset`，相连线路实时跟随，pointerup 只提交一次；方向变化由 Editor 同时派生另一侧和安全空位。
 - 自动线选中后显示中点菱形；鼠标拖动和键盘方向键都能创建手动路线。
 - 自动线第一次拖动后必须形成带端口短桩和可继续拖动中央主干的清晰路线，不能只在端点旁生成微小折弯。
 - 手动线的段、折点和端点入口必须可区分，视觉形状小于透明命中区。
@@ -69,7 +69,7 @@ Architecture Block Studio 的质量标准不是“页面能打开”，而是设
 - 模块标题、端口名、线路和 Properties 不互相遮挡；
 - 自动直线的选择高亮清楚，中点入口可识别但不过分抢眼；
 - 手动折线段与折点可区分；
-- 顶 / 底端口 chip 垂直且位于卡片内部；
+- 模块标题保持顶部，左右端口以 `IN / OUT` 明示角色且不覆盖标题、正文或 Owner；
 - 低缩放端口名称仍容易命中，不出现额外抓手；
 - 左右栏固定、可隐藏和恢复，不出现无法关闭的中央浮窗；
 - MiniMap、Controls、状态提示和菜单不覆盖当前操作目标；
@@ -80,7 +80,8 @@ Architecture Block Studio 的质量标准不是“页面能打开”，而是设
 - `direct-line-routing.png`：默认设计的自动直线、端口与箭头。
 - `direct-line-selected.png`：线路选择高亮与中点调整入口。
 - `manual-route-editing.png`：直线物化为手动正交路线后的段、折点与 Inspector。
-- `vertical-port-chips.png`：顶 / 底端口文字方向与卡片内部 rail。
+- `interface-direction-context.png`：AIO Context 调用方向、顶部标题、左 input / 右 output 与无遮挡全图。
+- `directional-side-ports.png`：低缩放下端口方向和纵向拖动入口。
 - `windows-port-label-drag.png`：Windows 低缩放端口名称命中与拖动。
 
 ## 性能与测试时间

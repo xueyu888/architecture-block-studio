@@ -57,7 +57,7 @@ describe("layout document signatures", () => {
     addedPort.levels[0].nodes[0].ports.push({
       id: "status",
       label: "Status",
-      side: "bottom",
+      side: "right",
       direction: "output",
       required: false,
     });

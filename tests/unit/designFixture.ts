@@ -14,7 +14,6 @@ export function connectedDesign(): BlockDesignDocument {
   source.ports.push(createPort({
     id: "out",
     label: "Output",
-    side: "right",
     direction: "output",
     required: true,
   }));
@@ -22,7 +21,6 @@ export function connectedDesign(): BlockDesignDocument {
   target.ports.push(createPort({
     id: "in",
     label: "Input",
-    side: "left",
     direction: "input",
     required: true,
   }));
@@ -67,7 +65,6 @@ export function hierarchicalDesign(): BlockDesignDocument {
   parent.ports.push(createPort({
     id: "public",
     label: "Public",
-    side: "right",
     direction: "output",
     required: false,
   }));
@@ -86,7 +83,6 @@ export function hierarchicalDesign(): BlockDesignDocument {
   child.ports.push(createPort({
     id: "out",
     label: "Output",
-    side: "right",
     direction: "output",
     required: false,
   }));

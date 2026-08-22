@@ -56,7 +56,7 @@ export function listLevelPortEndpoints(level: DesignLevel): ConnectablePortEndpo
 }
 
 export function listConnectionSourceEndpoints(level: DesignLevel): ConnectablePortEndpoint[] {
-  return listLevelPortEndpoints(level).filter((endpoint) => endpoint.direction !== "input");
+  return listLevelPortEndpoints(level).filter((endpoint) => endpoint.direction === "output");
 }
 
 export function listConnectionTargetEndpoints(
@@ -64,7 +64,7 @@ export function listConnectionTargetEndpoints(
   source?: ConnectablePortEndpoint,
 ): ConnectablePortEndpoint[] {
   return listLevelPortEndpoints(level).filter((endpoint) => (
-    endpoint.direction !== "output" &&
+    endpoint.direction === "input" &&
     (endpoint.nodeId !== source?.nodeId || endpoint.portId !== source.portId)
   ));
 }
@@ -75,10 +75,10 @@ export function normalizeConnectionEndpoints(
 ): NormalizedConnectionEndpoints | undefined {
   if (!first || !second || first.levelId !== second.levelId) return undefined;
   if (first.nodeId === second.nodeId && first.portId === second.portId) return undefined;
-  if (first.direction !== "input" && second.direction !== "output") {
+  if (first.direction === "output" && second.direction === "input") {
     return { levelId: first.levelId, source: first, target: second };
   }
-  if (second.direction !== "input" && first.direction !== "output") {
+  if (second.direction === "output" && first.direction === "input") {
     return { levelId: first.levelId, source: second, target: first };
   }
   return undefined;

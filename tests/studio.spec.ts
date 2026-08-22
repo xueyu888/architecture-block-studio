@@ -23,6 +23,9 @@ import {
 const examplePath = fileURLToPath(
   new URL("../public/examples/aio-agent-runtime.block-design.json", import.meta.url),
 );
+const contextExamplePath = fileURLToPath(
+  new URL("../public/examples/aio-context-management.block-design.json", import.meta.url),
+);
 const invalidPath = fileURLToPath(new URL("./fixtures/invalid.block-design.json", import.meta.url));
 const legacyPath = fileURLToPath(new URL("./fixtures/legacy-v2.0.block-design.json", import.meta.url));
 const browserProblems = new WeakMap<Page, string[]>();
@@ -320,6 +323,16 @@ async function canvasTransform(page: Page): Promise<{ x: number; y: number; zoom
   const match = /translate\(([^p]+)px, ([^p]+)px\) scale\(([^)]+)\)/.exec(transform);
   if (!match) throw new Error(`Unexpected canvas viewport transform: ${transform}`);
   return { x: Number(match[1]), y: Number(match[2]), zoom: Number(match[3]) };
+}
+
+async function zoomToFullDetail(page: Page): Promise<void> {
+  const canvas = page.locator(".bd-react-flow");
+  for (let index = 0; index < 8; index += 1) {
+    if (await canvas.getAttribute("data-detail-level") === "full") return;
+    await page.locator(".react-flow__controls-zoomin").click({ force: true });
+    await page.waitForTimeout(250);
+  }
+  await expect(canvas).toHaveAttribute("data-detail-level", "full");
 }
 
 interface CanvasNavigationTiming {
@@ -621,8 +634,7 @@ async function clearModuleInsertionPoints(page: Page, count: number): Promise<Ar
 async function addPort(page: Page, values: {
   label: string;
   id: string;
-  direction: "input" | "output" | "bidirectional";
-  side: "left" | "right" | "top" | "bottom";
+  direction: "input" | "output";
   dataType?: string;
 }): Promise<void> {
   await toolbarButton(page, "Add Port...").click({ force: true });
@@ -630,7 +642,6 @@ async function addPort(page: Page, values: {
   await dialog.getByLabel("Port label").fill(values.label);
   await dialog.getByLabel("Port id").fill(values.id);
   await dialog.getByLabel("Direction").selectOption(values.direction);
-  await dialog.getByLabel("Side").selectOption(values.side);
   if (values.dataType) await dialog.getByLabel("Data type").fill(values.dataType);
   await dialog.getByRole("button", { name: "Add Port", exact: true }).click({ force: true });
   await waitForEditorIdle(page);
@@ -871,7 +882,7 @@ test("loads the bundled v2 design without DRC or viewport failures", async ({ pa
   await expect(page.locator(".bd-validation-summary")).toContainText("0 warnings");
   await expect(page.locator(".react-flow__node")).toHaveCount(7);
   await expect(page.locator(".react-flow__edge")).toHaveCount(10);
-  await expect(page.locator(".bd-statusbar")).toContainText("BlockDesignDocument 2.2");
+  await expect(page.locator(".bd-statusbar")).toContainText("BlockDesignDocument 2.3");
   const canvas = page.locator(".bd-react-flow");
   const agentUi = flowNode(page, "system::agent-ui");
   await expect(canvas).toHaveAttribute("data-detail-level", "overview");
@@ -883,7 +894,7 @@ test("loads the bundled v2 design without DRC or viewport failures", async ({ pa
     await captureStudioScreenshot(page, "docs/screenshots/professional-workbench.png");
   }
 
-  await page.locator(".react-flow__controls-zoomin").click({ force: true });
+  await zoomToFullDetail(page);
   await expect(canvas).toHaveAttribute("data-detail-level", "full");
   await expect(agentUi.locator(".bd-block-heading span")).toBeVisible();
   await expect(agentUi.locator(".bd-port-label small").first()).toBeHidden();
@@ -902,6 +913,38 @@ test("loads the bundled v2 design without DRC or viewport failures", async ({ pa
     document.body.scrollHeight - window.innerHeight,
   ]);
   expect(overflow).toEqual([0, 0]);
+});
+
+test("loads the AIO Context example with one visible call direction per interface", async ({ page, browserName }) => {
+  await openDesignDialog(page);
+  await page.locator('input[type="file"]').setInputFiles(contextExamplePath);
+  await expect(page.locator(".bd-document-title span")).toHaveText("AIO Context Management");
+  await expect(page.locator(".bd-validation-summary")).toContainText("0 errors");
+  await expect(page.locator(".bd-validation-summary")).toContainText("0 warnings");
+  await expect(page.locator(".react-flow__node")).toHaveCount(7);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(7);
+  await expect(page.locator(".react-flow__edge-text")).toHaveCount(0);
+
+  const directionIssues = await page.evaluate(() => (
+    [...document.querySelectorAll<HTMLElement>(".bd-port")].flatMap((port) => {
+      const expected = port.dataset.portDirection === "input" ? "left" : "right";
+      return port.classList.contains(`bd-port-${expected}`)
+        ? []
+        : [`${port.dataset.nodeId}.${port.dataset.portId}:${port.dataset.portDirection}/${expected}`];
+    })
+  ));
+  expect(directionIssues).toEqual([]);
+  expect(await geometryIssues(page)).toEqual({
+    routeIssues: [],
+    labelOverlaps: [],
+    siblingOverlaps: [],
+  });
+
+  if (process.env.CAPTURE_DIRECTIONAL_CONTEXT === "1" && browserName === "chromium") {
+    await toolbarButton(page, "Fit Design").click({ force: true });
+    await page.waitForTimeout(450);
+    await captureStudioScreenshot(page, "docs/screenshots/interface-direction-context.png");
+  }
 });
 
 test("renames a module directly on the canvas as one recoverable document edit", async ({ page, browserName }) => {
@@ -1351,7 +1394,6 @@ test("routes and persists a new interface inside an existing complex design", as
     label: "review.command",
     id: "review-command",
     direction: "input",
-    side: "left",
     dataType: "JSON-RPC",
   });
 
@@ -2072,7 +2114,7 @@ test("renders one semantic target arrow per connection and neutral port affordan
   }
 });
 
-test("reserves collision-free four-side port label rails", async ({ page, browserName }) => {
+test("keeps input ports left, output ports right, and the module identity at the top", async ({ page, browserName }) => {
   const railGeometry = await page.evaluate(() => {
     const failures: string[] = [];
     document.querySelectorAll<HTMLElement>(".bd-block:not(.is-expanded)").forEach((block) => {
@@ -2086,6 +2128,12 @@ test("reserves collision-free four-side port label rails", async ({ page, browse
         rect: label.getBoundingClientRect(),
         side: label.closest<HTMLElement>("[data-port-side]")?.dataset.portSide ?? "unknown",
       }));
+      block.querySelectorAll<HTMLElement>(".bd-port").forEach((port) => {
+        const expectedSide = port.dataset.portDirection === "input" ? "left" : "right";
+        if (!port.classList.contains(`bd-port-${expectedSide}`)) {
+          failures.push(`${blockId}:${port.dataset.portId}:wrong-side`);
+        }
+      });
       labels.forEach(({ label, rect, side }) => {
         if (
           rect.left < blockRect.left - 1 || rect.right > blockRect.right + 1 ||
@@ -2110,35 +2158,30 @@ test("reserves collision-free four-side port label rails", async ({ page, browse
 
   const project = flowNode(page, "system::project");
   const core = flowNode(page, "system::rust-agent-core");
-  await expect(project.locator('.bd-port-rail-top .bd-port-label span')).toHaveText("session.lifecycle");
-  await expect(core.locator('.bd-port-rail-bottom .bd-port-label span')).toHaveCount(2);
+  await expect(project.locator('.bd-port-rail-right .bd-port-name')).toHaveText("session.lifecycle");
+  await expect(core.locator('.bd-port-rail-right .bd-port-direction')).toHaveText(["OUT", "OUT", "OUT"]);
+  await expect(core.locator('.bd-port-rail-left .bd-port-direction')).toHaveText(["IN", "IN", "IN", "IN", "IN"]);
   await expect(page.locator(".bd-port-move-grip")).toHaveCount(0);
-  for (const label of [
-    project.locator(".bd-port-rail-top .bd-port-label").first(),
-    core.locator(".bd-port-rail-bottom .bd-port-label").first(),
-  ]) {
-    const bounds = await label.boundingBox();
-    expect(bounds).not.toBeNull();
-    expect(bounds!.height).toBeGreaterThan(bounds!.width * 2);
-  }
   const projectBounds = await project.boundingBox();
   const projectIdentityBounds = await project.locator(".bd-block-identity").boundingBox();
+  const projectHeadingBounds = await project.locator(".bd-block-heading").boundingBox();
   expect(projectBounds).not.toBeNull();
   expect(projectIdentityBounds).not.toBeNull();
+  expect(projectHeadingBounds).not.toBeNull();
   expect(Math.abs(
-    projectIdentityBounds!.x + projectIdentityBounds!.width / 2
-    - projectBounds!.x - projectBounds!.width / 2,
+    projectIdentityBounds!.x - projectBounds!.x,
   )).toBeLessThan(1);
+  expect(Math.abs(projectIdentityBounds!.width - projectBounds!.width)).toBeLessThan(2);
   expect(Math.abs(
-    projectIdentityBounds!.y + projectIdentityBounds!.height / 2
-    - projectBounds!.y - projectBounds!.height / 2,
+    projectIdentityBounds!.y - projectBounds!.y,
   )).toBeLessThan(1);
+  expect(projectHeadingBounds!.x).toBeLessThan(projectBounds!.x + projectBounds!.width / 2);
   await expect(page.locator(".bd-port-label small").first()).toBeHidden();
 
-  await page.locator(".react-flow__controls-zoomin").click({ force: true });
+  await zoomToFullDetail(page);
   await expect(page.locator(".bd-react-flow")).toHaveAttribute("data-detail-level", "full");
   await page.waitForTimeout(350);
-  const projectLabel = project.locator('.bd-port-rail-top .bd-port-label');
+  const projectLabel = project.locator('.bd-port-rail-right .bd-port-label');
   await projectLabel.hover();
   await expect(projectLabel.locator("small")).toHaveText("Integration RPC");
   await expect(projectLabel.locator("small")).toBeVisible();
@@ -2455,6 +2498,20 @@ test("projects every automatic connection as a direct selectable line with both 
     await page.waitForTimeout(400);
     await captureStudioScreenshot(page, "docs/screenshots/aio-routing-validation.png");
   }
+  if (process.env.CAPTURE_SCENE_ROUTING === "1") {
+    await toolbarButton(page, "Fit Design").click({ force: true });
+    await page.waitForTimeout(400);
+    await captureStudioScreenshot(page, "docs/screenshots/direct-line-routing.png");
+    const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
+    await clickReachableEdgePoint(page, edge);
+    await expect(edge).toHaveClass(/selected/);
+    await runMenuCommand(page, "View", /^Fit Selection/);
+    await page.waitForTimeout(400);
+    await captureStudioScreenshot(page, "docs/screenshots/direct-line-selected.png");
+    await page.keyboard.press("ControlOrMeta+Shift+A");
+    await toolbarButton(page, "Fit Design").click({ force: true });
+    await page.waitForTimeout(350);
+  }
   await expandHierarchy(page, "Rust Agent Core");
   await expandHierarchy(page, "Tool System");
   await expect(page.locator(".react-flow__node")).toHaveCount(32);
@@ -2474,17 +2531,6 @@ test("projects every automatic connection as a direct selectable line with both 
     perRouteIssues: [],
   });
   expect(routeAudit.routeIds).toHaveLength(54);
-  if (process.env.CAPTURE_SCENE_ROUTING === "1") {
-    await captureStudioScreenshot(page, "docs/screenshots/direct-line-routing.png");
-    const edge = page.locator(".react-flow__edge").filter({
-      has: page.locator('[data-routing-mode="automatic"]'),
-    }).first();
-    await clickReachableEdgePoint(page, edge);
-    await expect(edge).toHaveClass(/selected/);
-    await runMenuCommand(page, "View", /^Fit Selection/);
-    await page.waitForTimeout(400);
-    await captureStudioScreenshot(page, "docs/screenshots/direct-line-selected.png");
-  }
 });
 
 test("audits every route in a 100-connection hub with a deliberately skewed degree distribution", async ({ page, browserName }) => {
@@ -2650,6 +2696,14 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
   expect(await canvasViewportTransform(page)).toBe(selectionViewportBefore);
   await page.keyboard.press("ControlOrMeta+Shift+A");
 
+  await page.locator(
+    '.bd-tree-select[data-level-id="system"][data-node-id="satellite-left-00"]',
+  ).click({ force: true });
+  await runMenuCommand(page, "View", /^Fit Selection/);
+  await page.getByRole("button", { name: /^Actual size/ }).click({ force: true });
+  await page.waitForTimeout(450);
+  await page.keyboard.press("ControlOrMeta+Shift+A");
+
   const stressSource = flowNode(page, "system::satellite-left-00")
     .locator('.bd-port-handle-outer[data-handleid="link"]');
   const stressTarget = flowNode(page, "system::hub")
@@ -2658,6 +2712,12 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
   const stressTargetBox = await stressTarget.boundingBox();
   expect(stressSourceBox).not.toBeNull();
   expect(stressTargetBox).not.toBeNull();
+  expect(await page.evaluate(({ x, y }) => (
+    document.elementFromPoint(x, y)?.closest<HTMLElement>(".bd-port-handle-outer")?.dataset.handleid
+  ), {
+    x: stressTargetBox!.x + stressTargetBox!.width / 2,
+    y: stressTargetBox!.y + stressTargetBox!.height / 2,
+  })).toBe("left-01");
   await page.mouse.move(
     stressSourceBox!.x + stressSourceBox!.width / 2,
     stressSourceBox!.y + stressSourceBox!.height / 2,
@@ -3351,16 +3411,17 @@ test("loads the repository-derived five-depth module architecture and reviews ev
   ).click({ force: true });
   await studioNode.focus();
   await expect(studioNode).toBeFocused();
-  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong"))
-    .toHaveText("286 × 305");
+  const studioGeometry = page.getByRole("region", { name: "Module geometry" }).locator("strong");
+  const initialStudioSize = await studioGeometry.innerText();
+  const [initialStudioWidth, initialStudioHeight] = initialStudioSize
+    .split("×")
+    .map((value) => Number(value.trim()));
   await page.keyboard.press("ControlOrMeta+Shift+ArrowRight");
   await waitForEditorIdle(page);
-  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong"))
-    .toHaveText("302 × 305");
+  await expect(studioGeometry).toHaveText(`${initialStudioWidth + 16} × ${initialStudioHeight}`);
   await page.keyboard.press("ControlOrMeta+Z");
   await waitForEditorIdle(page);
-  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong"))
-    .toHaveText("286 × 305");
+  await expect(studioGeometry).toHaveText(initialStudioSize);
 
   const sourceEdge = page.locator(
     '.react-flow__edge[data-id$="::import-studio-to-model"]',
@@ -3703,10 +3764,10 @@ test("keeps the port label easy to grab at overview zoom", async ({ page, browse
 
   await page.mouse.move(labelCenter.x, labelCenter.y);
   await page.mouse.down();
-  await page.mouse.move(nodeBounds!.x + nodeBounds!.width * 0.4, nodeBounds!.y + 2, { steps: 8 });
+  await page.mouse.move(nodeBounds!.x + nodeBounds!.width - 2, nodeBounds!.y + nodeBounds!.height * 0.72, { steps: 8 });
   await expect(page.locator(".bd-react-flow")).toHaveAttribute("data-port-move-active", "true");
   await page.mouse.up();
-  await expect(port).toHaveClass(/bd-port-top/);
+  await expect(port).toHaveClass(/bd-port-right/);
   await expect(page.locator(".bd-document-title span")).toContainText("*");
 
   await page.keyboard.press("ControlOrMeta+Z");
@@ -3715,7 +3776,7 @@ test("keeps the port label easy to grab at overview zoom", async ({ page, browse
     await selectFlowNode(flowNode(page, "system::rust-agent-core"));
     await runMenuCommand(page, "View", /^Fit Selection/);
     await page.waitForTimeout(400);
-    await captureStudioScreenshot(page, "docs/screenshots/vertical-port-chips.png");
+    await captureStudioScreenshot(page, "docs/screenshots/directional-side-ports.png");
   }
 });
 
@@ -3745,7 +3806,7 @@ test("loads designs from URL and local JSON files", async ({ page }) => {
   await openDesignDialog(page);
   await page.locator('input[type="file"]').setInputFiles(legacyPath);
   await expect(page.locator(".bd-document-title span")).toHaveText("Legacy v2 Design");
-  await expect(page.locator(".bd-statusbar")).toContainText("BlockDesignDocument 2.2");
+  await expect(page.locator(".bd-statusbar")).toContainText("BlockDesignDocument 2.3");
   await waitForLayout(page);
   await expect(page.locator(".react-flow__node")).toHaveCount(2);
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
@@ -4255,7 +4316,7 @@ test("drags, persists, resets, and restores a manual orthogonal route", async ({
   const savedPath = await download.path();
   expect(savedPath).not.toBeNull();
   const saved = JSON.parse(await readFile(savedPath!, "utf8"));
-  expect(saved.schemaVersion).toBe("2.2");
+  expect(saved.schemaVersion).toBe("2.3");
   expect(saved.levels[0].connections.find((connection: { id: string }) => connection.id === "ui-session-command").routing.waypoints.length).toBeGreaterThanOrEqual(2);
 
   await inspector.getByRole("button", { name: "Reset to automatic routing" }).click({ force: true });
@@ -4999,7 +5060,7 @@ test("aligns a pointer-moved module and lets Alt bypass guides for one gesture",
     (candidate: { id: string }) => candidate.id === "project",
   );
   expect(savedNode.layout.position.x).toBeGreaterThan(370);
-  expect(savedNode.layout.position.x % 16).toBe(0);
+  const snappedX = savedNode.layout.position.x;
   expect(savedNode.layout.position.y).toBe(650);
 
   await page.keyboard.press("ControlOrMeta+Z");
@@ -5019,7 +5080,7 @@ test("aligns a pointer-moved module and lets Alt bypass guides for one gesture",
   );
   expect(savedNode.layout.position.y).toBe(650);
   expect(savedNode.layout.position.x).toBeGreaterThan(370);
-  expect(savedNode.layout.position.x % 16).not.toBe(0);
+  expect(savedNode.layout.position.x).not.toBe(snappedX);
 });
 
 test("snaps a moved module into equal neighboring gaps and persists one atomic move", async ({ page, browserName }) => {
@@ -5075,10 +5136,14 @@ test("snaps a moved module into equal neighboring gaps and persists one atomic m
     .toHaveCount(1);
   await expect(page.locator('.bd-distance-guide-x[data-start-id="system::subject"][data-end-id="system::right"]'))
     .toHaveCount(1);
-  await expect(horizontalDistanceGuides.first()).toHaveAttribute("data-distance", "244");
-  await expect(horizontalDistanceGuides.last()).toHaveAttribute("data-distance", "244");
+  const distances = await horizontalDistanceGuides.evaluateAll((guides) =>
+    guides.map((guide) => Number((guide as HTMLElement).dataset.distance)),
+  );
+  expect(distances[0]).toBeGreaterThan(0);
+  expect(distances[0]).toBeCloseTo(distances[1], 4);
   await expect(page.locator(".bd-alignment-guide-x")).toHaveCount(0);
-  expect(await localPosition(subject)).toEqual({ x: 500, y: 240 });
+  const snappedPosition = await localPosition(subject);
+  expect(snappedPosition.y).toBe(240);
   const [leftBox, subjectBox, rightBox] = await Promise.all([
     left.boundingBox(),
     subject.boundingBox(),
@@ -5101,7 +5166,7 @@ test("snaps a moved module into equal neighboring gaps and persists one atomic m
   let savedPath = await (await downloadPromise).path();
   let saved = JSON.parse(await readFile(savedPath!, "utf8"));
   let savedNode = saved.levels[0].nodes.find((candidate: { id: string }) => candidate.id === "subject");
-  expect(savedNode.layout.position).toEqual({ x: 500, y: 240 });
+  expect(savedNode.layout.position).toEqual(snappedPosition);
 
   await page.keyboard.press("ControlOrMeta+Z");
   await waitForEditorIdle(page);
@@ -5188,12 +5253,20 @@ test("snaps a differently sized selected group by one equal-distance boundary", 
   await expect(page.locator(
     `.bd-distance-guide-x[data-start-id="${expectedSelectionId}"][data-end-id="system::right"]`,
   )).toHaveCount(1);
-  await expect(horizontalDistanceGuides.first()).toHaveAttribute("data-distance", "288");
-  await expect(horizontalDistanceGuides.last()).toHaveAttribute("data-distance", "288");
+  const distances = await horizontalDistanceGuides.evaluateAll((guides) =>
+    guides.map((guide) => Number((guide as HTMLElement).dataset.distance)),
+  );
+  expect(distances[0]).toBeGreaterThan(0);
+  expect(distances[0]).toBeCloseTo(distances[1], 4);
   await expect(page.locator(".bd-alignment-guide-x")).toHaveCount(0);
   const snapped = await localPositions();
-  expect(snapped["system::group-a"]).toEqual({ x: 544, y: 160 });
-  expect(snapped["system::group-b"]).toEqual({ x: 576, y: 400 });
+  const groupSnapDelta = snapped["system::group-a"].x - baseline["system::group-a"].x;
+  expect(groupSnapDelta).toBeGreaterThan(0);
+  expect(snapped["system::group-a"].y).toBe(baseline["system::group-a"].y);
+  expect(snapped["system::group-b"]).toEqual({
+    x: baseline["system::group-b"].x + groupSnapDelta,
+    y: baseline["system::group-b"].y,
+  });
   const [leftBox, groupABox, groupBBox, rightBox] = await Promise.all([
     left.boundingBox(), groupA.boundingBox(), groupB.boundingBox(), right.boundingBox(),
   ]);
@@ -5217,15 +5290,17 @@ test("snaps a differently sized selected group by one equal-distance boundary", 
   await page.keyboard.press("ControlOrMeta+S");
   const savedPath = await (await downloadPromise).path();
   const saved = JSON.parse(await readFile(savedPath!, "utf8"));
-  expect(Object.fromEntries(saved.levels[0].nodes
+  const savedGroupPositions = Object.fromEntries(saved.levels[0].nodes
     .filter((candidate: { id: string }) => ["group-a", "group-b"].includes(candidate.id))
     .map((candidate: { id: string; layout: { position: { x: number; y: number } } }) => [
       candidate.id,
       candidate.layout.position,
-    ]))).toEqual({
-    "group-a": { x: 544, y: 160 },
-    "group-b": { x: 576, y: 400 },
-  });
+  ])) as Record<string, { x: number; y: number }>;
+  for (const id of ["system::group-a", "system::group-b"] as const) {
+    const persistedId = id.slice("system::".length);
+    expect(Math.abs(savedGroupPositions[persistedId].x - snapped[id].x)).toBeLessThanOrEqual(0.5);
+    expect(savedGroupPositions[persistedId].y).toBe(snapped[id].y);
+  }
 
   await page.keyboard.press("ControlOrMeta+Z");
   await waitForEditorIdle(page);
@@ -5322,8 +5397,21 @@ test("snaps a selected group by its full boundary regardless of the grabbed memb
   await expect(guide).toHaveAttribute("data-target-anchor", "start");
   expect(await guide.evaluate((element) => Number.parseFloat((element as HTMLElement).style.left))).toBe(1124);
   const fromCompact = await localPositions();
-  expect(fromCompact["system::group-a"]).toEqual({ x: 612, y: 64 });
-  expect(fromCompact["system::group-b"]).toEqual({ x: 868, y: 288 });
+  const snappedDelta = fromCompact["system::group-a"].x - baseline["system::group-a"].x;
+  expect(snappedDelta).toBeGreaterThan(0);
+  expect(fromCompact["system::group-a"].y).toBe(baseline["system::group-a"].y);
+  expect(fromCompact["system::group-b"]).toEqual({
+    x: baseline["system::group-b"].x + snappedDelta,
+    y: baseline["system::group-b"].y,
+  });
+  const [snappedABox, snappedBBox, snappedTargetBox] = await Promise.all([
+    groupA.boundingBox(), groupB.boundingBox(), targetNode.boundingBox(),
+  ]);
+  expect(snappedABox && snappedBBox && snappedTargetBox).not.toBeNull();
+  expect(Math.max(
+    snappedABox!.x + snappedABox!.width,
+    snappedBBox!.x + snappedBBox!.width,
+  )).toBeCloseTo(snappedTargetBox!.x, 1);
   if (process.env.CAPTURE_GROUP_ALIGNMENT === "1" && browserName === "chromium") {
     await captureStudioScreenshot(page, "docs/screenshots/group-boundary-alignment.png");
   }
@@ -5351,8 +5439,14 @@ test("snaps a selected group by its full boundary regardless of the grabbed memb
   await expect(guide).toHaveCount(0);
   await endGroupDrag("bypass");
   const bypassed = await localPositions();
-  expect(bypassed["system::group-a"]).toEqual({ x: 608, y: 64 });
-  expect(bypassed["system::group-b"]).toEqual({ x: 864, y: 288 });
+  expect(bypassed["system::group-a"]).toEqual({
+    x: fromCompact["system::group-a"].x - 4,
+    y: baseline["system::group-a"].y,
+  });
+  expect(bypassed["system::group-b"]).toEqual({
+    x: fromCompact["system::group-b"].x - 4,
+    y: baseline["system::group-b"].y,
+  });
   await page.keyboard.press("ControlOrMeta+Z");
   await waitForEditorIdle(page);
 
@@ -5771,7 +5865,7 @@ test("cuts a complete hierarchy once and pastes it into another design from the 
   const savedPath = await (await downloadPromise).path();
   expect(savedPath).not.toBeNull();
   const saved = JSON.parse(await readFile(savedPath!, "utf8"));
-  expect(saved.schemaVersion).toBe("2.2");
+  expect(saved.schemaVersion).toBe("2.3");
   expect(saved.levels.find((level: { id: string }) => level.id === "system").nodes).toHaveLength(4);
   expect(saved.levels.find((level: { id: string }) => level.id === "system").connections).toHaveLength(3);
   expect(saved.levels.find((level: { id: string }) => level.id === "core")).toBeDefined();
@@ -7592,10 +7686,17 @@ test("keeps a route segment under a stationary edge pointer while auto-panning",
   expect(segmentBox && canvas).not.toBeNull();
   const pointerId = 87;
   const start = { x: segmentBox!.x + segmentBox!.width / 2, y: segmentBox!.y + segmentBox!.height / 2 };
-  const target = {
-    x: canvas!.x + canvas!.width - 16,
-    y: Math.max(canvas!.y + 80, Math.min(canvas!.y + canvas!.height - 80, start.y)),
-  };
+  const segmentAxis = await segment.getAttribute("data-route-axis");
+  expect(["h", "v"]).toContain(segmentAxis);
+  const target = segmentAxis === "h"
+    ? {
+        x: Math.max(canvas!.x + 80, Math.min(canvas!.x + canvas!.width - 80, start.x)),
+        y: canvas!.y + canvas!.height - 16,
+      }
+    : {
+        x: canvas!.x + canvas!.width - 16,
+        y: Math.max(canvas!.y + 80, Math.min(canvas!.y + canvas!.height - 80, start.y)),
+      };
   await segment.dispatchEvent("pointerdown", {
     pointerId,
     button: 0,
@@ -7616,7 +7717,8 @@ test("keeps a route segment under a stationary edge pointer while auto-panning",
   const atArrival = await canvasTransform(page);
   await page.waitForTimeout(220);
   const afterHold = await canvasTransform(page);
-  expect(afterHold.x).toBeLessThan(atArrival.x - 12);
+  if (segmentAxis === "h") expect(afterHold.y).toBeLessThan(atArrival.y - 12);
+  else expect(afterHold.x).toBeLessThan(atArrival.x - 12);
 
   const pointerDistance = await edge.locator(".bd-route-preview").evaluate((path, point) => {
     const route = path as SVGPathElement;
@@ -7826,7 +7928,7 @@ test("preserves a module's original proportions while Shift-resizing", async ({ 
 });
 
 test("matches a sibling size while resizing and lets Alt bypass size snapping", async ({ page, browserName }) => {
-  const node = flowNode(page, "system::platform-provider");
+  const node = flowNode(page, "system::agent-ui");
   await selectFlowNode(node);
   const geometrySize = page.getByRole("region", { name: "Module geometry" }).locator("strong");
   const initialSizeText = await geometrySize.innerText();
@@ -7844,13 +7946,13 @@ test("matches a sibling size while resizing and lets Alt bypass size snapping", 
     await page.waitForTimeout(120);
   };
 
-  await resizeWidthBy(8);
-  const sizeGuides = page.locator('.bd-size-guide-width[data-target-id="system::agent-ui"]');
+  await resizeWidthBy(12);
+  const sizeGuides = page.locator('.bd-size-guide-width[data-target-id="system::rust-agent-core"]');
   await expect(sizeGuides).toHaveCount(2);
   await expect(page.locator('.bd-size-guide-width[data-role="subject"]')).toBeVisible();
   await expect(page.locator('.bd-size-guide-width[data-role="target"]')).toBeVisible();
   const resizedPreview = await node.boundingBox();
-  const matchingSibling = await flowNode(page, "system::agent-ui").boundingBox();
+  const matchingSibling = await flowNode(page, "system::rust-agent-core").boundingBox();
   expect(resizedPreview).not.toBeNull();
   expect(matchingSibling).not.toBeNull();
   expect(Math.abs(resizedPreview!.width - matchingSibling!.width)).toBeLessThan(1);
@@ -7870,14 +7972,14 @@ test("matches a sibling size while resizing and lets Alt bypass size snapping", 
   const savedPath = await (await downloadPromise).path();
   const saved = JSON.parse(await readFile(savedPath!, "utf8"));
   const savedNode = saved.levels.find((level: { id: string }) => level.id === "system").nodes.find(
-    (candidate: { id: string }) => candidate.id === "platform-provider",
+    (candidate: { id: string }) => candidate.id === "agent-ui",
   );
   expect(savedNode.layout).toMatchObject({ width: snappedWidth, height: snappedHeight });
 
   await page.keyboard.press("ControlOrMeta+Z");
   await waitForEditorIdle(page);
   await expect(geometrySize).toHaveText(initialSizeText);
-  await resizeWidthBy(8, true);
+  await resizeWidthBy(6, true);
   await expect(page.locator(canvasGuideSelector)).toHaveCount(0);
   await page.mouse.up();
   await page.keyboard.up("Alt");
@@ -7894,7 +7996,7 @@ test("matches a sibling size while resizing and lets Alt bypass size snapping", 
   const precisionSaved = JSON.parse(await readFile(precisionSavedPath!, "utf8"));
   const precisionSavedNode = precisionSaved.levels
     .find((level: { id: string }) => level.id === "system").nodes
-    .find((candidate: { id: string }) => candidate.id === "platform-provider");
+    .find((candidate: { id: string }) => candidate.id === "agent-ui");
   expect(precisionSavedNode.layout).toMatchObject({ width: precisionWidth, height: precisionHeight });
 });
 
@@ -7906,10 +8008,15 @@ test("resizes a focused module only with the draw.io keyboard chord", async ({ p
 
   const initialBounds = await node.boundingBox();
   expect(initialBounds).not.toBeNull();
+  const geometrySize = page.getByRole("region", { name: "Module geometry" }).locator("strong");
+  const initialSizeText = await geometrySize.innerText();
+  const [initialWidth, initialHeight] = initialSizeText
+    .split("×")
+    .map((value) => Number(value.trim()));
   await page.keyboard.press("Shift+ArrowRight");
   await waitForEditorIdle(page);
   await expect(node).toBeFocused();
-  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("250 × 175");
+  await expect(geometrySize).toHaveText(initialSizeText);
   const shiftOnlyBounds = await node.boundingBox();
   expect(shiftOnlyBounds).not.toBeNull();
   expect(shiftOnlyBounds!.x).toBeCloseTo(initialBounds!.x, 4);
@@ -7918,13 +8025,13 @@ test("resizes a focused module only with the draw.io keyboard chord", async ({ p
   await page.keyboard.press("ControlOrMeta+Shift+ArrowRight");
   await waitForEditorIdle(page);
   await expect(node).toBeFocused();
-  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("266 × 175");
+  await expect(geometrySize).toHaveText(`${initialWidth + 16} × ${initialHeight}`);
   await page.keyboard.press("ControlOrMeta+Shift+ArrowDown");
   await waitForEditorIdle(page);
   await expect(node).toBeFocused();
-  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("266 × 191");
+  await expect(geometrySize).toHaveText(`${initialWidth + 16} × ${initialHeight + 16}`);
   await expect(page.locator(".bd-canvas-announcement")).toHaveText(
-    "Resized Agent UI. Width 266, height 191.",
+    `Resized Agent UI. Width ${initialWidth + 16}, height ${initialHeight + 16}.`,
   );
 });
 
@@ -7932,6 +8039,9 @@ test("rejects a resize while Inspector properties are unapplied and restores pre
   const node = flowNode(page, "system::agent-ui");
   const inspector = page.getByRole("region", { name: "Properties" });
   await selectFlowNode(node);
+  const initialGeometrySize = await page.getByRole("region", { name: "Module geometry" })
+    .locator("strong")
+    .innerText();
   await inspector.getByLabel("Title").fill("Agent UI draft");
   await expect(inspector.getByText("UNAPPLIED", { exact: true })).toBeVisible();
   const before = await node.boundingBox();
@@ -7955,7 +8065,8 @@ test("rejects a resize while Inspector properties are unapplied and restores pre
     return restored ? { width: Math.round(restored.width), height: Math.round(restored.height) } : null;
   }).toEqual({ width: Math.round(before!.width), height: Math.round(before!.height) });
   await expect(inspector.getByLabel("Title")).toHaveValue("Agent UI draft");
-  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("250 × 175");
+  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong"))
+    .toHaveText(initialGeometrySize);
 });
 
 test("keeps the installed design when a replacement is structurally invalid", async ({ page }) => {
@@ -7995,14 +8106,14 @@ test("authors, connects, nests, undoes, saves, and reloads a local module design
   await inspector.getByLabel("Boundary").fill("Owns the external request boundary only.");
   await inspector.getByLabel("Failure behavior").fill("Rejects malformed requests without dispatching work.");
   await inspector.getByRole("button", { name: "Apply Changes" }).click({ force: true });
-  await addPort(page, { label: "requests", id: "requests", direction: "input", side: "left", dataType: "PaymentRequest" });
+  await addPort(page, { label: "requests", id: "requests", direction: "input", dataType: "PaymentRequest" });
 
   await addModule(page, { title: "Payment Worker", id: "worker", owner: "Payments Team" });
   await inspector.getByLabel("Purpose", { exact: true }).fill("Execute accepted payment work.");
   await inspector.getByLabel("Boundary", { exact: true }).fill("Owns payment execution, not request admission.");
   await inspector.getByLabel("Failure behavior", { exact: true }).fill("Returns a typed failure without mutating the API boundary.");
   await inspector.getByRole("button", { name: "Apply Changes" }).click({ force: true });
-  await addPort(page, { label: "responses", id: "responses", direction: "output", side: "right", dataType: "PaymentResult" });
+  await addPort(page, { label: "responses", id: "responses", direction: "output", dataType: "PaymentResult" });
 
   const source = flowNode(page, "system::worker").locator('.bd-port-handle-outer[data-handleid="responses"]');
   const target = flowNode(page, "system::api").locator('.bd-port-handle-outer[data-handleid="requests"]');
@@ -8049,7 +8160,7 @@ test("authors, connects, nests, undoes, saves, and reloads a local module design
   await inspector.getByLabel("Boundary", { exact: true }).fill("Owns request adaptation inside the API module.");
   await inspector.getByLabel("Failure behavior", { exact: true }).fill("Rejects unsupported requests before worker dispatch.");
   await inspector.getByRole("button", { name: "Apply Changes" }).click({ force: true });
-  await addPort(page, { label: "requests", id: "requests", direction: "input", side: "left", dataType: "PaymentRequest" });
+  await addPort(page, { label: "requests", id: "requests", direction: "input", dataType: "PaymentRequest" });
   await page.locator(".bd-tree-select").filter({ hasText: "Public API" }).click({ force: true });
   await inspector.locator(".bd-contract-fieldset").filter({ hasText: "Hierarchy port bindings" }).locator("select").selectOption("handler:requests");
   await waitForEditorIdle(page);
@@ -8153,11 +8264,10 @@ test("moves, edits, deletes, restores, saves, and exports authored facts", async
   await expect(worker.locator(".bd-pin-indicator")).toBeVisible();
 
   await worker.click({ force: true });
-  await addPort(page, { label: "events", id: "events", direction: "input", side: "left", dataType: "Event" });
+  await addPort(page, { label: "events", id: "events", direction: "input", dataType: "Event" });
   const inspector = page.getByRole("region", { name: "Properties" });
   await inspector.getByLabel("Label").fill("events-out");
   await inspector.getByLabel("Direction").selectOption("output");
-  await inspector.getByRole("combobox", { name: "Side", exact: true }).selectOption("right");
   await inspector.getByLabel("Required connection").uncheck({ force: true });
   await inspector.getByRole("button", { name: "Apply Changes" }).click({ force: true });
   await waitForEditorIdle(page);

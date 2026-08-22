@@ -14,7 +14,7 @@ function inspector(purpose: string): BlockNode["inspector"] {
 
 export function groupAlignmentDesignDocument(): BlockDesignDocument {
   return {
-    schemaVersion: "2.2",
+    schemaVersion: "2.3",
     id: "group-alignment-proof",
     title: "Group Alignment Proof",
     summary: "Different-sized modules expose one stable selection boundary and one shared correction.",
@@ -76,7 +76,7 @@ export function groupAlignmentDesignDocument(): BlockDesignDocument {
           ports: [{
             id: "internal-out",
             label: "group.internal",
-            side: "bottom",
+            side: "right",
             direction: "output",
             required: true,
             offset: 0.5,
@@ -94,7 +94,7 @@ export function groupAlignmentDesignDocument(): BlockDesignDocument {
             {
               id: "internal-in",
               label: "group.internal",
-              side: "top",
+              side: "left",
               direction: "input",
               required: true,
               offset: 0.5,
@@ -102,7 +102,7 @@ export function groupAlignmentDesignDocument(): BlockDesignDocument {
             {
               id: "review-out",
               label: "group.review",
-              side: "bottom",
+              side: "right",
               direction: "output",
               required: true,
               offset: 0.5,
@@ -120,7 +120,7 @@ export function groupAlignmentDesignDocument(): BlockDesignDocument {
           ports: [{
             id: "review-in",
             label: "group.review",
-            side: "top",
+            side: "left",
             direction: "input",
             required: true,
             offset: 0.5,
