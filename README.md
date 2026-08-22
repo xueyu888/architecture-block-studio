@@ -28,7 +28,7 @@ Architecture Block Studio 将这些问题变成可阅读、可编辑、可校验
 - 像专业 IDE 一样新建、打开、编辑、保存、另存和导出设计。
 - Windows 客户端会保留最近成功打开或保存的 10 份设计；从 **File → Recent Designs** 可直接重开，失效文件会在访问时明确提示并自动移除。历史只保存本地文件引用和时间，不复制设计 JSON，也不改变 dirty / Undo。
 - 工作台界面可切换 English、中文、Français、日本語和한국어；语言偏好只属于本机界面，不翻译用户编写的模块、端口、合同和技术 ID，也不改设计 JSON。
-- 左右侧栏可从各自 Header 一键隐藏，并从保留的窄边栏直接展开；Dock 布局和显隐只属于本机工作区状态。
+- 左右侧栏可从各自 Header 一键隐藏，并从保留的窄边栏直接展开；Sources、Canvas、Properties 与 Messages 使用稳定的固定工作台骨架，面板不会漂到画布中央或被拖散。旧版遗留的浮动布局会在启动时自动恢复，面板尺寸和显隐只属于本机工作区状态。
 - 创建模块、具名端口、RPC / DTO / Event / Stream 等类型化接口。
 - 既可以在画布拖线，也可以通过 **Add Interface** 用键盘选择端点并创建同一类接口合同。
 - 为模块和接口记录 Principle、Purpose、Boundary、Failure 与 Owner。

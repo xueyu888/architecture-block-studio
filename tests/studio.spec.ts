@@ -4018,7 +4018,7 @@ test("enters and exits five hierarchy view roots without changing the design", a
   await expect(purpose).toHaveValue(/ draft$/);
 });
 
-test("resizes, collapses, maximizes, floats and resets dock panels", async ({ page }) => {
+test("resizes, collapses, maximizes and resets fixed dock panels", async ({ page }) => {
   const sources = page.getByRole("region", { name: "Sources" });
   const initialSources = await sources.boundingBox();
   expect(initialSources).not.toBeNull();
@@ -4047,20 +4047,79 @@ test("resizes, collapses, maximizes, floats and resets dock panels", async ({ pa
   expect(diagramMaximized!.width).toBeGreaterThan(diagramBefore!.width + 300);
   await runMenuCommand(page, "View", "Restore Diagram");
 
-  await page.getByRole("button", { name: "Float Properties" }).click({ force: true });
-  await expect(
-    page.locator(".dv-floating-overlay-host").getByRole("region", { name: "Properties" }),
-  ).toBeVisible();
-  await expect(
-    page.locator(".dv-floating-overlay-host").getByRole("button", { name: "Float Properties" }),
-  ).toBeDisabled();
+  const properties = page.getByRole("region", { name: "Properties" });
+  const propertiesBeforeDrag = await properties.boundingBox();
+  const propertiesTab = page.locator('.dv-tab[data-tab-panel-id="properties"]');
+  const propertiesTabBounds = await propertiesTab.boundingBox();
+  const diagramBounds = await page.getByRole("region", { name: "Diagram" }).boundingBox();
+  expect(propertiesBeforeDrag).not.toBeNull();
+  expect(propertiesTabBounds).not.toBeNull();
+  expect(diagramBounds).not.toBeNull();
+  await page.mouse.move(
+    propertiesTabBounds!.x + propertiesTabBounds!.width / 2,
+    propertiesTabBounds!.y + propertiesTabBounds!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    diagramBounds!.x + diagramBounds!.width / 2,
+    diagramBounds!.y + diagramBounds!.height / 2,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+  const propertiesAfterDrag = await properties.boundingBox();
+  expect(propertiesAfterDrag).not.toBeNull();
+  expect(propertiesAfterDrag!.x).toBeCloseTo(propertiesBeforeDrag!.x, 0);
+  expect(propertiesAfterDrag!.width).toBeCloseTo(propertiesBeforeDrag!.width, 0);
+
+  await expect(page.getByRole("button", { name: "Float Properties" })).toHaveCount(0);
+  await expect(page.locator(".dv-floating-overlay-host").getByRole("region")).toHaveCount(0);
 
   await page.getByRole("button", { name: "View", exact: true }).click({ force: true });
   await page.getByRole("menuitem", { name: "Reset Workspace", exact: true }).click({ force: true });
-  await expect(
-    page.locator(".dv-floating-overlay-host").getByRole("region", { name: "Properties" }),
-  ).toHaveCount(0);
   expect((await sources.boundingBox())!.width).toBeCloseTo(250, -1);
+});
+
+test("restores a legacy floating Properties panel to the fixed right sidebar", async ({ page }) => {
+  await page.getByRole("button", { name: "Hide right sidebar" }).click({ force: true });
+  await page.getByRole("tab", { name: "Properties" }).click({ force: true });
+  await page.evaluate(() => {
+    const key = "architecture-block-studio.workspace.v2";
+    const raw = localStorage.getItem(key);
+    if (!raw) throw new Error("Expected the workspace layout to be persisted.");
+    const layout = JSON.parse(raw) as {
+      edgeGroups: { right: { collapsed?: boolean; group: { id: string; views: string[]; activeView?: string } } };
+      floatingGroups?: unknown[];
+    };
+    layout.edgeGroups.right.collapsed = true;
+    layout.edgeGroups.right.group.views = layout.edgeGroups.right.group.views.filter(
+      (panelId) => panelId !== "properties",
+    );
+    delete layout.edgeGroups.right.group.activeView;
+    layout.floatingGroups = [{
+      data: { views: ["properties"], activeView: "properties", id: "legacy-floating-properties" },
+      position: { top: 100, left: 100, width: 300, height: 300 },
+    }];
+    localStorage.setItem(key, JSON.stringify(layout));
+  });
+
+  await page.reload();
+  await expect(page.locator(".dv-floating-overlay-host").getByRole("region")).toHaveCount(0);
+  const properties = page.getByRole("region", { name: "Properties" });
+  await expect(properties).toBeVisible();
+  expect((await properties.boundingBox())!.x).toBeGreaterThan(1_200);
+  await expect(page.getByRole("button", { name: "Float Properties" })).toHaveCount(0);
+  expect(await page.evaluate(() => {
+    const raw = localStorage.getItem("architecture-block-studio.workspace.v2");
+    if (!raw) return undefined;
+    const layout = JSON.parse(raw) as {
+      edgeGroups?: { right?: { group?: { views?: string[] } } };
+      floatingGroups?: unknown[];
+    };
+    return {
+      floatingCount: layout.floatingGroups?.length ?? 0,
+      rightViews: layout.edgeGroups?.right?.group?.views ?? [],
+    };
+  })).toEqual({ floatingCount: 0, rightViews: ["properties"] });
 });
 
 test("switches all five interface languages without changing the design document", async ({ page }) => {

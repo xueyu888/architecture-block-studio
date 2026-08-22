@@ -10,7 +10,7 @@ import {
   type IDockviewPanelHeaderProps,
   type IDockviewPanelProps,
 } from "dockview-react";
-import { Maximize2, PanelLeftClose, PanelRightClose, PictureInPicture2 } from "lucide-react";
+import { Maximize2, PanelLeftClose, PanelRightClose } from "lucide-react";
 import { useStudioLocale } from "../i18n/StudioLocale";
 
 const LAYOUT_STORAGE_KEY = "architecture-block-studio.workspace.v2";
@@ -82,15 +82,6 @@ function StudioHeaderActions({ activePanel, containerApi, location }: IDockviewH
       )}
       <button
         type="button"
-        title={t("dock.float")}
-        aria-label={t("dock.floatNamed", { title: activePanel.title ?? "panel" })}
-        disabled={location?.type === "floating"}
-        onClick={() => containerApi.addFloatingGroup(activePanel)}
-      >
-        <PictureInPicture2 aria-hidden="true" size={13} />
-      </button>
-      <button
-        type="button"
         title={t("dock.maximize")}
         aria-label={t("dock.maximizeNamed", { title: activePanel.title ?? "panel" })}
         onClick={() => {
@@ -109,6 +100,69 @@ interface DockTitles {
   sources: string;
   properties: string;
   messages: string;
+}
+
+type SerializedDockLayout = ReturnType<DockviewApi["toJSON"]>;
+
+function readGroupViewIds(value: unknown): string[] {
+  if (!value || typeof value !== "object" || !("views" in value)) return [];
+  const views = (value as { views?: unknown }).views;
+  return Array.isArray(views) ? views.filter((view): view is string => typeof view === "string") : [];
+}
+
+function readGridViewIds(value: unknown): string[] {
+  if (!value || typeof value !== "object" || !("data" in value)) return [];
+  const data = (value as { data?: unknown }).data;
+  return Array.isArray(data)
+    ? data.flatMap((child) => readGridViewIds(child))
+    : readGroupViewIds(data);
+}
+
+function describePanelTopology(layout: SerializedDockLayout): string[] {
+  const topology = readGridViewIds(layout.grid.root).map((panelId) => `center:${panelId}`);
+  const edgePositions: EdgeGroupPosition[] = ["top", "bottom", "left", "right"];
+  edgePositions.forEach((position) => {
+    const edgeGroup = layout.edgeGroups?.[position];
+    readGroupViewIds(edgeGroup?.group).forEach((panelId) => topology.push(`${position}:${panelId}`));
+  });
+  layout.floatingGroups?.forEach((group) => {
+    const panelIds = group.data ? readGroupViewIds(group.data) : readGridViewIds(group.grid?.root);
+    panelIds.forEach((panelId) => topology.push(`floating:${panelId}`));
+  });
+  layout.popoutGroups?.forEach((group) => {
+    const panelIds = group.data ? readGroupViewIds(group.data) : readGridViewIds(group.grid?.root);
+    panelIds.forEach((panelId) => topology.push(`popout:${panelId}`));
+  });
+  return topology.sort();
+}
+
+function hasCanonicalPanelTopology(
+  layout: SerializedDockLayout,
+  canonicalLayout: SerializedDockLayout,
+): boolean {
+  const actualPanels = Object.keys(layout.panels).sort();
+  const canonicalPanels = Object.keys(canonicalLayout.panels).sort();
+  return JSON.stringify(actualPanels) === JSON.stringify(canonicalPanels)
+    && JSON.stringify(describePanelTopology(layout)) === JSON.stringify(describePanelTopology(canonicalLayout));
+}
+
+function restoreSavedLayout(
+  api: DockviewApi,
+  saved: string,
+  defaultLayout: SerializedDockLayout,
+): void {
+  try {
+    const parsed = JSON.parse(saved) as SerializedDockLayout;
+    if (!hasCanonicalPanelTopology(parsed, defaultLayout)) {
+      api.fromJSON(defaultLayout);
+      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(defaultLayout));
+      return;
+    }
+    api.fromJSON(parsed);
+  } catch {
+    localStorage.removeItem(LAYOUT_STORAGE_KEY);
+    api.fromJSON(defaultLayout);
+  }
 }
 
 function updatePanelTitles(api: DockviewApi, titles: DockTitles): void {
@@ -225,12 +279,7 @@ export function DockWorkspace({
 
     const saved = localStorage.getItem(LAYOUT_STORAGE_KEY);
     if (saved) {
-      try {
-        api.fromJSON(JSON.parse(saved));
-      } catch {
-        localStorage.removeItem(LAYOUT_STORAGE_KEY);
-        api.fromJSON(defaultLayoutRef.current);
-      }
+      restoreSavedLayout(api, saved, defaultLayoutRef.current);
     }
     updatePanelTitles(api, titlesRef.current);
 
@@ -246,6 +295,7 @@ export function DockWorkspace({
         <DockviewReact
           className="bd-dockview"
           theme={themeLight}
+          disableDnd
           components={dockComponents}
           defaultTabComponent={StudioTab}
           rightHeaderActionsComponent={StudioHeaderActions}

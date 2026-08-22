@@ -79,7 +79,7 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     });
     expect(await window.evaluate(
       () => window.architectureBlockStudioDesktop!.getUpdateState(),
-    )).toEqual({ status: "unsupported", currentVersion: "0.4.0" });
+    )).toEqual({ status: "unsupported", currentVersion: "0.4.1" });
     await expect(window.locator(".bd-desktop-update")).toHaveCount(0);
     expect(await window.evaluate(
       () => window.architectureBlockStudioDesktop!.listRecentDesigns(),
@@ -88,6 +88,34 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     const agentUi = window.locator('.react-flow__node[data-id="system::agent-ui"]');
     const screenshotDirectory = resolve("docs/screenshots");
     await mkdir(screenshotDirectory, { recursive: true });
+    await window.getByRole("button", { name: "Hide right sidebar" }).click({ force: true });
+    await window.getByRole("tab", { name: "Properties" }).click({ force: true });
+    await window.evaluate(() => {
+      const key = "architecture-block-studio.workspace.v2";
+      const raw = localStorage.getItem(key);
+      if (!raw) throw new Error("Expected the workspace layout to be persisted.");
+      const layout = JSON.parse(raw) as {
+        edgeGroups: { right: { collapsed?: boolean; group: { views: string[]; activeView?: string } } };
+        floatingGroups?: unknown[];
+      };
+      layout.edgeGroups.right.collapsed = true;
+      layout.edgeGroups.right.group.views = [];
+      delete layout.edgeGroups.right.group.activeView;
+      layout.floatingGroups = [{
+        data: { views: ["properties"], activeView: "properties", id: "legacy-floating-properties" },
+        position: { top: 100, left: 100, width: 300, height: 300 },
+      }];
+      localStorage.setItem(key, JSON.stringify(layout));
+    });
+    await window.reload();
+    await expect(window.locator(".react-flow__node")).toHaveCount(7, { timeout: 30_000 });
+    await expect(window.locator(".dv-floating-overlay-host").getByRole("region")).toHaveCount(0);
+    await expect(window.getByRole("region", { name: "Properties" })).toBeVisible();
+    await expect(window.getByRole("button", { name: "Float Properties" })).toHaveCount(0);
+    await window.screenshot({
+      path: resolve(screenshotDirectory, "windows-fixed-properties-dock.png"),
+      animations: "disabled",
+    });
     const commandPort = agentUi.locator('.bd-port[data-port-id="session-command"]');
     const commandPortGrip = commandPort.getByRole("button", { name: "Move port session.command" });
     const portBounds = await commandPortGrip.boundingBox();

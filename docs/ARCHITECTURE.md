@@ -112,7 +112,9 @@ flowchart LR
 
 ## 工作台与视觉系统
 
-工作台采用稳定的专业画布骨架：文档标题和校验摘要位于顶层，菜单负责完整命令发现，分组工具栏承载高频动作；Sources、Canvas、Inspector 构成主要横向工作区，Messages / DRC 与状态栏提供按需反馈。Canvas 始终是视觉主面，左右面板是上下文，只有选择、错误、dirty 和主操作使用强调色。改变面板显隐、Dock 布局或视觉样式不会改变设计事实。
+工作台采用稳定的专业画布骨架：文档标题和校验摘要位于顶层，菜单负责完整命令发现，分组工具栏承载高频动作；Sources 固定停靠左侧、Canvas 固定居中、Properties 固定停靠右侧、Messages / DRC 固定停靠底部，状态栏提供按需反馈。面板允许调整尺寸、折叠 / 恢复和最大化，但关闭 Dock 拖放与浮动入口，避免上下文面板覆盖画布或形成无法恢复的空边栏。Canvas 始终是视觉主面，左右面板是上下文，只有选择、错误、dirty 和主操作使用强调色。改变面板显隐、尺寸或视觉样式不会改变设计事实。
+
+`DockWorkspace` 以代码生成的默认布局作为面板拓扑唯一事实源；localStorage 只保存该拓扑内的尺寸、折叠和激活状态。恢复时先比较保存布局与默认布局的 panel id 和停靠位置；任何 floating、popout、缺失、重复或跨槽位布局都视为旧工作区异常，原子恢复默认拓扑并重写本机缓存。这个迁移只处理可丢弃工作区状态，不读取、不修改也不重新保存 `BlockDesignDocument`。
 
 `src/styles.css` 的 `:root` 是颜色、边界、控件高度、圆角、阴影、层级和动效时长的唯一视觉常量 Owner。组件只通过自身语义 class 表达“这是菜单、节点、属性面板或状态”，不得复制同一 surface、border、selection、z-index 或 control 尺寸；React Flow 的网格与 MiniMap 遮罩同样消费该 token 层。`StudioToolbar` 只依据 `StudioCommands` 投影命令，并用具名 `role="group"` 表达视觉分组，不拥有命令状态。它拥有常驻展示集合：File、History、Create 以及 Fit / Validate 表达启动、连续编辑、建模和审查直接工作流；低频全图布局与已有 Dock 上下文入口的面板动作仍由完整 Menu / Command Palette 投影。展示集合不进入命令合同，不能反向改变 execute 或 eligibility。视觉 token 只被组件消费，不依赖组件，也不进入 JSON、历史、selection 或布局结果。
 
@@ -201,7 +203,8 @@ StudioCommands ─────────────────────�
 Canvas viewport actions ──────────────────────────────────► Canvas controls
 Menu / Toolbar / Canvas controls ── label / detail ───────► Tooltip
 :root visual tokens ──────────────────────────────────────► all UI components
-Dock / selection / dialogs / command query ─► disposable workspace state; never design JSON
+Canonical Dock topology ─► persisted sizes / collapsed state ─► fixed workspace projection
+Dock / selection / dialogs / command query ─────────────────► disposable workspace state; never design JSON
 ```
 
 视觉失败与业务失败保持正交：非法编辑继续由既有命令和 Editor 给出可见错误并保留原文档；视觉回归由 WCAG computed-color、1680 × 1050 / 1280 × 720 几何合同、双浏览器旅程和 headed 截图捕获，不能通过新增文档字段或组件局部特例补偿。
@@ -214,7 +217,7 @@ Dock / selection / dialogs / command query ─► disposable workspace state; ne
 | --- | --- | --- | --- |
 | 持久设计事实 | `BlockDesignDocument` | 文档、Level、模块、端口、接口、连接、层级绑定、authored 位置 / 尺寸与手动路由 | 是 |
 | 派生设计结果 | `model` / `layout` / `routing` | DRC issues、模块关联接口摘要、Flow nodes、可视边、ELK 位置、正交路径 | 否，可重建 |
-| 工作区状态 | `BlockDesignStudio` / Canvas / Dockview | 当前选择、展开 Level、面板布局、缩放、Fit 请求、自动布局模式、当前 gesture 的对齐辅助线、连接预览 session 与计数、内部设计剪贴板与连续粘贴序号 | 否 |
+| 工作区状态 | `BlockDesignStudio` / Canvas / Dockview | 当前选择、展开 Level、固定面板的尺寸 / 折叠 / 激活状态、缩放、Fit 请求、自动布局模式、当前 gesture 的对齐辅助线、连接预览 session 与计数、内部设计剪贴板与连续粘贴序号 | 否 |
 | 未提交编辑草稿 | 各 Inspector / Dialog 表单 | 输入框内容、待创建连接 | 否；提交后才生成 `DesignOperation` |
 | 验证证据 | tests / screenshots / CI | 构建结果、几何检查、浏览器截图 | 否；只验证合同 |
 
