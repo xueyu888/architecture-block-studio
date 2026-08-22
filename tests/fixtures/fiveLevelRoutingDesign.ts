@@ -161,7 +161,7 @@ export function fiveLevelRoutingDesignDocument(): BlockDesignDocument {
         kind: "dto",
         title: "Five-Level Flow",
         protocol: "Hierarchy Routing v1",
-        owner: "Routing Engine",
+        owner: "Connection Geometry",
         principle: "One typed flow per declared boundary port.",
         purpose: "Exercise deep hierarchy routing without ambiguous continuation geometry.",
         boundary: "Every layer owns its relay and explicit child binding.",

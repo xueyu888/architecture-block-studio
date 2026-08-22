@@ -57,11 +57,11 @@ describe("generated Architecture Block Studio source architecture", () => {
     )).size).toBe(12);
     expect(moduleNodes.reduce((count, node) =>
       count + Number(node.inspector.attributes.sourceFileCount), 0
-    )).toBe(89);
+    )).toBe(70);
 
     const connections = document.levels.flatMap((level) => level.connections);
-    expect(connections).toHaveLength(29);
-    expect(new Set(connections.map(({ id }) => id)).size).toBe(29);
+    expect(connections).toHaveLength(30);
+    expect(new Set(connections.map(({ id }) => id)).size).toBe(30);
     connections.forEach((connection) => {
       expect(connection.label).toMatch(/ · \d+ import declarations?$/);
       expect(document.interfaceDefinitions[connection.interfaceId]?.attributes.evidence)

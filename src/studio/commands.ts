@@ -39,7 +39,6 @@ export type StudioCommandId =
   | "reconnectConnection"
   | "addChildDesign"
   | "regenerateLayout"
-  | "optimizeRouting"
   | "validateDesign"
   | "enterHierarchy"
   | "exitHierarchy"

@@ -34,7 +34,6 @@ import {
   PanelRight,
   Redo2,
   RotateCcw,
-  Route,
   Save,
   Scan,
   ScanSearch,
@@ -303,7 +302,6 @@ export function BlockDesignStudio({
   const [layout, setLayout] = useState<LayoutResult>({ nodes: [], edges: [] });
   const [placementMode, setPlacementMode] = useState<PlacementMode>("authored");
   const [layoutRevision, setLayoutRevision] = useState(0);
-  const [routeRevision, setRouteRevision] = useState(0);
   const [fitRequest, setFitRequest] = useState(0);
   const [fitSelectionRequest, setFitSelectionRequest] = useState(0);
   const [viewportActionRequest, setViewportActionRequest] = useState<CanvasViewportActionRequest>({
@@ -1980,10 +1978,6 @@ export function BlockDesignStudio({
         setLayoutRevision((value) => value + 1);
       },
     },
-    optimizeRouting: {
-      id: "optimizeRouting", label: "Optimize Routing", toolbarTitle: "仅优化布线", icon: Route,
-      ...commandAvailability(Boolean(document), "Open or create a design first."), execute: () => setRouteRevision((value) => value + 1),
-    },
     validateDesign: {
       id: "validateDesign", label: "Validate Design", toolbarTitle: "验证设计", icon: ShieldCheck,
       ...commandAvailability(Boolean(document), "Open or create a design first."), execute: validateDesign,
@@ -2348,7 +2342,6 @@ export function BlockDesignStudio({
             fitSelectionRequest={fitSelectionRequest}
             viewportActionRequest={viewportActionRequest}
             revealSelectionRequest={revealSelectionRequest}
-            routeRevision={routeRevision}
             onSelect={requestSelection}
             onPreviewAddModuleAt={previewAddBlockAt}
             onRequestAddModuleAt={openAddBlockAt}

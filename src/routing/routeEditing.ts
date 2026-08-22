@@ -18,6 +18,59 @@ export interface EditableRouteBend {
 }
 
 const MIN_EDITABLE_SEGMENT_LENGTH = 20;
+const MANUAL_ROUTE_STUB_LENGTH = 32;
+
+function endpointStub(point: RoutePoint, position: Position): RoutePoint {
+  if (position === "left") return { x: point.x - MANUAL_ROUTE_STUB_LENGTH, y: point.y };
+  if (position === "right") return { x: point.x + MANUAL_ROUTE_STUB_LENGTH, y: point.y };
+  if (position === "top") return { x: point.x, y: point.y - MANUAL_ROUTE_STUB_LENGTH };
+  return { x: point.x, y: point.y + MANUAL_ROUTE_STUB_LENGTH };
+}
+
+export function manualRouteChannelAxis(
+  source: RoutePoint,
+  target: RoutePoint,
+  sourcePosition: Position,
+  targetPosition: Position,
+): "h" | "v" {
+  const sourceHorizontal = sourcePosition === "left" || sourcePosition === "right";
+  const targetHorizontal = targetPosition === "left" || targetPosition === "right";
+  if (sourceHorizontal === targetHorizontal) return sourceHorizontal ? "h" : "v";
+  return Math.abs(target.x - source.x) >= Math.abs(target.y - source.y) ? "h" : "v";
+}
+
+/**
+ * Turns an automatic direct connection into a user-authored orthogonal route.
+ * Endpoint stubs preserve each Port's exit direction. The control point owns
+ * exactly one central channel, so the first drag always creates a visible and
+ * subsequently editable route instead of an accidental shortest-path elbow.
+ */
+export function materializeManualRoute(
+  source: RoutePoint,
+  target: RoutePoint,
+  sourcePosition: Position,
+  targetPosition: Position,
+  control: RoutePoint,
+): RoutePoint[] {
+  const sourceStub = endpointStub(source, sourcePosition);
+  const targetStub = endpointStub(target, targetPosition);
+  const controlPoints = manualRouteChannelAxis(source, target, sourcePosition, targetPosition) === "h"
+    ? [
+        { x: sourceStub.x, y: control.y },
+        { x: targetStub.x, y: control.y },
+      ]
+    : [
+        { x: control.x, y: sourceStub.y },
+        { x: control.x, y: targetStub.y },
+      ];
+  return compactOrthogonalPoints([
+    source,
+    sourceStub,
+    ...controlPoints,
+    targetStub,
+    target,
+  ]);
+}
 
 export function routeAxis(left: RoutePoint, right: RoutePoint): "h" | "v" {
   return Math.abs(right.x - left.x) >= Math.abs(right.y - left.y) ? "h" : "v";

@@ -50,7 +50,7 @@ const MENU_DEFINITIONS: Array<{
       "deleteSelection",
     ],
   },
-  { id: "design", labelKey: "menu.design", commandIds: ["addBlock", "addPort", "addConnection", "reconnectConnection", "addChildDesign", "regenerateLayout", "optimizeRouting", "validateDesign"] },
+  { id: "design", labelKey: "menu.design", commandIds: ["addBlock", "addPort", "addConnection", "reconnectConnection", "addChildDesign", "regenerateLayout", "validateDesign"] },
   {
     id: "arrange",
     labelKey: "menu.arrange",

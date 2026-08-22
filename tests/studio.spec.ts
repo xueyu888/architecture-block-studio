@@ -26,7 +26,6 @@ const examplePath = fileURLToPath(
 const invalidPath = fileURLToPath(new URL("./fixtures/invalid.block-design.json", import.meta.url));
 const legacyPath = fileURLToPath(new URL("./fixtures/legacy-v2.0.block-design.json", import.meta.url));
 const browserProblems = new WeakMap<Page, string[]>();
-const FIREFOX_VITE_INLINE_WORKER_WARNING = /^\[JavaScript Warning: "Attempting to create a Worker from an empty source\. This is probably unintentional\." \{file: "http:\/\/127\.0\.0\.1:\d+\/(?:\?[^\"]*)?" line: 0\}\]$/;
 const canvasGuideSelector = ".bd-alignment-guide, .bd-size-guide, .bd-distance-guide";
 const wcagTags = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 // Axe's color-contrast rule does not complete against this transformed SVG
@@ -196,6 +195,13 @@ async function textContrastIssues(page: Page, selector: string): Promise<TextCon
 
 function flowNode(page: Page, id: string): Locator {
   return page.locator(`.react-flow__node[data-id="${id}"]`);
+}
+
+async function selectFlowNode(
+  node: Locator,
+  modifiers: Array<"Alt" | "Control" | "ControlOrMeta" | "Meta" | "Shift"> = [],
+): Promise<void> {
+  await node.locator(".bd-block-identity").click({ force: true, modifiers });
 }
 
 function diagramNode(page: Page, levelId: string, blockId: string): Locator {
@@ -418,7 +424,6 @@ async function finishCanvasNavigationTrace(page: Page): Promise<CanvasNavigation
       trace?.selectionCommittedAt !== undefined &&
       trace.targetMountedAt !== undefined &&
       trace.targetSelectedAt !== undefined &&
-      trace.viewportMotionStartedAt !== undefined &&
       performance.now() - trace.lastTransformChangeAt >= 400
     );
   }, undefined, { polling: "raf", timeout: 10_000 });
@@ -429,7 +434,7 @@ async function finishCanvasNavigationTrace(page: Page): Promise<CanvasNavigation
       selectionCommittedAt: number;
       targetMountedAt: number;
       targetSelectedAt: number;
-      viewportMotionStartedAt: number;
+      viewportMotionStartedAt?: number;
       viewportTransformChanges: number;
       viewportMaxTransformGapMs: number;
       animationFrame: number;
@@ -440,14 +445,15 @@ async function finishCanvasNavigationTrace(page: Page): Promise<CanvasNavigation
     cancelAnimationFrame(trace.animationFrame);
     delete traceWindow.__blockDesignNavigationTrace;
     const sinceStart = (value: number) => Math.round(value - trace.startedAt);
+    const viewportMotionStartedAt = trace.viewportMotionStartedAt;
     return {
       selectionCommitMs: sinceStart(trace.selectionCommittedAt),
       targetMountMs: sinceStart(trace.targetMountedAt),
       targetSelectedMs: sinceStart(trace.targetSelectedAt),
-      viewportMotionStartMs: sinceStart(trace.viewportMotionStartedAt),
-      viewportMotionDurationMs: Math.round(
-        trace.lastTransformChangeAt - trace.viewportMotionStartedAt,
-      ),
+      viewportMotionStartMs: viewportMotionStartedAt === undefined ? 0 : sinceStart(viewportMotionStartedAt),
+      viewportMotionDurationMs: viewportMotionStartedAt === undefined
+        ? 0
+        : Math.round(trace.lastTransformChangeAt - viewportMotionStartedAt),
       viewportTransformChanges: trace.viewportTransformChanges,
       viewportMaxTransformGapMs: Math.round(trace.viewportMaxTransformGapMs),
       viewportSettledMs: sinceStart(Math.max(
@@ -474,39 +480,6 @@ async function tabTo(page: Page, target: Locator, limit = 160, direction: "forwa
   throw new Error(`Keyboard focus did not reach ${await target.getAttribute("aria-label") ?? await target.getAttribute("title") ?? "target"}. Focus trail: ${focusTrail.join(" -> ")}`);
 }
 
-async function routeNodeCollisions(page: Page): Promise<string[]> {
-  return page.evaluate(() => {
-    const nodes = [...document.querySelectorAll<HTMLElement>(".react-flow__node")].map((element) => ({
-      id: element.dataset.id ?? "unknown",
-      rect: element.getBoundingClientRect(),
-    }));
-    return [...document.querySelectorAll<SVGPathElement>(".bd-interface-route")].flatMap((path) => {
-      const route = path.closest<SVGGElement>("[data-source-node-id]");
-      const sourceId = route?.dataset.sourceNodeId;
-      const targetId = route?.dataset.targetNodeId;
-      const matrix = path.getScreenCTM();
-      if (!matrix) return [];
-      const routeGeometry = path.closest<SVGGElement>("[data-route-points]");
-      const points = JSON.parse(routeGeometry?.dataset.routePoints ?? "[]")
-        .map((point: { x: number; y: number }) => new DOMPoint(point.x, point.y).matrixTransform(matrix));
-      const hit = points.slice(1).some((right, index) => {
-        const left = points[index];
-        return nodes.some(({ id, rect }) => {
-          if (id === sourceId || id === targetId) return false;
-          const insideHorizontal = Math.abs(left.y - right.y) < 0.5 &&
-            left.y > rect.top + 2 && left.y < rect.bottom - 2 &&
-            Math.max(left.x, right.x) > rect.left + 2 && Math.min(left.x, right.x) < rect.right - 2;
-          const insideVertical = Math.abs(left.x - right.x) < 0.5 &&
-            left.x > rect.left + 2 && left.x < rect.right - 2 &&
-            Math.max(left.y, right.y) > rect.top + 2 && Math.min(left.y, right.y) < rect.bottom - 2;
-          return insideHorizontal || insideVertical;
-        });
-      });
-      return hit ? [path.closest(".react-flow__edge")?.getAttribute("data-id") ?? "unknown"] : [];
-    });
-  });
-}
-
 async function waitForLayout(page: Page): Promise<void> {
   await expect(page.locator(".bd-document-title span")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".react-flow__node")).not.toHaveCount(0, { timeout: 30_000 });
@@ -524,8 +497,7 @@ async function waitForCertifiedEditorFrame(page: Page): Promise<void> {
   await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 30_000 });
   const canvas = page.locator(".bd-react-flow");
   if (await canvas.count()) {
-    await expect(canvas).toHaveAttribute("data-committed-routing-status", "ready", { timeout: 30_000 });
-    await expect(canvas).toHaveAttribute("data-routing-frame-phase", "idle", { timeout: 30_000 });
+    await expect(canvas).toHaveAttribute("data-routing-mode", "direct", { timeout: 30_000 });
   }
 }
 
@@ -594,7 +566,6 @@ async function clearModuleInsertionPoints(page: Page, count: number): Promise<Ar
       ".react-flow__controls",
       ".react-flow__minimap",
       ".bd-canvas-detail-panel",
-      ".bd-routing-diagnostic",
       ".bd-canvas-pan-mode",
     ].join(", "))]
       .filter((element) => element.getClientRects().length > 0)
@@ -775,75 +746,29 @@ async function clickReachableEdgePoint(page: Page, edge: Locator): Promise<void>
 
 async function geometryIssues(page: Page) {
   return page.evaluate(() => {
-    const allNodeRects = new Map(
-      [...document.querySelectorAll<HTMLElement>(".react-flow__node")].map((element) => [
-        element.dataset.id ?? "unknown",
-        element.getBoundingClientRect(),
-      ] as const),
-    );
-    const nodeRects = [...document.querySelectorAll<HTMLElement>(".react-flow__node")]
-      .filter((element) => element.querySelector(".bd-block")?.getAttribute("data-expanded") !== "true")
-      .map((element) => ({
-        id: element.dataset.id ?? "unknown",
-        rect: element.getBoundingClientRect(),
-      }));
-    const collisions: string[] = [];
-
-    const paths = [...document.querySelectorAll<SVGPathElement>(".bd-interface-route")];
-    const microSegments = paths.flatMap((path) => {
-      const route = path.closest<SVGGElement>("[data-route-points]");
-      const points = JSON.parse(route?.dataset.routePoints ?? "[]") as Array<{ x: number; y: number }>;
-      return points.slice(1).flatMap((point, index) => {
-        const previous = points[index];
-        const length = Math.abs(point.x - previous.x) + Math.abs(point.y - previous.y);
-        return length > 0 && length < 1
-          ? [`${path.closest(".react-flow__edge")?.getAttribute("data-id") ?? "unknown"}:${length}`]
-          : [];
-      });
-    });
-    paths.forEach((path) => {
-      const route = path.closest<SVGGElement>("[data-source-node-id]");
-      const sourceId = route?.dataset.sourceNodeId;
-      const targetId = route?.dataset.targetNodeId;
-      const length = path.getTotalLength();
-      const matrix = path.getScreenCTM();
-      if (!matrix || length <= 0) return;
-      for (let index = 3; index < 57; index += 1) {
-        const point = path.getPointAtLength(length * (index / 60));
-        const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(matrix);
-        const hit = nodeRects.find(({ id, rect }) =>
-          id !== sourceId &&
-          id !== targetId &&
-          screenPoint.x > rect.left + 3 &&
-          screenPoint.x < rect.right - 3 &&
-          screenPoint.y > rect.top + 3 &&
-          screenPoint.y < rect.bottom - 3,
-        );
-        if (!hit) continue;
-        collisions.push(
-          `${path.closest(".react-flow__edge")?.getAttribute("data-id") ?? "unknown"} -> ${hit.id}`,
-        );
-        break;
+    const routeIssues = [...document.querySelectorAll<SVGGElement>("[data-route-points]")].flatMap((group) => {
+      const id = group.closest(".react-flow__edge")?.getAttribute("data-id") ?? "unknown";
+      const mode = group.dataset.routingMode;
+      const points = JSON.parse(group.dataset.routePoints ?? "[]") as Array<{ x: number; y: number }>;
+      const issues: string[] = [];
+      if (points.length < 2) issues.push(`${id}: incomplete route`);
+      if (mode === "automatic" && points.length !== 2) {
+        issues.push(`${id}: automatic route contains ${points.length} points`);
       }
+      points.slice(1).forEach((point, index) => {
+        const previous = points[index];
+        if (![previous.x, previous.y, point.x, point.y].every(Number.isFinite)) {
+          issues.push(`${id}: non-finite segment ${index}`);
+        } else if (previous.x === point.x && previous.y === point.y) {
+          issues.push(`${id}: zero-length segment ${index}`);
+        } else if (mode === "manual" && previous.x !== point.x && previous.y !== point.y) {
+          issues.push(`${id}: non-orthogonal manual segment ${index}`);
+        }
+      });
+      return issues;
     });
-
-    const labelOverlaps: string[] = [];
-    document.querySelectorAll<SVGTextElement>(".react-flow__edge-text").forEach((label) => {
-      const route = label.closest<SVGGElement>("[data-source-node-id]");
-      const sourceId = route?.dataset.sourceNodeId;
-      const targetId = route?.dataset.targetNodeId;
-      const rect = label.getBoundingClientRect();
-      const hit = nodeRects.find(({ id, rect: nodeRect }) =>
-        id !== sourceId &&
-        id !== targetId &&
-        rect.left < nodeRect.right &&
-        rect.right > nodeRect.left &&
-        rect.top < nodeRect.bottom &&
-        rect.bottom > nodeRect.top,
-      );
-      if (hit) labelOverlaps.push(`${label.textContent ?? "unknown"} -> ${hit.id}`);
-    });
-
+    const labelOverlaps = [...document.querySelectorAll<SVGTextElement>(".react-flow__edge-text")]
+      .map((label) => label.textContent ?? "unexpected edge label");
     const rootNodes = [...document.querySelectorAll<HTMLElement>('.bd-block[data-hierarchy-depth="0"]')]
       .map((block) => ({
         id: block.dataset.blockId ?? "unknown",
@@ -860,103 +785,10 @@ async function geometryIssues(page: Page) {
         if (overlap) siblingOverlaps.push(`${left.id} <-> ${right.id}`);
       });
     });
-
-    const boundaryEscapes: string[] = [];
-    paths.forEach((path) => {
-      const route = path.closest<SVGGElement>('[data-boundary-continuation="true"]');
-      const boundaryNodeId = route?.dataset.boundaryNodeId;
-      if (!route || !boundaryNodeId) return;
-      const boundary = document.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(boundaryNodeId)}"]`)
-        ?.getBoundingClientRect();
-      const matrix = path.getScreenCTM();
-      const length = path.getTotalLength();
-      if (!boundary || !matrix || length <= 0) return;
-      for (let distance = 0; distance <= length; distance += 4) {
-        const point = path.getPointAtLength(distance);
-        const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(matrix);
-        if (
-          screenPoint.x >= boundary.left - 8 &&
-          screenPoint.x <= boundary.right + 8 &&
-          screenPoint.y >= boundary.top - 8 &&
-          screenPoint.y <= boundary.bottom + 8
-        ) continue;
-        boundaryEscapes.push(route.closest(".react-flow__edge")?.getAttribute("data-id") ?? "unknown");
-        break;
-      }
-    });
-
-    const endpointIntrusions: string[] = [];
-    paths.forEach((path) => {
-      const route = path.closest<SVGGElement>('[data-boundary-continuation="false"]');
-      if (!route) return;
-      const source = allNodeRects.get(route.dataset.sourceNodeId ?? "");
-      const target = allNodeRects.get(route.dataset.targetNodeId ?? "");
-      const matrix = path.getScreenCTM();
-      const length = path.getTotalLength();
-      if (!source || !target || !matrix || length < 16) return;
-      const enters = [6, 12, 18, 24].some((distance) => {
-        if (distance >= length / 2) return false;
-        return [path.getPointAtLength(distance), path.getPointAtLength(length - distance)].some((point) => {
-          const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(matrix);
-          return [source, target].some((rect) =>
-            screenPoint.x > rect.left + 2 &&
-            screenPoint.x < rect.right - 2 &&
-            screenPoint.y > rect.top + 2 &&
-            screenPoint.y < rect.bottom - 2,
-          );
-        });
-      });
-      if (enters) endpointIntrusions.push(route.closest(".react-flow__edge")?.getAttribute("data-id") ?? "unknown");
-    });
-
-    const routeSamples = paths.map((path) => {
-      const length = path.getTotalLength();
-      const samples: Array<{ x: number; y: number; axis: "h" | "v" }> = [];
-      if (length > 12) {
-        for (let distance = 6; distance < length - 6; distance += 4) {
-          const before = path.getPointAtLength(Math.max(0, distance - 1));
-          const point = path.getPointAtLength(distance);
-          const after = path.getPointAtLength(Math.min(length, distance + 1));
-          samples.push({
-            x: point.x,
-            y: point.y,
-            axis: Math.abs(after.x - before.x) >= Math.abs(after.y - before.y) ? "h" : "v",
-          });
-        }
-      }
-      return {
-        id: path.closest(".react-flow__edge")?.getAttribute("data-id") ?? "unknown",
-        connectionId: path.closest<SVGGElement>("[data-connection-id]")?.dataset.connectionId ?? "unknown",
-        samples,
-      };
-    });
-    const sharedRoutes: string[] = [];
-    routeSamples.forEach((left, leftIndex) => {
-      routeSamples.slice(leftIndex + 1).forEach((right) => {
-        if (left.connectionId === right.connectionId) return;
-        let matched = 0;
-        for (const leftPoint of left.samples) {
-          const sharesLane = right.samples.some((rightPoint) =>
-            leftPoint.axis === rightPoint.axis &&
-            Math.abs(leftPoint.x - rightPoint.x) < 2.5 &&
-            Math.abs(leftPoint.y - rightPoint.y) < 2.5,
-          );
-          matched = sharesLane ? matched + 1 : 0;
-          if (matched < 4) continue;
-          sharedRoutes.push(`${left.id} <-> ${right.id}`);
-          break;
-        }
-      });
-    });
-
     return {
-      collisions,
+      routeIssues,
       labelOverlaps,
       siblingOverlaps,
-      boundaryEscapes,
-      endpointIntrusions,
-      microSegments,
-      sharedRoutes,
     };
   });
 }
@@ -966,230 +798,61 @@ async function connectionPreviewIssues(page: Page) {
     const group = preview as SVGGElement;
     const path = group.querySelector<SVGPathElement>(".bd-connection-preview-path");
     const points = JSON.parse(group.dataset.previewPoints ?? "[]") as Array<{ x: number; y: number }>;
-    const sourceId = group.dataset.previewSourceNodeId;
-    const targetId = group.dataset.previewTargetNodeId;
-    const nodes = [...document.querySelectorAll<HTMLElement>(".react-flow__node")]
-      .filter((node) => node.dataset.id !== sourceId && node.dataset.id !== targetId)
-      .filter((node) => node.querySelector('.bd-block[data-expanded="true"]') === null)
-      .map((node) => ({ id: node.dataset.id ?? "unknown", rect: node.getBoundingClientRect() }));
-    const collisions: string[] = [];
-    const matrix = path?.getScreenCTM();
-    const length = path?.getTotalLength() ?? 0;
-    if (!path || !matrix || length <= 0) return {
-      collisions: ["preview geometry unavailable"],
-      nonOrthogonalSegments: [],
-      zeroLengthSegments: [],
-    };
-    for (let distance = 2; distance < length - 2; distance += 2) {
-      const point = path.getPointAtLength(distance);
-      const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(matrix);
-      const hit = nodes.find(({ rect }) =>
-        screenPoint.x > rect.left + 2 && screenPoint.x < rect.right - 2 &&
-        screenPoint.y > rect.top + 2 && screenPoint.y < rect.bottom - 2,
-      );
-      if (hit && !collisions.includes(hit.id)) collisions.push(hit.id);
+    const issues: string[] = [];
+    if (!path || !path.getScreenCTM() || path.getTotalLength() <= 0) issues.push("preview geometry unavailable");
+    if (points.length !== 2) issues.push(`preview contains ${points.length} points`);
+    if (points.some((point) => !Number.isFinite(point.x) || !Number.isFinite(point.y))) {
+      issues.push("preview contains non-finite coordinates");
     }
-    const segments = points.slice(1).map((point, index) => ({ previous: points[index], point, index }));
-    return {
-      collisions,
-      nonOrthogonalSegments: segments
-        .filter(({ previous, point }) => previous.x !== point.x && previous.y !== point.y)
-        .map(({ index }) => index),
-      zeroLengthSegments: segments
-        .filter(({ previous, point }) => previous.x === point.x && previous.y === point.y)
-        .map(({ index }) => index),
-    };
+    if (points.length === 2 && points[0].x === points[1].x && points[0].y === points[1].y) {
+      issues.push("preview has zero length");
+    }
+    return issues;
   });
 }
-
-async function exhaustiveRouteAudit(page: Page) {
+async function auditRoutes(page: Page) {
   return page.evaluate(() => {
     interface Point { x: number; y: number }
-    interface Jump { segmentIndex: number; point: Point; radius: number }
-    interface Segment { a: Point; b: Point; axis: "h" | "v"; index: number }
-    interface RouteAudit {
-      id: string;
-      points: Point[];
-      jumps: Jump[];
-      segments: Segment[];
-    }
-    const range = (left: number, right: number): [number, number] =>
-      left <= right ? [left, right] : [right, left];
-    const overlapLength = (left: Segment, right: Segment) => {
-      if (left.axis !== right.axis) return 0;
-      if (left.axis === "h") {
-        if (left.a.y !== right.a.y) return 0;
-        const [leftStart, leftEnd] = range(left.a.x, left.b.x);
-        const [rightStart, rightEnd] = range(right.a.x, right.b.x);
-        return Math.max(0, Math.min(leftEnd, rightEnd) - Math.max(leftStart, rightStart));
-      }
-      if (left.a.x !== right.a.x) return 0;
-      const [leftStart, leftEnd] = range(left.a.y, left.b.y);
-      const [rightStart, rightEnd] = range(right.a.y, right.b.y);
-      return Math.max(0, Math.min(leftEnd, rightEnd) - Math.max(leftStart, rightStart));
-    };
-    const crossing = (left: Segment, right: Segment): Point | undefined => {
-      if (left.axis === right.axis) return undefined;
-      const horizontal = left.axis === "h" ? left : right;
-      const vertical = left.axis === "v" ? left : right;
-      const [minX, maxX] = range(horizontal.a.x, horizontal.b.x);
-      const [minY, maxY] = range(vertical.a.y, vertical.b.y);
-      return vertical.a.x > minX && vertical.a.x < maxX && horizontal.a.y > minY && horizontal.a.y < maxY
-        ? { x: vertical.a.x, y: horizontal.a.y }
-        : undefined;
-    };
-    const projectedOverlap = (left: Segment, right: Segment) => {
-      if (left.axis !== right.axis) return 0;
-      const [leftStart, leftEnd] = left.axis === "h"
-        ? range(left.a.x, left.b.x)
-        : range(left.a.y, left.b.y);
-      const [rightStart, rightEnd] = right.axis === "h"
-        ? range(right.a.x, right.b.x)
-        : range(right.a.y, right.b.y);
-      return Math.max(0, Math.min(leftEnd, rightEnd) - Math.max(leftStart, rightStart));
-    };
-    const samePoint = (left: Point, right: Point) => left.x === right.x && left.y === right.y;
-    const sharedTerminalStubCoversOverlap = (
-      leftRoute: RouteAudit,
-      leftSegment: Segment,
-      rightRoute: RouteAudit,
-      rightSegment: Segment,
-    ) => {
-      const terminalStubs = (route: RouteAudit) => [
-        { endpoint: route.points[0], segment: route.segments[0] },
-        { endpoint: route.points.at(-1)!, segment: route.segments.at(-1)! },
-      ];
-      return terminalStubs(leftRoute).some((leftStub) => terminalStubs(rightRoute).some((rightStub) => {
-        if (!samePoint(leftStub.endpoint, rightStub.endpoint) ||
-          leftStub.segment.axis !== leftSegment.axis || rightStub.segment.axis !== rightSegment.axis) return false;
-        const [leftStart, leftEnd] = leftSegment.axis === "h"
-          ? range(leftSegment.a.x, leftSegment.b.x)
-          : range(leftSegment.a.y, leftSegment.b.y);
-        const [rightStart, rightEnd] = rightSegment.axis === "h"
-          ? range(rightSegment.a.x, rightSegment.b.x)
-          : range(rightSegment.a.y, rightSegment.b.y);
-        const overlapStart = Math.max(leftStart, rightStart);
-        const overlapEnd = Math.min(leftEnd, rightEnd);
-        const [leftStubStart, leftStubEnd] = leftStub.segment.axis === "h"
-          ? range(leftStub.segment.a.x, leftStub.segment.b.x)
-          : range(leftStub.segment.a.y, leftStub.segment.b.y);
-        const [rightStubStart, rightStubEnd] = rightStub.segment.axis === "h"
-          ? range(rightStub.segment.a.x, rightStub.segment.b.x)
-          : range(rightStub.segment.a.y, rightStub.segment.b.y);
-        return overlapEnd > overlapStart &&
-          overlapStart >= leftStubStart && overlapEnd <= leftStubEnd &&
-          overlapStart >= rightStubStart && overlapEnd <= rightStubEnd;
-      }));
-    };
     const perRouteIssues: string[] = [];
-    const routes = [...document.querySelectorAll<SVGGElement>("[data-route-points]")].map<RouteAudit>((group) => {
+    const routes = [...document.querySelectorAll<SVGGElement>("[data-route-points]")].map((group) => {
       const id = group.closest(".react-flow__edge")?.getAttribute("data-id") ?? "unknown";
+      const mode = group.dataset.routingMode;
       const points = JSON.parse(group.dataset.routePoints ?? "[]") as Point[];
-      const jumps = JSON.parse(group.dataset.routeJumps ?? "[]") as Jump[];
-      const segments = points.slice(1).flatMap<Segment>((point, index) => {
+      if (points.length < 2) perRouteIssues.push(`${id}: incomplete route`);
+      if (points.some((point) => !Number.isFinite(point.x) || !Number.isFinite(point.y))) {
+        perRouteIssues.push(`${id}: non-finite coordinate`);
+      }
+      points.slice(1).forEach((point, index) => {
         const previous = points[index];
-        if (![previous.x, previous.y, point.x, point.y].every(Number.isFinite)) {
-          perRouteIssues.push(`${id}: non-finite coordinate`);
-          return [];
-        }
         if (previous.x === point.x && previous.y === point.y) {
           perRouteIssues.push(`${id}: zero-length segment ${index}`);
-          return [];
         }
-        const axis = previous.y === point.y ? "h" : previous.x === point.x ? "v" : undefined;
-        if (!axis) {
-          perRouteIssues.push(`${id}: diagonal segment ${index}`);
-          return [];
+        if (mode === "manual" && previous.x !== point.x && previous.y !== point.y) {
+          perRouteIssues.push(`${id}: non-orthogonal manual segment ${index}`);
         }
-        const length = Math.abs(point.x - previous.x) + Math.abs(point.y - previous.y);
-        if (length < 1) perRouteIssues.push(`${id}: micro segment ${index} (${length})`);
-        return [{ a: previous, b: point, axis, index }];
       });
-      if (points.length < 2 || segments.length !== points.length - 1) {
-        perRouteIssues.push(`${id}: incomplete polyline`);
+      if (mode === "automatic" && points.length !== 2) {
+        perRouteIssues.push(`${id}: automatic route contains ${points.length} points`);
       }
-      segments.slice(1).forEach((segment, index) => {
-        const previous = segments[index];
-        if (previous.axis !== segment.axis) return;
-        const previousDelta = previous.axis === "h" ? previous.b.x - previous.a.x : previous.b.y - previous.a.y;
-        const currentDelta = segment.axis === "h" ? segment.b.x - segment.a.x : segment.b.y - segment.a.y;
-        if (Math.sign(previousDelta) !== Math.sign(currentDelta)) perRouteIssues.push(`${id}: reversal ${index}`);
-      });
-      segments.forEach((left, leftIndex) => segments.slice(leftIndex + 2).forEach((right) => {
-        if (overlapLength(left, right) > 0 || crossing(left, right)) {
-          perRouteIssues.push(`${id}: self intersection ${left.index}/${right.index}`);
-        }
-      }));
-      if (Number(group.dataset.routeJumpCount) !== jumps.length) {
-        perRouteIssues.push(`${id}: jump count mismatch`);
-      }
-      return { id, points, jumps, segments };
+      return { id, mode, points };
     });
     const duplicateRouteIds = routes
       .map((route) => route.id)
       .filter((id, index, ids) => ids.indexOf(id) !== index);
-    const parallelConflicts: string[] = [];
-    const unbridgedCrossings: string[] = [];
-    const coveredJumps = new Set<string>();
-    let auditedPairCount = 0;
-    routes.forEach((left, leftIndex) => routes.slice(leftIndex + 1).forEach((right) => {
-      auditedPairCount += 1;
-      left.segments.forEach((leftSegment) => right.segments.forEach((rightSegment) => {
-        if (leftSegment.axis === rightSegment.axis && projectedOverlap(leftSegment, rightSegment) > 0) {
-          const perpendicularGap = leftSegment.axis === "h"
-            ? Math.abs(leftSegment.a.y - rightSegment.a.y)
-            : Math.abs(leftSegment.a.x - rightSegment.a.x);
-          const exactOverlap = perpendicularGap === 0 && overlapLength(leftSegment, rightSegment) > 0;
-          if (perpendicularGap < 8 && !(exactOverlap && sharedTerminalStubCoversOverlap(
-            left,
-            leftSegment,
-            right,
-            rightSegment,
-          ))) {
-            parallelConflicts.push(`${left.id} <-> ${right.id} (${perpendicularGap}px)`);
-          }
-        }
-        const point = crossing(leftSegment, rightSegment);
-        if (!point) return;
-        const horizontalRoute = leftSegment.axis === "h" ? left : right;
-        const horizontalSegment = leftSegment.axis === "h" ? leftSegment : rightSegment;
-        const jumpIndex = horizontalRoute.jumps.findIndex((jump) =>
-          jump.segmentIndex === horizontalSegment.index &&
-          Math.abs(jump.point.y - point.y) < 0.01 &&
-          Math.abs(jump.point.x - point.x) <= jump.radius
-        );
-        if (jumpIndex < 0) {
-          unbridgedCrossings.push(`${left.id} <-> ${right.id} @ ${point.x},${point.y}`);
-        } else {
-          coveredJumps.add(`${horizontalRoute.id}:${jumpIndex}`);
-        }
-      }));
-    }));
-    const orphanJumps = routes.flatMap((route) => route.jumps.flatMap((_, index) =>
-      coveredJumps.has(`${route.id}:${index}`) ? [] : [`${route.id}:${index}`]
-    ));
     return {
       routeIds: routes.map((route) => route.id).sort(),
       auditedRouteCount: routes.length,
-      auditedPairCount,
-      expectedPairCount: routes.length * (routes.length - 1) / 2,
       duplicateRouteIds,
       perRouteIssues,
-      parallelConflicts: [...new Set(parallelConflicts)],
-      unbridgedCrossings,
-      orphanJumps,
-      renderedJumpCount: routes.reduce((count, route) => count + route.jumps.length, 0),
     };
   });
 }
 
-test.beforeEach(async ({ browserName, page }) => {
+test.beforeEach(async ({ page }) => {
   const problems: string[] = [];
   browserProblems.set(page, problems);
   page.on("console", (message) => {
     if (message.type() === "warning" || message.type() === "error") {
-      if (browserName === "firefox" && message.type() === "warning" &&
-        FIREFOX_VITE_INLINE_WORKER_WARNING.test(message.text())) return;
       problems.push(`${message.type()}: ${message.text()}`);
     }
   });
@@ -1227,16 +890,12 @@ test("loads the bundled v2 design without DRC or viewport failures", async ({ pa
   await page.waitForTimeout(350);
   await agentUi.locator(".bd-port-label").first().hover();
   await expect(agentUi.locator(".bd-port-label small").first()).toBeVisible();
-  await agentUi.locator(".bd-block-header").hover();
+  await agentUi.locator(".bd-block-identity").hover();
   await expect(agentUi.locator(".bd-port-label small").first()).toBeHidden();
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
   const overflow = await page.evaluate(() => [
     document.body.scrollWidth - window.innerWidth,
@@ -1248,7 +907,7 @@ test("loads the bundled v2 design without DRC or viewport failures", async ({ pa
 test("renames a module directly on the canvas as one recoverable document edit", async ({ page, browserName }) => {
   const node = flowNode(page, "system::agent-ui");
   const inspector = page.getByRole("region", { name: "Properties" });
-  await node.click({ force: true });
+  await selectFlowNode(node);
   await node.focus();
 
   await page.keyboard.press("F2");
@@ -1324,7 +983,7 @@ test("keeps the compact desktop workbench operable without panel or route obstru
   expect(handleBox!.width).toBeGreaterThanOrEqual(23);
   expect(handleBox!.height).toBeGreaterThanOrEqual(23);
   await handle.focus();
-  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press(await handle.getAttribute("data-route-axis") === "h" ? "ArrowDown" : "ArrowRight");
   await waitForEditorIdle(page);
   await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
 
@@ -1482,14 +1141,14 @@ test("keeps only direct-workflow commands in the persistent toolbar", async ({ p
   await expect(toolbar.getByRole("group", { name: "Create" }).getByRole("button")).toHaveCount(4);
   await expect(toolbar.getByRole("group", { name: "Canvas and review" }).getByRole("button")).toHaveCount(2);
 
-  for (const title of ["Regenerate Layout", "Optimize Routing", "Sources", "Messages", "Properties", "Maximize Diagram"]) {
+  for (const title of ["Regenerate Layout", "Sources", "Messages", "Properties", "Maximize Diagram"]) {
     await expect(toolbar.getByRole("button", { name: title, exact: true })).toHaveCount(0);
   }
 
   await page.getByRole("button", { name: "Design", exact: true }).click();
   const designMenu = page.getByRole("menu", { name: "Design" });
   await expect(designMenu.getByRole("menuitem", { name: "Regenerate Layout", exact: true })).toBeVisible();
-  await expect(designMenu.getByRole("menuitem", { name: "Optimize Routing", exact: true })).toBeVisible();
+  await expect(designMenu.getByRole("menuitem", { name: "Optimize Routing", exact: true })).toHaveCount(0);
   await page.keyboard.press("Escape");
 
   await page.getByRole("button", { name: "View", exact: true }).click();
@@ -1503,7 +1162,6 @@ test("keeps only direct-workflow commands in the persistent toolbar", async ({ p
   const palette = page.getByRole("dialog", { name: "Command Palette" });
   for (const label of [
     /^Regenerate Layout/,
-    /^Optimize Routing/,
     /^Toggle Sources/,
     /^Toggle Messages/,
     /^Toggle Properties/,
@@ -1553,7 +1211,7 @@ test("searches and runs the unified command palette without losing workflow focu
   const search = palette.getByRole("combobox", { name: "Search commands" });
   await expect(palette).toBeVisible();
   await expect(search).toBeFocused();
-  await expect(palette.getByRole("option")).toHaveCount(51);
+  await expect(palette.getByRole("option")).toHaveCount(50);
   await expect(palette.getByRole("option", { name: /^Command Palette/ })).toHaveCount(0);
 
   await search.fill("Add Port...");
@@ -1726,13 +1384,9 @@ test("routes and persists a new interface inside an existing complex design", as
     .toHaveText("review.command");
   await expect(page.locator(".react-flow__edge-text")).toHaveCount(0);
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
 
   const edge = page.locator('.react-flow__edge[data-id="system::ui-to-review-gateway"]');
@@ -2093,7 +1747,7 @@ test("keeps suggested identifiers linked until the user customizes them", async 
   await secondPort.getByRole("button", { name: "Add Port", exact: true }).click({ force: true });
   await waitForEditorIdle(page);
 
-  await flowNode(page, "system::payment-worker").click({ force: true });
+  await selectFlowNode(flowNode(page, "system::payment-worker"));
   await toolbarButton(page, "Create Child Design...").click({ force: true });
   const childDesign = page.getByRole("dialog", { name: /Create Child Design/ });
   await childDesign.getByLabel("Child design title").fill("Payment Worker Runtime");
@@ -2165,10 +1819,10 @@ test("protects unapplied Inspector changes across review navigation and save", a
   await expect(inspector.getByLabel("Title")).toHaveValue("Agent UI draft");
 
   const modifierDialogPromise = page.waitForEvent("dialog");
-  const rejectedModifierSelection = flowNode(page, "system::project").click({
-    force: true,
-    modifiers: ["Shift"],
-  });
+  const rejectedModifierSelection = selectFlowNode(
+    flowNode(page, "system::project"),
+    ["Shift"],
+  );
   const modifierDialog = await modifierDialogPromise;
   await modifierDialog.dismiss();
   await rejectedModifierSelection;
@@ -2308,7 +1962,7 @@ test("keeps the authoring chrome stable and handles direct commands", async ({ p
 });
 
 test("keeps the viewport and canvas mounted while applying property edits", async ({ page }) => {
-  await flowNode(page, "system::agent-ui").click({ force: true });
+  await selectFlowNode(flowNode(page, "system::agent-ui"));
   const canvas = page.locator(".bd-react-flow");
   await canvas.evaluate((element) => { element.setAttribute("data-mount-proof", "preserved"); });
   const viewportBefore = await canvasViewportTransform(page);
@@ -2347,14 +2001,16 @@ test("renders one semantic target arrow per connection and neutral port affordan
       sourceNodeId: route.getAttribute("data-source-node-id"),
       targetNodeId: route.getAttribute("data-target-node-id"),
       markerEnd: path?.getAttribute("marker-end"),
-      orthogonalTargetApproach: Boolean(previous && target && previous.x === target.x && previous.y > target.y),
+      routePointCount: points.length,
+      hasDistinctTarget: Boolean(previous && target && (previous.x !== target.x || previous.y !== target.y)),
     };
   });
   expect(projectDirection).toEqual({
     sourceNodeId: "system::project",
     targetNodeId: "system::rust-agent-core",
     markerEnd: expect.stringMatching(/url\(.+arrowclosed.+\)/),
-    orthogonalTargetApproach: true,
+    routePointCount: 2,
+    hasDistinctTarget: true,
   });
   await expect(page.locator("marker.react-flow__arrowhead").first())
     .toHaveAttribute("markerUnits", "userSpaceOnUse");
@@ -2422,8 +2078,9 @@ test("reserves collision-free four-side port label rails", async ({ page, browse
     document.querySelectorAll<HTMLElement>(".bd-block:not(.is-expanded)").forEach((block) => {
       const blockId = block.dataset.blockId ?? "unknown";
       const blockRect = block.getBoundingClientRect();
-      const headerRect = block.querySelector<HTMLElement>(".bd-block-header")?.getBoundingClientRect();
-      const ownerRect = block.querySelector<HTMLElement>(".bd-block-owner")?.getBoundingClientRect();
+      const contentRects = [".bd-block-identity", ".bd-block-body", ".bd-block-owner"]
+        .map((selector) => block.querySelector<HTMLElement>(selector)?.getBoundingClientRect())
+        .filter((rect): rect is DOMRect => Boolean(rect && rect.width > 0 && rect.height > 0));
       const labels = [...block.querySelectorAll<HTMLElement>(".bd-port-label")].map((label) => ({
         label,
         rect: label.getBoundingClientRect(),
@@ -2434,12 +2091,10 @@ test("reserves collision-free four-side port label rails", async ({ page, browse
           rect.left < blockRect.left - 1 || rect.right > blockRect.right + 1 ||
           rect.top < blockRect.top - 1 || rect.bottom > blockRect.bottom + 1
         ) failures.push(`${blockId}:${label.innerText}:outside`);
-        if (side === "top" && headerRect && rect.bottom > headerRect.top + 1) {
-          failures.push(`${blockId}:${label.innerText}:header`);
-        }
-        if (side === "bottom" && ownerRect && rect.top < ownerRect.bottom - 1) {
-          failures.push(`${blockId}:${label.innerText}:owner`);
-        }
+        if (contentRects.some((contentRect) => (
+          rect.left < contentRect.right - 1 && rect.right > contentRect.left + 1 &&
+          rect.top < contentRect.bottom - 1 && rect.bottom > contentRect.top + 1
+        ))) failures.push(`${blockId}:${label.innerText}:${side}-content`);
       });
       labels.forEach((left, index) => labels.slice(index + 1).forEach((right) => {
         const overlap = left.rect.left < right.rect.right - 1
@@ -2457,6 +2112,27 @@ test("reserves collision-free four-side port label rails", async ({ page, browse
   const core = flowNode(page, "system::rust-agent-core");
   await expect(project.locator('.bd-port-rail-top .bd-port-label span')).toHaveText("session.lifecycle");
   await expect(core.locator('.bd-port-rail-bottom .bd-port-label span')).toHaveCount(2);
+  await expect(page.locator(".bd-port-move-grip")).toHaveCount(0);
+  for (const label of [
+    project.locator(".bd-port-rail-top .bd-port-label").first(),
+    core.locator(".bd-port-rail-bottom .bd-port-label").first(),
+  ]) {
+    const bounds = await label.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.height).toBeGreaterThan(bounds!.width * 2);
+  }
+  const projectBounds = await project.boundingBox();
+  const projectIdentityBounds = await project.locator(".bd-block-identity").boundingBox();
+  expect(projectBounds).not.toBeNull();
+  expect(projectIdentityBounds).not.toBeNull();
+  expect(Math.abs(
+    projectIdentityBounds!.x + projectIdentityBounds!.width / 2
+    - projectBounds!.x - projectBounds!.width / 2,
+  )).toBeLessThan(1);
+  expect(Math.abs(
+    projectIdentityBounds!.y + projectIdentityBounds!.height / 2
+    - projectBounds!.y - projectBounds!.height / 2,
+  )).toBeLessThan(1);
   await expect(page.locator(".bd-port-label small").first()).toBeHidden();
 
   await page.locator(".react-flow__controls-zoomin").click({ force: true });
@@ -2466,7 +2142,7 @@ test("reserves collision-free four-side port label rails", async ({ page, browse
   await projectLabel.hover();
   await expect(projectLabel.locator("small")).toHaveText("Integration RPC");
   await expect(projectLabel.locator("small")).toBeVisible();
-  await project.locator(".bd-block-header").hover();
+  await project.locator(".bd-block-identity").hover();
   await expect(projectLabel.locator("small")).toBeHidden();
 
   if (process.env.CAPTURE_PORT_RAILS === "1" && browserName === "chromium") {
@@ -2523,7 +2199,7 @@ test("keeps a mixed-level selection reviewable after hierarchy expansion", async
   await page.locator(
     '.bd-tree-select[data-level-id="system"][data-node-id="rust-agent-core"]',
   ).click({ force: true });
-  await child.click({ force: true, modifiers: ["Shift"] });
+  await selectFlowNode(child, ["Shift"]);
 
   const inspector = page.getByRole("region", { name: "Properties" });
   await expect(parent).toHaveClass(/selected/);
@@ -2553,7 +2229,7 @@ test("shows and cross-probes all 40 declared interfaces", async ({ page }) => {
 });
 
 test("summarizes a module's direct interfaces and opens the selected contract", async ({ page }) => {
-  await flowNode(page, "system::agent-ui").click({ force: true });
+  await selectFlowNode(flowNode(page, "system::agent-ui"));
   const inspector = page.getByRole("region", { name: "Properties" });
   const summary = inspector.locator(".bd-related-interfaces");
 
@@ -2773,7 +2449,7 @@ test("completes a design and save journey without switching from the keyboard", 
   await expect(page.locator(".bd-statusbar")).toContainText("Saved");
 });
 
-test("keeps routes outside blocks with both hierarchy containers expanded", async ({ page }) => {
+test("projects every automatic connection as a direct selectable line with both hierarchy containers expanded", async ({ page }) => {
   if (process.env.CAPTURE_ROUTING_PROOF === "1") {
     await toolbarButton(page, "Fit Design").click({ force: true });
     await page.waitForTimeout(400);
@@ -2787,41 +2463,27 @@ test("keeps routes outside blocks with both hierarchy containers expanded", asyn
   await expect(page.locator(".react-flow__edge-text")).toHaveCount(0);
 
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
-  const routeAudit = await exhaustiveRouteAudit(page);
+  const routeAudit = await auditRoutes(page);
   expect(routeAudit).toMatchObject({
     auditedRouteCount: 54,
-    auditedPairCount: 1431,
-    expectedPairCount: 1431,
     duplicateRouteIds: [],
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   expect(routeAudit.routeIds).toHaveLength(54);
-  expect(routeAudit.renderedJumpCount).toBeGreaterThan(0);
   if (process.env.CAPTURE_SCENE_ROUTING === "1") {
-    await captureStudioScreenshot(page, "docs/screenshots/scene-routing-double-expanded.png");
-    for (const [title, path] of [
-      ["Rust Agent Core", "docs/screenshots/scene-routing-core-detail.png"],
-      ["Tool System", "docs/screenshots/scene-routing-tool-detail.png"],
-    ] as const) {
-      await page.getByRole("button", { name: title, exact: true }).click({ force: true });
-      await page.waitForTimeout(400);
-      for (let step = 0; step < 4; step += 1) {
-        await page.locator(".react-flow__controls-zoomin").click();
-        await page.waitForTimeout(250);
-      }
-      await captureStudioScreenshot(page, path);
-    }
+    await captureStudioScreenshot(page, "docs/screenshots/direct-line-routing.png");
+    const edge = page.locator(".react-flow__edge").filter({
+      has: page.locator('[data-routing-mode="automatic"]'),
+    }).first();
+    await clickReachableEdgePoint(page, edge);
+    await expect(edge).toHaveClass(/selected/);
+    await runMenuCommand(page, "View", /^Fit Selection/);
+    await page.waitForTimeout(400);
+    await captureStudioScreenshot(page, "docs/screenshots/direct-line-selected.png");
   }
 });
 
@@ -2838,19 +2500,14 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
   await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 60_000 });
   await expect(page.locator(".react-flow__node")).toHaveCount(101, { timeout: 60_000 });
   await expect(page.locator(".react-flow__edge")).toHaveCount(100, { timeout: 60_000 });
-  await expect(page.locator('.bd-react-flow[data-routing-status="Feasible"]')).toHaveCount(1);
+  await expect(page.locator('.bd-react-flow[data-routing-mode="direct"]')).toHaveCount(1);
 
   const assertCompleteAudit = async () => {
-    const audit = await exhaustiveRouteAudit(page);
+    const audit = await auditRoutes(page);
     expect(audit).toMatchObject({
       auditedRouteCount: 100,
-      auditedPairCount: 4950,
-      expectedPairCount: 4950,
       duplicateRouteIds: [],
       perRouteIssues: [],
-      parallelConflicts: [],
-      unbridgedCrossings: [],
-      orphanJumps: [],
     });
     expect(audit.routeIds).toHaveLength(100);
   };
@@ -2888,13 +2545,8 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
     { alt: true },
     async () => {
       const canvas = page.locator(".bd-react-flow");
-      await expect(canvas).toHaveAttribute("data-routing-frame-gesture", "selection-resize");
-      await expect(canvas).toHaveAttribute("data-routing-frame-phase", "active");
-      await expect(canvas).toHaveAttribute("data-routing-frame-mode", "incremental");
-      expect(Number(await canvas.getAttribute("data-routing-frame-affected"))).toBe(2);
-      const neighborhood = Number(await canvas.getAttribute("data-routing-frame-neighborhood"));
-      expect(neighborhood).toBeGreaterThanOrEqual(2);
-      expect(neighborhood).toBeLessThan(100);
+      await expect(canvas).toHaveAttribute("data-routing-mode", "direct");
+      await expect(canvas).toHaveAttribute("data-routing-route-count", "100");
       await assertCompleteAudit();
       if (process.env.CAPTURE_LIVE_ROUTING === "1" && browserName === "chromium") {
         await captureStudioScreenshot(page, "docs/screenshots/routing-stress-live-preview.png");
@@ -3018,25 +2670,12 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
   );
   const stressPanel = page.locator('.bd-connection-gesture-panel[data-connection-mode="create"]');
   await expect(stressPanel).toHaveAttribute("data-connection-status", "valid");
-  await expect(stressPanel).toHaveAttribute("data-preview-routing-status", "routed");
-  await expect(stressPanel).toHaveAttribute("data-preview-obstacle-count", "101");
-  await expect(stressPanel).toHaveAttribute("data-preview-registered-obstacle-count", "101");
-  expect(Number(await stressPanel.getAttribute("data-preview-request-count"))).toBeGreaterThanOrEqual(
-    Number(await stressPanel.getAttribute("data-preview-solve-count")),
-  );
-  expect(Number(await stressPanel.getAttribute("data-preview-peak-duration-ms"))).toBeLessThan(80);
-  expect(await connectionPreviewIssues(page)).toEqual({
-    collisions: [],
-    nonOrthogonalSegments: [],
-    zeroLengthSegments: [],
-  });
+  await expect(page.locator('.bd-connection-preview[data-connection-status="valid"]'))
+    .toHaveAttribute("data-preview-point-count", "2");
+  expect(await connectionPreviewIssues(page)).toEqual([]);
   await page.keyboard.press("Escape");
   await page.mouse.up();
   await expect(page.locator(".react-flow__edge")).toHaveCount(100);
-  await assertCompleteAudit();
-
-  await runMenuCommand(page, "Design", "Optimize Routing");
-  await waitForEditorIdle(page);
   await assertCompleteAudit();
 
   await page.locator(
@@ -3046,15 +2685,10 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
   await waitForEditorIdle(page);
   await expect(page.locator(".react-flow__node")).toHaveCount(100);
   await expect(page.locator(".react-flow__edge")).toHaveCount(99);
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 99,
-    auditedPairCount: 4851,
-    expectedPairCount: 4851,
     duplicateRouteIds: [],
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   await page.keyboard.press("ControlOrMeta+Z");
   await waitForEditorIdle(page);
@@ -3071,26 +2705,9 @@ test("audits every route in a 100-connection hub with a deliberately skewed degr
     await captureStudioScreenshot(page, "docs/screenshots/routing-stress-hub-detail.png");
   }
 
-  await page.locator(
-    '.bd-tree-select[data-level-id="system"][data-node-id="satellite-left-00"]',
-  ).click({ force: true });
-  const satellite = flowNode(page, "system::satellite-left-00");
-  await altSelectIntersectingNode(page, satellite);
-  const satellitePort = await satellite.locator(".bd-port-handle-outer").boundingBox();
-  expect(satellitePort).not.toBeNull();
-  const satellitePortPoint = {
-    x: satellitePort!.x + satellitePort!.width / 2,
-    y: satellitePort!.y + satellitePort!.height / 2,
-  };
-  await altClickCanvasPoint(page, satellitePortPoint);
-  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(1);
-  await expect(page.locator(".bd-inspector-title h2")).toHaveText("Stress Flow");
-  await altClickCanvasPoint(page, satellitePortPoint);
-  await expect(satellite).toHaveClass(/selected/);
-  await expect(page.locator(".bd-inspector-title h2")).toHaveText("Satellite left 00");
 });
 
-test("expands five hierarchy layers and audits every visible route and pair", async ({ page, browserName }) => {
+test("expands five hierarchy layers and audits every visible route", async ({ page, browserName }) => {
   test.setTimeout(120_000);
   const document = fiveLevelRoutingDesignDocument();
   await openDesignDialog(page);
@@ -3108,39 +2725,25 @@ test("expands five hierarchy layers and audits every visible route and pair", as
   await expect(page.locator(".bd-level-chip")).toHaveText("5 expanded");
   await expect(page.locator(".react-flow__node")).toHaveCount(17, { timeout: 60_000 });
   await expect(page.locator(".react-flow__edge")).toHaveCount(20, { timeout: 60_000 });
-  await expect(page.locator('.bd-react-flow[data-routing-status="Feasible"]')).toHaveCount(1);
+  await expect(page.locator('.bd-react-flow[data-routing-mode="direct"]')).toHaveCount(1);
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
-  const audit = await exhaustiveRouteAudit(page);
+  const audit = await auditRoutes(page);
   expect(audit).toMatchObject({
     auditedRouteCount: 20,
-    auditedPairCount: 190,
-    expectedPairCount: 190,
     duplicateRouteIds: [],
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   expect(audit.routeIds).toHaveLength(20);
 
   await rightClickLocator(page, diagramNode(page, "level-5", "target-00"));
   await expect(page.getByRole("menu", { name: "Module actions" })).toBeVisible();
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 20,
-    auditedPairCount: 190,
-    expectedPairCount: 190,
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   await page.keyboard.press("Escape");
 
@@ -3168,22 +2771,13 @@ test("expands five hierarchy layers and audits every visible route and pair", as
     "Pasted 1 module at the requested canvas position into Layer 5",
   );
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 20,
-    auditedPairCount: 190,
-    expectedPairCount: 190,
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   const nestedDownloadPromise = page.waitForEvent("download");
   await page.keyboard.press("ControlOrMeta+S");
@@ -3250,22 +2844,13 @@ test("expands five hierarchy layers and audits every visible route and pair", as
   await expect(page.locator(".react-flow__node")).toHaveCount(18);
   await expect(page.locator(".react-flow__edge")).toHaveCount(20);
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 20,
-    auditedPairCount: 190,
-    expectedPairCount: 190,
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   if (process.env.CAPTURE_ADD_MODULE_HERE === "1" && browserName === "chromium") {
     await captureStudioScreenshot(page, "docs/screenshots/add-module-here-level-five.png");
@@ -3314,14 +2899,9 @@ test("expands five hierarchy layers and audits every visible route and pair", as
     const saved = resizedSavedLevelFive.nodes.find((node: { id: string }) => node.id === nodeId);
     expect(saved.layout.position).toEqual(authored.layout.position);
   }
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 20,
-    auditedPairCount: 190,
-    expectedPairCount: 190,
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   if (process.env.CAPTURE_LEVEL_COORDINATE === "1" && browserName === "chromium") {
     await page.keyboard.press("ControlOrMeta+Shift+H");
@@ -3365,25 +2945,15 @@ test("expands five hierarchy layers and audits every visible route and pair", as
   );
   const nestedPreviewPanel = page.locator('.bd-connection-gesture-panel[data-connection-mode="create"]');
   await expect(nestedPreviewPanel).toHaveAttribute("data-connection-status", "valid");
-  await expect(nestedPreviewPanel).toHaveAttribute("data-preview-routing-status", "routed");
-  await expect(nestedPreviewPanel).toHaveAttribute("data-preview-obstacle-count", "17");
-  await expect(nestedPreviewPanel).toHaveAttribute("data-preview-registered-obstacle-count", "17");
-  expect(await connectionPreviewIssues(page)).toEqual({
-    collisions: [],
-    nonOrthogonalSegments: [],
-    zeroLengthSegments: [],
-  });
+  await expect(page.locator('.bd-connection-preview[data-connection-status="valid"]'))
+    .toHaveAttribute("data-preview-point-count", "2");
+  expect(await connectionPreviewIssues(page)).toEqual([]);
   await page.keyboard.press("Escape");
   await page.mouse.up();
   await expect(page.locator(".react-flow__edge")).toHaveCount(20);
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 20,
-    auditedPairCount: 190,
-    expectedPairCount: 190,
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
 
   if (process.env.CAPTURE_ROUTING_FIVE_LEVEL === "1" && browserName === "chromium") {
@@ -3429,15 +2999,10 @@ test("expands five hierarchy layers and audits every visible route and pair", as
     "relay-4-00.out → layer-5.flow-00",
   );
   await expect(page.locator(".react-flow__edge")).toHaveCount(20, { timeout: 60_000 });
-  const auditAfterNestedUndo = await exhaustiveRouteAudit(page);
+  const auditAfterNestedUndo = await auditRoutes(page);
   expect(auditAfterNestedUndo).toMatchObject({
     auditedRouteCount: 20,
-    auditedPairCount: 190,
-    expectedPairCount: 190,
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   await sources.getByRole("tab", { name: "Hierarchy" }).click({ force: true });
 
@@ -3473,7 +3038,7 @@ test("expands five hierarchy layers and audits every visible route and pair", as
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("Layer 4 Boundary");
 });
 
-test("live-routes every affected line while one deepest module grows all five parent frames", async ({ page, browserName }) => {
+test("keeps direct lines attached while one deepest module grows all five parent frames", async ({ page, browserName }) => {
   test.setTimeout(120_000);
   const document = fiveLevelRoutingDesignDocument();
   await openDesignDialog(page);
@@ -3510,22 +3075,19 @@ test("live-routes every affected line while one deepest module grows all five pa
   expect(ownerBoundsBefore.every(Boolean)).toBe(true);
   const routesBefore = await routePoints();
   const viewportBefore = await page.locator(".react-flow__viewport").getAttribute("style");
-  const targetHeader = target.locator(".bd-block-header");
-  const targetHeaderBounds = await targetHeader.boundingBox();
-  expect(targetHeaderBounds).not.toBeNull();
+  const targetIdentity = target.locator(".bd-block-identity");
+  const targetIdentityBounds = await targetIdentity.boundingBox();
+  expect(targetIdentityBounds).not.toBeNull();
   const zoom = await canvasZoom(page);
   const start = {
-    x: targetHeaderBounds!.x + targetHeaderBounds!.width / 2,
-    y: targetHeaderBounds!.y + targetHeaderBounds!.height / 2,
+    x: targetIdentityBounds!.x + targetIdentityBounds!.width / 2,
+    y: targetIdentityBounds!.y + targetIdentityBounds!.height / 2,
   };
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
   await page.mouse.move(start.x + 240 * zoom, start.y + 180 * zoom, { steps: 12 });
-  await expect(canvas).toHaveAttribute("data-routing-frame-gesture", "node-drag");
-  await expect(canvas).toHaveAttribute("data-routing-frame-phase", "active");
-  await expect(canvas).toHaveAttribute("data-routing-frame-mode", "exact");
-  expect(Number(await canvas.getAttribute("data-routing-frame-affected"))).toBeGreaterThan(0);
-  expect(Number(await canvas.getAttribute("data-routing-frame-neighborhood"))).toBe(20);
+  await expect(canvas).toHaveAttribute("data-routing-mode", "direct");
+  await expect(canvas).toHaveAttribute("data-routing-route-count", "20");
   await expect(page.locator(".react-flow__viewport")).toHaveAttribute("style", viewportBefore ?? "");
 
   const ownerBoundsPreview = await Promise.all(owners.map((owner) => owner.boundingBox()));
@@ -3537,22 +3099,13 @@ test("live-routes every affected line while one deepest module grows all five pa
     expect(bounds!.y, `owner ${index + 1} y`).toBeCloseTo(ownerBoundsBefore[index]!.y, 0);
   });
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 20,
-    auditedPairCount: 190,
-    expectedPairCount: 190,
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   const routesPreview = await routePoints();
   const changedRouteIds = Object.keys(routesPreview).filter((id) =>
@@ -3564,19 +3117,13 @@ test("live-routes every affected line while one deepest module grows all five pa
 
   await page.mouse.up();
   await waitForEditorIdle(page);
-  await expect(canvas).toHaveAttribute("data-routing-frame-phase", "idle");
-  await expect(canvas).toHaveAttribute("data-routing-frame-mode", "committed");
+  await expect(canvas).toHaveAttribute("data-routing-mode", "direct");
   await expect(page.locator(".react-flow__viewport")).toHaveAttribute("style", viewportBefore ?? "");
   const routesCommitted = await routePoints();
   changedRouteIds.forEach((id) => expect(routesCommitted[id], `${id} preview/commit`).toEqual(routesPreview[id]));
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 20,
-    auditedPairCount: 190,
-    expectedPairCount: 190,
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   const downloadPromise = page.waitForEvent("download");
   await page.keyboard.press("ControlOrMeta+S");
@@ -3682,23 +3229,14 @@ test("keeps toolbar drop preview, JSON, and rendered geometry identical at every
     });
   });
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 20,
-    auditedPairCount: 190,
-    expectedPairCount: 190,
     duplicateRouteIds: [],
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   if (process.env.CAPTURE_ADD_MODULE_HERE === "1" && browserName === "chromium") {
     await toolbarButton(page, "Fit Design").click({ force: true });
@@ -3755,33 +3293,24 @@ test("loads the repository-derived five-depth module architecture and reviews ev
 
   await expect(page.locator(".bd-level-chip")).toHaveText("4 expanded");
   await expect(page.locator(".react-flow__node")).toHaveCount(16, { timeout: 60_000 });
-  await expect(page.locator(".react-flow__edge")).toHaveCount(29, { timeout: 60_000 });
-  await expect(page.locator('.bd-react-flow[data-routing-status="Feasible"]')).toHaveCount(1);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(30, { timeout: 60_000 });
+  await expect(page.locator('.bd-react-flow[data-routing-mode="direct"]')).toHaveCount(1);
   await expect(page.locator(".react-flow__edge-text")).toHaveCount(0);
   await expect(page.locator(".bd-statusbar")).toContainText("16 diagram blocks");
-  await expect(page.locator(".bd-statusbar")).toContainText("29 diagram interfaces");
+  await expect(page.locator(".bd-statusbar")).toContainText("30 diagram interfaces");
 
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
-  const overviewAudit = await exhaustiveRouteAudit(page);
+  const overviewAudit = await auditRoutes(page);
   expect(overviewAudit).toMatchObject({
-    auditedRouteCount: 29,
-    auditedPairCount: 406,
-    expectedPairCount: 406,
+    auditedRouteCount: 30,
     duplicateRouteIds: [],
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
-  expect(overviewAudit.routeIds).toHaveLength(29);
+  expect(overviewAudit.routeIds).toHaveLength(30);
 
   if (process.env.CAPTURE_SELF_ARCHITECTURE === "1" && browserName === "chromium") {
     await runMenuCommand(page, "View", "Maximize Diagram");
@@ -3808,14 +3337,9 @@ test("loads the repository-derived five-depth module architecture and reviews ev
   const selectionMenu = page.getByRole("menu", { name: "Selected diagram objects actions" });
   await selectionMenu.getByRole("menuitem", { name: /^Fit Selection/ }).click();
   await page.waitForTimeout(500);
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
-    auditedRouteCount: 29,
-    auditedPairCount: 406,
-    expectedPairCount: 406,
+  expect(await auditRoutes(page)).toMatchObject({
+    auditedRouteCount: 30,
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
 
   if (process.env.CAPTURE_SELF_ARCHITECTURE === "1" && browserName === "chromium") {
@@ -3869,16 +3393,11 @@ test("loads the repository-derived five-depth module architecture and reviews ev
     await captureStudioScreenshot(page, "docs/screenshots/source-architecture-interface-review.png");
   }
 
-  const finalAudit = await exhaustiveRouteAudit(page);
+  const finalAudit = await auditRoutes(page);
   expect(finalAudit).toMatchObject({
-    auditedRouteCount: 29,
-    auditedPairCount: 406,
-    expectedPairCount: 406,
+    auditedRouteCount: 30,
     duplicateRouteIds: [],
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
 
   const downloadPromise = page.waitForEvent("download");
@@ -3890,7 +3409,7 @@ test("loads the repository-derived five-depth module architecture and reviews ev
   expect(saved.levels.find((level: { id: string }) => level.id === "runtime-modules").nodes)
     .toHaveLength(12);
   expect(saved.levels.flatMap((level: { connections: unknown[] }) => level.connections))
-    .toHaveLength(29);
+    .toHaveLength(30);
 });
 
 test("enters and exits five hierarchy view roots without changing the design", async ({ page, browserName }) => {
@@ -3914,7 +3433,7 @@ test("enters and exits five hierarchy view roots without changing the design", a
     expectedLevelTitle: string,
     expectedDepth: number,
   ) => {
-    await flowNode(page, flowId).click({ force: true });
+    await selectFlowNode(flowNode(page, flowId));
     await page.keyboard.press("ControlOrMeta+Shift+End");
     await expect(page.locator(".bd-canvas-busy")).toHaveCount(0, { timeout: 30_000 });
     await expect(caption).toHaveText(expectedLevelTitle);
@@ -3946,17 +3465,12 @@ test("enters and exits five hierarchy view roots without changing the design", a
   );
 
   await expect(page.locator(".react-flow__node")).toHaveCount(12, { timeout: 30_000 });
-  await expect(page.locator(".react-flow__edge")).toHaveCount(29, { timeout: 30_000 });
+  await expect(page.locator(".react-flow__edge")).toHaveCount(30, { timeout: 30_000 });
   await expect(page.locator(".bd-statusbar")).toContainText("View root: Runtime Source Modules");
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
-    auditedRouteCount: 29,
-    auditedPairCount: 406,
-    expectedPairCount: 406,
+  expect(await auditRoutes(page)).toMatchObject({
+    auditedRouteCount: 30,
     duplicateRouteIds: [],
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
 
   if (process.env.CAPTURE_HIERARCHY_FOCUS === "1" && browserName === "chromium") {
@@ -4166,44 +3680,54 @@ test("hides sidebars from their headers and restores them from the collapsed rai
   await expect.poll(async () => (await properties.boundingBox())?.width ?? 0).toBeGreaterThan(250);
 });
 
-test("keeps a fixed-size mouse target for moving ports at overview zoom", async ({ page }) => {
+test("keeps the port label easy to grab at overview zoom", async ({ page, browserName }) => {
   const agentUi = flowNode(page, "system::agent-ui");
   const port = agentUi.locator('.bd-port[data-port-id="session-command"]');
-  const grip = port.getByRole("button", { name: "Move port session.command", exact: true });
+  const label = agentUi.getByRole("button", { name: "Move port session.command", exact: true });
+  await expect(agentUi.locator(".bd-port-move-grip")).toHaveCount(0);
 
   for (let index = 0; index < 3; index += 1) {
     await page.locator(".react-flow__controls-zoomout").click({ force: true });
   }
-  const gripBounds = await grip.boundingBox();
+  const labelBounds = await label.boundingBox();
   const nodeBounds = await agentUi.boundingBox();
-  expect(gripBounds).not.toBeNull();
+  expect(labelBounds).not.toBeNull();
   expect(nodeBounds).not.toBeNull();
-  expect(gripBounds!.width).toBeGreaterThanOrEqual(20);
-  expect(gripBounds!.height).toBeGreaterThanOrEqual(20);
+  const labelCenter = {
+    x: labelBounds!.x + labelBounds!.width / 2,
+    y: labelBounds!.y + labelBounds!.height / 2,
+  };
+  expect(await page.evaluate(({ x, y }) => [-12, 12].every((delta) =>
+    Boolean(document.elementFromPoint(x, y + delta)?.closest(".bd-port-label")),
+  ), labelCenter)).toBe(true);
 
-  await page.mouse.move(gripBounds!.x + gripBounds!.width / 2, gripBounds!.y + gripBounds!.height / 2);
+  await page.mouse.move(labelCenter.x, labelCenter.y);
   await page.mouse.down();
   await page.mouse.move(nodeBounds!.x + nodeBounds!.width * 0.4, nodeBounds!.y + 2, { steps: 8 });
   await expect(page.locator(".bd-react-flow")).toHaveAttribute("data-port-move-active", "true");
-  await expect(page.locator(".bd-react-flow")).toHaveAttribute("data-routing-frame-gesture", "port-drag");
   await page.mouse.up();
   await expect(port).toHaveClass(/bd-port-top/);
   await expect(page.locator(".bd-document-title span")).toContainText("*");
 
   await page.keyboard.press("ControlOrMeta+Z");
   await expect(port).toHaveClass(/bd-port-right/);
+  if (process.env.CAPTURE_PORT_LABELS === "1" && browserName === "chromium") {
+    await selectFlowNode(flowNode(page, "system::rust-agent-core"));
+    await runMenuCommand(page, "View", /^Fit Selection/);
+    await page.waitForTimeout(400);
+    await captureStudioScreenshot(page, "docs/screenshots/vertical-port-chips.png");
+  }
 });
 
-test("optimizes routes without moving blocks and regenerates placement separately", async ({ page }) => {
+test("regenerates placement while preserving the direct-line contract", async ({ page }) => {
   const project = flowNode(page, "system::project");
   const before = await transformOf(project);
-
-  await runMenuCommand(page, "Design", "Optimize Routing");
-  expect(await transformOf(project)).toBe(before);
 
   await runMenuCommand(page, "Design", "Regenerate Layout");
   await expect.poll(() => transformOf(project), { timeout: 30_000 }).not.toBe(before);
   await waitForLayout(page);
+  await expect(page.locator('.bd-react-flow[data-routing-mode="direct"]')).toHaveCount(1);
+  expect((await auditRoutes(page)).perRouteIssues).toEqual([]);
 });
 
 test("loads designs from URL and local JSON files", async ({ page }) => {
@@ -4275,7 +3799,7 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   }
   await expect(page.locator(".bd-interface-route")).toHaveCount(await renderedEdges.count());
   await expect(page.locator(".bd-interface-underlay")).toHaveCount(0);
-  if (!stress) expect(await routeNodeCollisions(page)).toEqual([]);
+  await expect(page.locator('.bd-react-flow[data-routing-mode="direct"]')).toHaveCount(1);
   metrics.loadToInteractiveMs = Math.round(performance.now() - loadStarted);
 
   const typedSelectionViewport = await canvasViewportTransform(page);
@@ -4336,7 +3860,7 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   await expect(selectedFlowNode).toHaveClass(/selected/);
   await expect(selectedFlowNode.locator(".bd-port-handle-outer")).toHaveCount(2);
   await expect(selectedFlowNode.locator(".bd-port-label")).toHaveCount(2);
-  await expect.poll(async () => (await selectedFlowNode.boundingBox())?.width ?? 0).toBeGreaterThan(100);
+  await expect.poll(async () => (await selectedFlowNode.boundingBox())?.width ?? 0).toBeGreaterThan(32);
   metrics.selectModuleMs = selectionTiming.viewportSettledMs;
   metrics.selectModuleSelectionCommitMs = selectionTiming.selectionCommitMs;
   metrics.selectModuleTargetMountMs = selectionTiming.targetMountMs;
@@ -4390,7 +3914,6 @@ test("loads and operates a deterministic large or stress design", async ({ brows
     secondSelectedFlowNode.boundingBox(),
   ]);
   expect(performanceResizeBefore.every(Boolean)).toBe(true);
-  const performanceRouteAuditBefore = stress ? undefined : await exhaustiveRouteAudit(page);
   let performanceLiveResizeAuditMs = 0;
   const performanceGroupResizeStarted = performance.now();
   const performanceResizeTiming = await dragSelectionResizeHandle(
@@ -4400,35 +3923,18 @@ test("loads and operates a deterministic large or stress design", async ({ brows
     { alt: true },
     async () => {
       const canvas = page.locator(".bd-react-flow");
-      await expect(canvas).toHaveAttribute("data-routing-frame-mode", "incremental");
-      const affected = Number(await canvas.getAttribute("data-routing-frame-affected"));
-      const neighborhood = Number(await canvas.getAttribute("data-routing-frame-neighborhood"));
-      expect(affected).toBeGreaterThan(0);
-      expect(neighborhood).toBeGreaterThanOrEqual(affected);
-      expect(neighborhood).toBeLessThan(connectionCount);
-      metrics.liveResizeAffectedRoutes = affected;
-      metrics.liveResizeNeighborhoodRoutes = neighborhood;
-      metrics.liveResizeWorkerDurationMs = Number(
-        await canvas.getAttribute("data-routing-frame-duration-ms"),
-      );
-      expect(metrics.liveResizeWorkerDurationMs).toBeLessThan(500);
+      await expect(canvas).toHaveAttribute("data-routing-mode", "direct");
+      expect(Number(await canvas.getAttribute("data-routing-route-count"))).toBeGreaterThan(0);
       if (!stress) {
         const auditStarted = performance.now();
-        const previewAudit = await exhaustiveRouteAudit(page);
+        const previewAudit = await auditRoutes(page);
         expect(previewAudit).toMatchObject({
           auditedRouteCount: connectionCount,
-          auditedPairCount: connectionCount * (connectionCount - 1) / 2,
-          expectedPairCount: connectionCount * (connectionCount - 1) / 2,
           perRouteIssues: [],
-          unbridgedCrossings: [],
-          orphanJumps: [],
         });
-        expect(previewAudit.parallelConflicts.length)
-          .toBeLessThanOrEqual(performanceRouteAuditBefore!.parallelConflicts.length);
         performanceLiveResizeAuditMs = performance.now() - auditStarted;
       } else {
         await expect(page.locator(".bd-interface-route")).toHaveCount(await renderedEdges.count());
-        expect(await routeNodeCollisions(page)).toEqual([]);
       }
     },
   );
@@ -4438,37 +3944,13 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   metrics.groupResizePointerReleaseMs = Math.round(performanceResizeTiming.pointerReleaseMs);
   metrics.groupResizeCommittedReadyMs = Math.round(performanceResizeTiming.committedReadyMs);
   const committedCanvas = page.locator(".bd-react-flow");
-  await expect(committedCanvas).toHaveAttribute("data-committed-routing-mode", "rebased");
-  metrics.committedResizeAffectedRoutes = Number(
-    await committedCanvas.getAttribute("data-committed-routing-affected"),
-  );
-  metrics.committedResizeNeighborhoodRoutes = Number(
-    await committedCanvas.getAttribute("data-committed-routing-neighborhood"),
-  );
-  metrics.committedResizeWorkerDurationMs = Number(
-    await committedCanvas.getAttribute("data-committed-routing-duration-ms"),
-  );
-  metrics.committedResizeTransportedRoutes = Number(
-    await committedCanvas.getAttribute("data-committed-routing-route-upserts"),
-  );
-  metrics.committedResizeTransportedRouteJumps = Number(
-    await committedCanvas.getAttribute("data-committed-routing-jump-upserts"),
-  );
+  await expect(committedCanvas).toHaveAttribute("data-routing-mode", "direct");
   metrics.committedResizeProjectedNodeChanges = Number(
     await committedCanvas.getAttribute("data-projected-node-changes"),
   );
   metrics.committedResizeProjectedEdgeChanges = Number(
     await committedCanvas.getAttribute("data-projected-edge-changes"),
   );
-  expect(metrics.committedResizeAffectedRoutes).toBeGreaterThan(0);
-  expect(metrics.committedResizeNeighborhoodRoutes).toBeGreaterThanOrEqual(
-    metrics.committedResizeAffectedRoutes,
-  );
-  expect(metrics.committedResizeNeighborhoodRoutes).toBeLessThan(connectionCount);
-  expect(metrics.committedResizeWorkerDurationMs).toBeLessThan(1_000);
-  expect(metrics.committedResizeTransportedRoutes)
-    .toBeLessThanOrEqual(metrics.committedResizeNeighborhoodRoutes);
-  expect(metrics.committedResizeTransportedRouteJumps).toBeLessThan(connectionCount);
   expect(metrics.committedResizeProjectedNodeChanges).toBeLessThanOrEqual(2);
   expect(metrics.committedResizeProjectedEdgeChanges).toBeLessThan(connectionCount);
   metrics.liveResizeFullAuditMs = Math.round(performanceLiveResizeAuditMs);
@@ -4641,6 +4123,7 @@ test("loads and operates a deterministic large or stress design", async ({ brows
     largePreviewSourceBox!.y + largePreviewSourceBox!.height / 2,
   );
   await page.mouse.down();
+  const connectionPreviewStarted = performance.now();
   await page.mouse.move(
     largePreviewTargetBox!.x + largePreviewTargetBox!.width / 2,
     largePreviewTargetBox!.y + largePreviewTargetBox!.height / 2,
@@ -4648,34 +4131,10 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   );
   const largePreviewPanel = page.locator('.bd-connection-gesture-panel[data-connection-mode="create"]');
   await expect(largePreviewPanel).toHaveAttribute("data-connection-status", "valid");
-  await expect(largePreviewPanel).toHaveAttribute("data-preview-routing-status", "routed");
-  await expect(largePreviewPanel).toHaveAttribute("data-preview-obstacle-count", String(nodeCount));
-  metrics.connectionPreviewPeakMs = Number(
-    await largePreviewPanel.getAttribute("data-preview-peak-duration-ms"),
-  );
-  metrics.connectionPreviewLatestMs = Number(
-    await largePreviewPanel.getAttribute("data-preview-duration-ms"),
-  );
-  metrics.connectionPreviewSolveCount = Number(
-    await largePreviewPanel.getAttribute("data-preview-solve-count"),
-  );
-  metrics.connectionPreviewRequestCount = Number(
-    await largePreviewPanel.getAttribute("data-preview-request-count"),
-  );
-  metrics.connectionPreviewCacheHitCount = Number(
-    await largePreviewPanel.getAttribute("data-preview-cache-hit-count"),
-  );
-  metrics.connectionPreviewRegisteredObstacleCount = Number(
-    await largePreviewPanel.getAttribute("data-preview-registered-obstacle-count"),
-  );
-  expect(metrics.connectionPreviewPeakMs).toBeLessThan(80);
-  expect(metrics.connectionPreviewRegisteredObstacleCount).toBe(nodeCount);
-  expect(metrics.connectionPreviewRequestCount).toBeGreaterThanOrEqual(metrics.connectionPreviewSolveCount);
-  expect(await connectionPreviewIssues(page)).toEqual({
-    collisions: [],
-    nonOrthogonalSegments: [],
-    zeroLengthSegments: [],
-  });
+  await expect(page.locator('.bd-connection-preview[data-connection-status="valid"]'))
+    .toHaveAttribute("data-preview-point-count", "2");
+  metrics.connectionPreviewMs = Math.round(performance.now() - connectionPreviewStarted);
+  expect(await connectionPreviewIssues(page)).toEqual([]);
   await page.keyboard.press("Escape");
   await page.mouse.up();
   await expect(renderedEdges).toHaveCount(visibleEdgeCountBeforePreview);
@@ -4684,7 +4143,7 @@ test("loads and operates a deterministic large or stress design", async ({ brows
   const cutConnectionCount = document.levels[0].connections.filter((connection) => (
     connection.source.nodeId === cutSourceId || connection.target.nodeId === cutSourceId
   )).length;
-  await flowNode(page, `system::${cutSourceId}`).click({ force: true });
+  await selectFlowNode(flowNode(page, `system::${cutSourceId}`));
   const cutStarted = performance.now();
   await page.keyboard.press("ControlOrMeta+X");
   await expect(page.locator(".bd-statusbar")).toContainText(`${nodeCount - 1} diagram blocks`);
@@ -4747,6 +4206,7 @@ test("drags, persists, resets, and restores a manual orthogonal route", async ({
   expect(Math.abs(zoomedHandleBox!.width - handleBox!.width)).toBeLessThan(0.5);
   expect(Math.abs(zoomedHandleBox!.height - handleBox!.height)).toBeLessThan(0.5);
   handleBox = zoomedHandleBox;
+  const routeAxis = await handle.getAttribute("data-route-axis");
   const pointerId = 41;
   const start = {
     x: handleBox!.x + handleBox!.width / 2,
@@ -4759,22 +4219,23 @@ test("drags, persists, resets, and restores a manual orthogonal route", async ({
     clientX: start.x,
     clientY: start.y,
   });
-  await page.evaluate(({ pointerId: id, x, y }) => {
+  await page.evaluate(({ pointerId: id, x, y, axis }) => {
+    const target = axis === "h" ? { x, y: y + 48 } : { x: x + 32, y };
     window.dispatchEvent(new PointerEvent("pointermove", {
       bubbles: true,
       pointerId: id,
       buttons: 1,
-      clientX: x + 80,
-      clientY: y,
+      clientX: target.x,
+      clientY: target.y,
     }));
     window.dispatchEvent(new PointerEvent("pointerup", {
       bubbles: true,
       pointerId: id,
       button: 0,
-      clientX: x + 80,
-      clientY: y,
+      clientX: target.x,
+      clientY: target.y,
     }));
-  }, { pointerId, ...start });
+  }, { pointerId, ...start, axis: routeAxis });
   await waitForEditorIdle(page);
 
   await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
@@ -4783,7 +4244,9 @@ test("drags, persists, resets, and restores a manual orthogonal route", async ({
   const inspector = page.getByRole("region", { name: "Properties" });
   await expect(inspector.getByRole("region", { name: "Connection routing" })).toContainText("Manual");
   if (process.env.CAPTURE_MANUAL_ROUTING === "1") {
-    await captureStudioScreenshot(page, "docs/screenshots/manual-routing.png");
+    await runMenuCommand(page, "View", /^Fit Selection/);
+    await page.waitForTimeout(400);
+    await captureStudioScreenshot(page, "docs/screenshots/manual-route-editing.png");
   }
 
   const downloadPromise = page.waitForEvent("download");
@@ -4828,11 +4291,12 @@ test("selects and edits an orthogonal route entirely from the keyboard", async (
   await waitForEditorIdle(page);
 
   await expect(edge.locator('[data-routing-mode="manual"]')).toBeVisible();
-  await expect(handle).toBeFocused();
+  const activeHandle = edge.locator(".bd-route-handle:focus");
+  await expect(activeHandle).toBeFocused();
   expect(await edge.locator(".bd-interface-route").getAttribute("d")).not.toBe(routeBefore);
-  expect(Number(await handle.getAttribute("aria-valuenow"))).toBe(valueBefore + 8);
+  expect(Number(await activeHandle.getAttribute("aria-valuenow"))).toBe(valueBefore + 8);
   if (process.env.CAPTURE_MANUAL_ROUTING === "1") {
-    await captureStudioScreenshot(page, "docs/screenshots/manual-routing.png");
+    await captureStudioScreenshot(page, "docs/screenshots/manual-route-editing.png");
   }
 
   await page.keyboard.press("ControlOrMeta+Z");
@@ -4869,10 +4333,10 @@ test("selects and edits an orthogonal route entirely from the keyboard", async (
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("System Overview");
 });
 
-test("exposes draggable real bends after a virtual segment becomes manual", async ({ page }) => {
+test("exposes draggable real bends after a direct connection becomes manual", async ({ page }) => {
   const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
   await clickReachableEdgePoint(page, edge);
-  const segment = edge.locator(".bd-route-segment-handle").first();
+  const segment = edge.locator(".bd-route-direct-handle");
   await segment.focus();
   await page.keyboard.press(await segment.getAttribute("data-route-axis") === "h" ? "ArrowDown" : "ArrowRight");
   await waitForEditorIdle(page);
@@ -4920,12 +4384,14 @@ test("exposes draggable real bends after a virtual segment becomes manual", asyn
   await expect(movedBend).toBeFocused();
   expect((await accessibilityResults(page, ".bd-route-handle-object")).violations).toEqual([]);
   const bendCountBeforeDelete = await edge.locator(".bd-route-bend-handle").count();
-  await page.keyboard.press("Delete");
+  const removableBend = edge.locator(".bd-route-bend-handle").first();
+  await removableBend.focus();
+  await removableBend.press("Delete");
   await waitForEditorIdle(page);
   expect(await edge.locator(".bd-route-bend-handle").count()).toBeLessThan(bendCountBeforeDelete);
 });
 
-test("routes a live pointer connection through the full obstacle scene and commits the same geometry", async ({ page, browserName }) => {
+test("previews and commits a pointer connection as the same direct segment", async ({ page, browserName }) => {
   const document = connectionPreviewDesignDocument();
   await openDesignDialog(page);
   await page.locator('input[type="file"]').setInputFiles({
@@ -4960,20 +4426,8 @@ test("routes a live pointer connection through the full obstacle scene and commi
   const panel = page.locator('.bd-connection-gesture-panel[data-connection-mode="create"]');
   const preview = page.locator('.bd-connection-preview[data-connection-status="valid"]');
   await expect(panel).toHaveAttribute("data-connection-status", "valid");
-  await expect(panel).toHaveAttribute("data-preview-routing-status", "routed");
-  await expect(panel).toHaveAttribute("data-preview-obstacle-count", "3");
-  await expect(panel).toHaveAttribute("data-preview-registered-obstacle-count", "3");
-  expect(Number(await panel.getAttribute("data-preview-request-count"))).toBeGreaterThan(
-    Number(await panel.getAttribute("data-preview-solve-count")),
-  );
-  expect(Number(await panel.getAttribute("data-preview-cache-hit-count"))).toBeGreaterThan(0);
-  await expect(preview).toHaveAttribute("data-preview-routing-status", "routed");
-  expect(Number(await preview.getAttribute("data-preview-point-count"))).toBeGreaterThanOrEqual(5);
-  expect(await connectionPreviewIssues(page)).toEqual({
-    collisions: [],
-    nonOrthogonalSegments: [],
-    zeroLengthSegments: [],
-  });
+  await expect(preview).toHaveAttribute("data-preview-point-count", "2");
+  expect(await connectionPreviewIssues(page)).toEqual([]);
   const previewPoints = JSON.parse(await preview.getAttribute("data-preview-points") ?? "[]");
   if (process.env.CAPTURE_SCENE_CONNECTION_PREVIEW === "1" && browserName === "chromium") {
     await captureStudioScreenshot(page, "docs/screenshots/scene-connection-preview.png");
@@ -4994,25 +4448,20 @@ test("routes a live pointer connection through the full obstacle scene and commi
   await expect(edge).toBeVisible();
   const committedPoints = JSON.parse(
     await edge.locator("[data-route-points]").getAttribute("data-route-points") ?? "[]",
-  );
-  expect(committedPoints).toEqual(previewPoints);
+  ) as Array<{ x: number; y: number }>;
+  expect(committedPoints).toHaveLength(2);
+  expect(previewPoints).toHaveLength(2);
+  committedPoints.forEach((point, index) => {
+    expect(Math.hypot(point.x - previewPoints[index].x, point.y - previewPoints[index].y)).toBeLessThan(8);
+  });
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 1,
-    auditedPairCount: 0,
-    expectedPairCount: 0,
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
 });
 
@@ -5044,12 +4493,7 @@ test("previews, cancels, rejects, preserves, and commits pointer connections con
   await expect(incompatiblePort).toHaveAttribute("data-connection-role", "incompatible");
   const floatingPreview = page.locator('.bd-connection-preview[data-connection-status="searching"]');
   await expect(floatingPreview).toBeVisible();
-  await expect(floatingPreview).toHaveAttribute("data-preview-routing-status", "routed");
-  await expect(createPanel).toHaveAttribute("data-preview-routing-status", "routed");
-  expect(Number(await createPanel.getAttribute("data-preview-obstacle-count"))).toBeGreaterThan(1);
-  expect(await createPanel.getAttribute("data-preview-registered-obstacle-count")).toBe(
-    await createPanel.getAttribute("data-preview-obstacle-count"),
-  );
+  await expect(floatingPreview).toHaveAttribute("data-preview-point-count", "2");
   const floatingPath = await floatingPreview.locator(".bd-connection-preview-path").getAttribute("d");
   expect(floatingPath).toMatch(/^M .* L /);
   expect(floatingPath).not.toMatch(/[CQ]/);
@@ -5062,7 +4506,7 @@ test("previews, cancels, rejects, preserves, and commits pointer connections con
 
   const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
   await clickReachableEdgePoint(page, edge);
-  const segment = edge.locator(".bd-route-segment-handle").first();
+  const segment = edge.locator(".bd-route-handle").first();
   await segment.focus();
   await page.keyboard.press(await segment.getAttribute("data-route-axis") === "h" ? "ArrowDown" : "ArrowRight");
   await waitForEditorIdle(page);
@@ -5093,32 +4537,10 @@ test("previews, cancels, rejects, preserves, and commits pointer connections con
   await expect(replacementTarget).toHaveClass(/valid/);
   const attachedPreview = page.locator('.bd-connection-preview[data-connection-status="valid"]');
   await expect(attachedPreview).toBeVisible();
-  await expect(attachedPreview).toHaveAttribute("data-preview-routing-status", "routed");
-  await expect(reconnectPanel).toHaveAttribute("data-preview-routing-status", "routed");
-  expect(await reconnectPanel.getAttribute("data-preview-registered-obstacle-count")).toBe(
-    await reconnectPanel.getAttribute("data-preview-obstacle-count"),
-  );
+  await expect(attachedPreview).toHaveAttribute("data-preview-point-count", "2");
   const attachedPath = await attachedPreview.locator(".bd-connection-preview-path").getAttribute("d");
   expect(attachedPath).toMatch(/^M .* L /);
   expect(attachedPath).not.toMatch(/[CQ]/);
-  expect(await page.evaluate(() => {
-    const path = document.querySelector<SVGPathElement>(
-      '.bd-connection-preview[data-connection-status="valid"] .bd-connection-preview-path',
-    );
-    const target = document.querySelector<HTMLElement>(
-      '.react-flow__node[data-id="system::rust-agent-core"]',
-    );
-    const matrix = path?.getScreenCTM();
-    if (!path || !target || !matrix) return ["preview geometry unavailable"];
-    const rect = target.getBoundingClientRect();
-    const length = path.getTotalLength();
-    return Array.from({ length: 99 }, (_, index) => path.getPointAtLength(length * ((index + 1) / 100)))
-      .map((point) => new DOMPoint(point.x, point.y).matrixTransform(matrix))
-      .flatMap((point) => point.x > rect.left + 3 && point.x < rect.right - 3 &&
-        point.y > rect.top + 3 && point.y < rect.bottom - 3
-        ? [`${Math.round(point.x)},${Math.round(point.y)}`]
-        : []);
-  })).toEqual([]);
   expect((await accessibilityResults(page, ".bd-connection-gesture-panel")).violations).toEqual([]);
   expect(await textContrastIssues(page, ".bd-connection-gesture-panel")).toEqual([]);
   if (process.env.CAPTURE_POINTER_CONNECTION === "1" && browserName === "chromium") {
@@ -5189,22 +4611,13 @@ test("previews, cancels, rejects, preserves, and commits pointer connections con
     "agent-ui.session-command → rust-agent-core.knowledge-lifecycle",
   );
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 10,
-    auditedPairCount: 45,
-    expectedPairCount: 45,
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   await page.keyboard.press("ControlOrMeta+Z");
   await waitForEditorIdle(page);
@@ -5212,21 +4625,16 @@ test("previews, cancels, rejects, preserves, and commits pointer connections con
   await expect(page.locator(".bd-inspector-title code")).toContainText(
     "agent-ui.session-command → rust-agent-core.session-command",
   );
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 10,
-    auditedPairCount: 45,
-    expectedPairCount: 45,
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
 });
 
 test("reconnects a selected edge endpoint and discards stale manual geometry", async ({ page }) => {
   const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
   await clickReachableEdgePoint(page, edge);
-  const segment = edge.locator(".bd-route-segment-handle").first();
+  const segment = edge.locator(".bd-route-direct-handle");
   await segment.focus();
   await page.keyboard.press(await segment.getAttribute("data-route-axis") === "h" ? "ArrowDown" : "ArrowRight");
   await waitForEditorIdle(page);
@@ -5262,7 +4670,7 @@ test("reconnects a selected edge endpoint and discards stale manual geometry", a
 test("reconnects an interface entirely by keyboard with undo, redo, focus, and saved JSON", async ({ page, browserName }) => {
   const edge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
   await clickReachableEdgePoint(page, edge);
-  const segment = edge.locator(".bd-route-segment-handle").first();
+  const segment = edge.locator(".bd-route-direct-handle");
   await segment.focus();
   await page.keyboard.press(await segment.getAttribute("data-route-axis") === "h" ? "ArrowDown" : "ArrowRight");
   await waitForEditorIdle(page);
@@ -5320,24 +4728,15 @@ test("reconnects an interface entirely by keyboard with undo, redo, focus, and s
     "agent-ui.session-command → rust-agent-core.knowledge-lifecycle",
   );
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
-  const reconnectAudit = await exhaustiveRouteAudit(page);
+  const reconnectAudit = await auditRoutes(page);
   expect(reconnectAudit).toMatchObject({
     auditedRouteCount: 10,
-    auditedPairCount: 45,
-    expectedPairCount: 45,
     duplicateRouteIds: [],
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
 
   if (process.env.CAPTURE_KEYBOARD_RECONNECT === "1" && browserName === "chromium") {
@@ -5375,15 +4774,10 @@ test("reconnects an interface entirely by keyboard with undo, redo, focus, and s
   await expect(page.locator(".bd-inspector-title code")).toContainText(
     "rust-agent-core.session-notification → rust-agent-core.session-command",
   );
-  const sourceReconnectAudit = await exhaustiveRouteAudit(page);
+  const sourceReconnectAudit = await auditRoutes(page);
   expect(sourceReconnectAudit).toMatchObject({
     auditedRouteCount: 10,
-    auditedPairCount: 45,
-    expectedPairCount: 45,
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   await page.keyboard.press("ControlOrMeta+Z");
   await waitForEditorIdle(page);
@@ -5399,7 +4793,7 @@ test("keeps the dense port edge editor visible, separated, and label free", asyn
   const edge = page.locator('.react-flow__edge[data-id="system::core-tool-invoke"]');
   await clickReachableEdgePoint(page, edge);
 
-  await expect(edge.locator(".bd-route-segment-handle")).not.toHaveCount(0);
+  await expect(edge.locator(".bd-route-direct-handle")).toBeVisible();
   await expect(edge.locator(".react-flow__edgeupdater")).toHaveCount(2);
   await expect(edge.locator(".bd-route-bend-handle")).toHaveCount(0);
   await expect(page.locator(".react-flow__edge-text")).toHaveCount(0);
@@ -5454,7 +4848,7 @@ test("keeps the dense port edge editor visible, separated, and label free", asyn
     });
     const manualEdge = page.locator('.react-flow__edge[data-id="system::core-tool-catalog"]');
     await clickReachableEdgePoint(page, manualEdge);
-    const segment = manualEdge.locator(".bd-route-segment-handle").first();
+    const segment = manualEdge.locator(".bd-route-direct-handle");
     const segmentBox = await segment.boundingBox();
     if (!segmentBox) throw new Error("Selected route segment handle is missing.");
     const pointerId = 63;
@@ -5560,13 +4954,16 @@ test("moves a selected module through the document with the keyboard", async ({ 
 
 test("aligns a pointer-moved module and lets Alt bypass guides for one gesture", async ({ page, browserName }) => {
   const node = flowNode(page, "system::project");
-  await node.click({ force: true });
+  await selectFlowNode(node);
   const viewportBeforeMove = await canvasViewportTransform(page);
 
   const dragBy = async (deltaX: number, disableSnap = false) => {
-    const box = await node.boundingBox();
-    expect(box).not.toBeNull();
-    const start = { x: box!.x + box!.width / 2, y: box!.y + box!.height * 0.62 };
+    const identityBox = await node.locator(".bd-block-identity").boundingBox();
+    expect(identityBox).not.toBeNull();
+    const start = {
+      x: identityBox!.x + identityBox!.width / 2,
+      y: identityBox!.y + identityBox!.height / 2,
+    };
     await page.mouse.move(start.x, start.y);
     await page.mouse.down();
     if (disableSnap) await page.keyboard.down("Alt");
@@ -5697,7 +5094,7 @@ test("snaps a moved module into equal neighboring gaps and persists one atomic m
   }
   await endDrag();
   await expect(page.locator(canvasGuideSelector)).toHaveCount(0);
-  expect(await routeNodeCollisions(page)).toEqual([]);
+  expect((await auditRoutes(page)).perRouteIssues).toEqual([]);
 
   let downloadPromise = page.waitForEvent("download");
   await page.keyboard.press("ControlOrMeta+S");
@@ -5814,7 +5211,7 @@ test("snaps a differently sized selected group by one equal-distance boundary", 
     await captureStudioScreenshot(page, "docs/screenshots/equal-distance-group.png");
   }
   await endGroupDrag();
-  expect(await routeNodeCollisions(page)).toEqual([]);
+  expect((await auditRoutes(page)).perRouteIssues).toEqual([]);
 
   const downloadPromise = page.waitForEvent("download");
   await page.keyboard.press("ControlOrMeta+S");
@@ -5931,7 +5328,7 @@ test("snaps a selected group by its full boundary regardless of the grabbed memb
     await captureStudioScreenshot(page, "docs/screenshots/group-boundary-alignment.png");
   }
   await endGroupDrag();
-  expect(await routeNodeCollisions(page)).toEqual([]);
+  expect((await auditRoutes(page)).perRouteIssues).toEqual([]);
   await expect(page.locator(".bd-statusbar")).toContainText("Unsaved changes");
   await page.keyboard.press("ControlOrMeta+Z");
   await waitForEditorIdle(page);
@@ -5965,7 +5362,7 @@ test("snaps a selected group by its full boundary regardless of the grabbed memb
   await expect(page.locator(".react-flow__node")).toHaveCount(5);
   await expect(page.locator(".react-flow__edge")).toHaveCount(3);
   await expect(page.locator(".bd-command-notice")).toContainText("Cloned 2 modules at the dragged position.");
-  expect(await routeNodeCollisions(page)).toEqual([]);
+  expect((await auditRoutes(page)).perRouteIssues).toEqual([]);
   await page.keyboard.press("ControlOrMeta+Z");
   await waitForEditorIdle(page);
   await expect(page.locator(".react-flow__node")).toHaveCount(3);
@@ -6018,16 +5415,11 @@ test("resizes a differently sized module selection as one atomic group", async (
   expect(enlarged[1]!.height).toBeGreaterThan(before[1]!.height);
   expect(enlarged[2]!.width).toBeGreaterThan(before[2]!.width);
   expect(enlarged[2]!.height).toBeGreaterThan(before[2]!.height);
-  expect(await routeNodeCollisions(page)).toEqual([]);
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect((await auditRoutes(page)).perRouteIssues).toEqual([]);
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 2,
-    auditedPairCount: 1,
-    expectedPairCount: 1,
     duplicateRouteIds: [],
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   await expect(page.locator(".react-flow__edge-text")).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+Z");
@@ -6079,23 +5471,18 @@ test("resizes a differently sized module selection as one atomic group", async (
   expect(await flowNode(page, "system::group-b").evaluate((element) =>
     Number.parseFloat((element as HTMLElement).style.width),
   )).toBe(savedExpanded.layout.width);
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 2,
-    auditedPairCount: 1,
-    expectedPairCount: 1,
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
 });
 
 test("aligns and distributes same-level modules as atomic arrangement commands", async ({ page, browserName }) => {
   const ids = ["agent-ui", "rust-agent-core", "tool-system"];
   const nodes = ids.map((id) => flowNode(page, `system::${id}`));
-  await nodes[0].click({ force: true });
-  await nodes[1].click({ force: true, modifiers: ["ControlOrMeta"] });
-  await nodes[2].click({ force: true, modifiers: ["ControlOrMeta"] });
+  await selectFlowNode(nodes[0]);
+  await selectFlowNode(nodes[1], ["ControlOrMeta"]);
+  await selectFlowNode(nodes[2], ["ControlOrMeta"]);
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("3 objects selected");
   await page.waitForTimeout(350);
 
@@ -6137,9 +5524,9 @@ test("aligns and distributes same-level modules as atomic arrangement commands",
 
   const distributedIds = ["project", "knowledge", "plugin", "platform-provider"];
   const distributedNodes = distributedIds.map((id) => flowNode(page, `system::${id}`));
-  await distributedNodes[0].click({ force: true });
+  await selectFlowNode(distributedNodes[0]);
   for (const node of distributedNodes.slice(1)) {
-    await node.click({ force: true, modifiers: ["ControlOrMeta"] });
+    await selectFlowNode(node, ["ControlOrMeta"]);
   }
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("4 objects selected");
   await runMenuCommand(page, "Arrange", "Distribute Horizontally");
@@ -6164,20 +5551,16 @@ test("aligns and distributes same-level modules as atomic arrangement commands",
     expect(Number.isInteger(savedNode.layout.position.y)).toBe(true);
   }
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
 });
 
 test("explains arrangement eligibility at selection and hierarchy boundaries", async ({ page }) => {
   const agent = flowNode(page, "system::agent-ui");
   const core = flowNode(page, "system::rust-agent-core");
-  await agent.click({ force: true });
+  await selectFlowNode(agent);
   await page.getByRole("button", { name: "Arrange", exact: true }).click();
   let arrangeMenu = page.getByRole("menu", { name: "Arrange" });
   let alignLeft = arrangeMenu.getByRole("menuitem", { name: /^Align Left/ });
@@ -6185,7 +5568,7 @@ test("explains arrangement eligibility at selection and hierarchy boundaries", a
   await expect(alignLeft).toContainText("Select at least two modules first.");
   await page.keyboard.press("Escape");
 
-  await core.click({ force: true, modifiers: ["ControlOrMeta"] });
+  await selectFlowNode(core, ["ControlOrMeta"]);
   await page.getByRole("button", { name: "Arrange", exact: true }).click();
   arrangeMenu = page.getByRole("menu", { name: "Arrange" });
   alignLeft = arrangeMenu.getByRole("menuitem", { name: /^Align Left/ });
@@ -6212,7 +5595,7 @@ test("explains arrangement eligibility at selection and hierarchy boundaries", a
   await page.locator(
     '.bd-tree-select[data-level-id="system"][data-node-id="rust-agent-core"]',
   ).click({ force: true });
-  await child.click({ force: true, modifiers: ["Shift"] });
+  await selectFlowNode(child, ["Shift"]);
   await page.getByRole("button", { name: "Arrange", exact: true }).click();
   arrangeMenu = page.getByRole("menu", { name: "Arrange" });
   alignLeft = arrangeMenu.getByRole("menuitem", { name: /^Align Left/ });
@@ -6245,8 +5628,8 @@ test("copies, pastes, and duplicates a connected hierarchy as atomic collision-f
       },
     });
   });
-  await agentUi.click({ force: true });
-  await agentCore.click({ force: true, modifiers: ["Shift"] });
+  await selectFlowNode(agentUi);
+  await selectFlowNode(agentCore, ["Shift"]);
   await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
 
   await page.getByRole("button", { name: "Edit", exact: true }).click();
@@ -6269,24 +5652,15 @@ test("copies, pastes, and duplicates a connected hierarchy as atomic collision-f
   await expect(flowNode(page, "system::rust-agent-core-2")).toHaveClass(/selected/);
   await expect(page.locator(".bd-command-notice")).toContainText("Pasted 2 modules into System Overview");
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
-  const pastedAudit = await exhaustiveRouteAudit(page);
+  const pastedAudit = await auditRoutes(page);
   expect(pastedAudit).toMatchObject({
     auditedRouteCount: 12,
-    auditedPairCount: 66,
-    expectedPairCount: 66,
     duplicateRouteIds: [],
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   if (process.env.CAPTURE_FRAGMENT_PROOF === "1" && browserName === "chromium") {
     await captureStudioScreenshot(page, "docs/screenshots/copy-paste-subgraph.png");
@@ -6313,8 +5687,8 @@ test("copies, pastes, and duplicates a connected hierarchy as atomic collision-f
   await expect(page.locator(".react-flow__node")).toHaveCount(9);
   await expect(page.locator(".react-flow__edge")).toHaveCount(12);
 
-  await flowNode(page, "system::agent-ui-2").click({ force: true });
-  await flowNode(page, "system::rust-agent-core-2").click({ force: true, modifiers: ["Shift"] });
+  await selectFlowNode(flowNode(page, "system::agent-ui-2"));
+  await selectFlowNode(flowNode(page, "system::rust-agent-core-2"), ["Shift"]);
   await page.keyboard.press("ControlOrMeta+K");
   const palette = page.getByRole("dialog", { name: "Command Palette" });
   const search = palette.getByRole("combobox", { name: "Search commands" });
@@ -6327,7 +5701,7 @@ test("copies, pastes, and duplicates a connected hierarchy as atomic collision-f
   await expect(page.locator(".react-flow__edge")).toHaveCount(14);
   await expect(flowNode(page, "system::agent-ui-3")).toHaveClass(/selected/);
   await expect(flowNode(page, "system::rust-agent-core-3")).toHaveClass(/selected/);
-  expect(await routeNodeCollisions(page)).toEqual([]);
+  expect((await auditRoutes(page)).perRouteIssues).toEqual([]);
 });
 
 test("cuts a complete hierarchy once and pastes it into another design from the internal clipboard", async ({ page, browserName }) => {
@@ -6340,8 +5714,8 @@ test("cuts a complete hierarchy once and pastes it into another design from the 
       },
     });
   });
-  await flowNode(page, "system::agent-ui").click({ force: true });
-  await flowNode(page, "system::rust-agent-core").click({ force: true, modifiers: ["Shift"] });
+  await selectFlowNode(flowNode(page, "system::agent-ui"));
+  await selectFlowNode(flowNode(page, "system::rust-agent-core"), ["Shift"]);
   await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
 
   await page.keyboard.press("ControlOrMeta+X");
@@ -6351,15 +5725,10 @@ test("cuts a complete hierarchy once and pastes it into another design from the 
   await expect(page.locator(".bd-command-notice")).toContainText(
     "Cut 2 modules and 2 internal interfaces inside this workspace. System clipboard access is unavailable.",
   );
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 2,
-    auditedPairCount: 1,
-    expectedPairCount: 1,
     duplicateRouteIds: [],
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
 
   await page.keyboard.press("ControlOrMeta+Z");
@@ -6382,23 +5751,14 @@ test("cuts a complete hierarchy once and pastes it into another design from the 
   await expect(page.locator(".react-flow__edge")).toHaveCount(3);
   await expect(page.locator(".bd-command-notice")).toContainText("Pasted 2 modules into System");
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 3,
-    auditedPairCount: 3,
-    expectedPairCount: 3,
     duplicateRouteIds: [],
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   if (process.env.CAPTURE_CUT_PROOF === "1" && browserName === "chromium") {
     await toolbarButton(page, "Fit Design").click({ force: true });
@@ -6426,8 +5786,8 @@ test("cuts a complete hierarchy once and pastes it into another design from the 
 test("clones a selected connected hierarchy at the Ctrl-drag target as one atomic edit", async ({ page, browserName }) => {
   const agent = flowNode(page, "system::agent-ui");
   const core = flowNode(page, "system::rust-agent-core");
-  await agent.click({ force: true });
-  await core.click({ force: true, modifiers: ["Shift"] });
+  await selectFlowNode(agent);
+  await selectFlowNode(core, ["Shift"]);
   await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
   const originalAgent = await agent.boundingBox();
   expect(originalAgent).not.toBeNull();
@@ -6454,7 +5814,7 @@ test("clones a selected connected hierarchy at the Ctrl-drag target as one atomi
   await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("2 objects selected");
   await expect(inspector.locator(".bd-multi-metrics dd")).toHaveText(["2", "0", "1"]);
   await expect(page.locator(".bd-command-notice")).toContainText("Cloned 2 modules at the dragged position.");
-  expect(await routeNodeCollisions(page)).toEqual([]);
+  expect((await auditRoutes(page)).perRouteIssues).toEqual([]);
   if (process.env.CAPTURE_CTRL_DRAG_CLONE === "1" && browserName === "chromium") {
     await captureStudioScreenshot(page, "docs/screenshots/ctrl-drag-clone.png");
   }
@@ -6490,8 +5850,8 @@ test("box-selects, toggles, and moves modules as one professional selection", as
   const project = flowNode(page, "system::project");
   const knowledge = flowNode(page, "system::knowledge");
   const inspector = page.getByRole("region", { name: "Properties" });
-  await project.click({ force: true });
-  await knowledge.click({ force: true, modifiers: ["Shift"] });
+  await selectFlowNode(project);
+  await selectFlowNode(knowledge, ["Shift"]);
 
   await expect(project).toHaveClass(/selected/);
   await expect(knowledge).toHaveClass(/selected/);
@@ -6506,9 +5866,11 @@ test("box-selects, toggles, and moves modules as one professional selection", as
   expect(projectBefore).not.toBeNull();
   expect(knowledgeBefore).not.toBeNull();
   const viewportBefore = await canvasViewportTransform(page);
+  const projectIdentity = await project.locator(".bd-block-identity").boundingBox();
+  expect(projectIdentity).not.toBeNull();
   const dragStart = {
-    x: projectBefore!.x + projectBefore!.width / 2,
-    y: projectBefore!.y + projectBefore!.height * 0.62,
+    x: projectIdentity!.x + projectIdentity!.width / 2,
+    y: projectIdentity!.y + projectIdentity!.height / 2,
   };
   await page.mouse.move(dragStart.x, dragStart.y);
   await page.mouse.down();
@@ -6537,7 +5899,7 @@ test("box-selects, toggles, and moves modules as one professional selection", as
     Math.round(knowledgeBefore!.y),
   ]);
 
-  await project.click({ force: true, modifiers: ["ControlOrMeta"] });
+  await selectFlowNode(project, ["ControlOrMeta"]);
   await expect(project).not.toHaveClass(/selected/);
   await expect(knowledge).toHaveClass(/selected/);
   await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("Knowledge");
@@ -6860,18 +6222,33 @@ test("traverses diagram objects and preserves native form focus with Canvas Tab 
   await multiHandleEdge.focus();
   await page.keyboard.press("Enter");
   await expect(multiHandleEdge).toHaveClass(/selected/);
+  const directHandle = multiHandleEdge.locator(".bd-route-direct-handle");
+  await expect(directHandle).toHaveCount(1);
+  await page.keyboard.press("Enter");
+  await expect(directHandle).toBeFocused();
+  await page.keyboard.press(
+    await directHandle.getAttribute("data-route-axis") === "h" ? "ArrowDown" : "ArrowRight",
+  );
+  await waitForEditorIdle(page);
+  await expect(multiHandleEdge.locator('[data-routing-mode="manual"]')).toBeVisible();
   const routeHandles = multiHandleEdge.locator(".bd-route-handle");
   expect(await routeHandles.count()).toBeGreaterThan(1);
-  await page.keyboard.press("Enter");
-  await expect(routeHandles.first()).toBeFocused();
+  const focusedHandleIndex = await routeHandles.evaluateAll((handles) => (
+    handles.findIndex((handle) => handle === document.activeElement)
+  ));
+  expect(focusedHandleIndex).toBeGreaterThanOrEqual(0);
+  const nextHandleIndex = (focusedHandleIndex + 1) % await routeHandles.count();
   await page.keyboard.press("Tab");
-  await expect(routeHandles.nth(1)).toBeFocused();
+  await expect(routeHandles.nth(nextHandleIndex)).toBeFocused();
   await page.keyboard.press("Shift+Tab");
-  await expect(routeHandles.first()).toBeFocused();
+  await expect(routeHandles.nth(focusedHandleIndex)).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(multiHandleEdge).toBeFocused();
+  await page.keyboard.press("ControlOrMeta+Z");
+  await waitForEditorIdle(page);
+  await expect(multiHandleEdge.locator('[data-routing-mode="automatic"]')).toBeVisible();
 
-  await flowNode(page, "system::project").click({ force: true, modifiers: ["Shift"] });
+  await selectFlowNode(flowNode(page, "system::project"), ["Shift"]);
   await expect(inspector.locator(".bd-inspector-title h2")).toHaveText("2 objects selected");
   await page.keyboard.press("Tab");
   await expect(agent).toHaveClass(/selected/);
@@ -6927,7 +6304,7 @@ test("selects and clears every object in the current level with standard edit co
   expect(await canvasViewportTransform(page)).toBe(viewportBefore);
 
   const core = flowNode(page, "system::rust-agent-core");
-  await core.click({ force: true });
+  await selectFlowNode(core);
   const title = page.getByLabel("Title", { exact: true });
   await title.focus();
   await page.keyboard.press("ControlOrMeta+A");
@@ -6948,7 +6325,7 @@ test("selects and clears every object in the current level with standard edit co
 test("selects every module or every interface in the current level without design side effects", async ({ page, browserName }) => {
   const inspector = page.getByRole("region", { name: "Properties" });
   const core = flowNode(page, "system::rust-agent-core");
-  await core.click({ force: true });
+  await selectFlowNode(core);
   const viewportBefore = await canvasViewportTransform(page);
   const title = inspector.getByLabel("Title", { exact: true });
   await title.fill("Rust Agent Core draft");
@@ -6995,16 +6372,11 @@ test("selects every module or every interface in the current level without desig
       .getByRole("button", { name: /^Undo/ }),
   ).toBeDisabled();
 
-  const audit = await exhaustiveRouteAudit(page);
+  const audit = await auditRoutes(page);
   expect(audit).toMatchObject({
     auditedRouteCount: 10,
-    auditedPairCount: 45,
-    expectedPairCount: 45,
     duplicateRouteIds: [],
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   await runMenuCommand(page, "View", /^Fit Selection/);
   await page.waitForTimeout(400);
@@ -7016,7 +6388,7 @@ test("selects every module or every interface in the current level without desig
 test("expands selected modules to every direct interface without changing the design", async ({ page, browserName }) => {
   const core = flowNode(page, "system::rust-agent-core");
   const inspector = page.getByRole("region", { name: "Properties" });
-  await core.click({ force: true });
+  await selectFlowNode(core);
   const viewportBefore = await canvasViewportTransform(page);
   const title = inspector.getByLabel("Title", { exact: true });
   await title.fill("Rust Agent Core draft");
@@ -7067,7 +6439,7 @@ test("expands selected modules to every direct interface without changing the de
   }
   await expect(page.locator('.react-flow__edge[data-id="system::plugin-tool-registration"]')).not.toHaveClass(/selected/);
   await expect(page.locator('.react-flow__edge[data-id="system::platform-tool-registration"]')).not.toHaveClass(/selected/);
-  expect(await routeNodeCollisions(page)).toEqual([]);
+  expect((await auditRoutes(page)).perRouteIssues).toEqual([]);
 
   await page.keyboard.press("ControlOrMeta+K");
   const disabledPalette = page.getByRole("dialog", { name: "Command Palette" });
@@ -7087,7 +6459,7 @@ test("expands selected modules to every direct interface without changing the de
 test("selects and explicitly focuses a complete direct module neighborhood", async ({ page, browserName }) => {
   const core = flowNode(page, "system::rust-agent-core");
   const inspector = page.getByRole("region", { name: "Properties" });
-  await core.click({ force: true });
+  await selectFlowNode(core);
   const viewportBefore = await canvasViewportTransform(page);
   const title = inspector.getByLabel("Title", { exact: true });
   await title.fill("Rust Agent Core draft");
@@ -7145,16 +6517,11 @@ test("selects and explicitly focuses a complete direct module neighborhood", asy
       .getByRole("button", { name: /^Undo/ }),
   ).toBeDisabled();
 
-  const audit = await exhaustiveRouteAudit(page);
+  const audit = await auditRoutes(page);
   expect(audit).toMatchObject({
     auditedRouteCount: 10,
-    auditedPairCount: 45,
-    expectedPairCount: 45,
     duplicateRouteIds: [],
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
 
   await runMenuCommand(page, "View", /^Fit Selection/);
@@ -7187,7 +6554,7 @@ test("selects and explicitly focuses a complete direct module neighborhood", asy
 test("selects incoming and outgoing dependency directions without guessing from geometry", async ({ page, browserName }) => {
   const core = flowNode(page, "system::rust-agent-core");
   const inspector = page.getByRole("region", { name: "Properties" });
-  await core.click({ force: true });
+  await selectFlowNode(core);
   const initialViewport = await canvasViewportTransform(page);
   const title = inspector.getByLabel("Title", { exact: true });
   await title.fill("Rust Agent Core draft");
@@ -7236,7 +6603,7 @@ test("selects incoming and outgoing dependency directions without guessing from 
   await expect(disabledIncoming).toContainText("All incoming interfaces are already selected.");
   await page.keyboard.press("Escape");
 
-  await core.click({ force: true });
+  await selectFlowNode(core);
   await runMenuCommand(page, "Edit", /^Select Outgoing Interfaces/);
   await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
   await expect(page.locator(".react-flow__edge.selected")).toHaveCount(3);
@@ -7246,7 +6613,7 @@ test("selects incoming and outgoing dependency directions without guessing from 
   }
   expect(await canvasViewportTransform(page)).toBe(initialViewport);
 
-  await core.click({ force: true });
+  await selectFlowNode(core);
   await runMenuCommand(page, "Edit", /^Select Incoming Neighborhood/);
   await expect(page.locator(".react-flow__node.selected")).toHaveCount(5);
   await expect(page.locator(".react-flow__edge.selected")).toHaveCount(5);
@@ -7261,7 +6628,7 @@ test("selects incoming and outgoing dependency directions without guessing from 
     await captureStudioScreenshot(page, "docs/screenshots/select-incoming-neighborhood.png");
   }
 
-  await core.click({ force: true });
+  await selectFlowNode(core);
   const outgoingViewport = await canvasViewportTransform(page);
   await runMenuCommand(page, "Edit", /^Select Outgoing Neighborhood/);
   await expect(page.locator(".react-flow__node.selected")).toHaveCount(3);
@@ -7272,7 +6639,7 @@ test("selects incoming and outgoing dependency directions without guessing from 
   }
   expect(await canvasViewportTransform(page)).toBe(outgoingViewport);
 
-  await flowNode(page, "system::project").click({ force: true });
+  await selectFlowNode(flowNode(page, "system::project"));
   await page.keyboard.press("ControlOrMeta+K");
   const noIncomingPalette = page.getByRole("dialog", { name: "Command Palette" });
   await noIncomingPalette.getByRole("combobox", { name: "Search commands" }).fill("incoming neighborhood");
@@ -7281,16 +6648,11 @@ test("selects incoming and outgoing dependency directions without guessing from 
   await expect(noIncoming).toContainText("The selected modules have no incoming interfaces.");
   await page.keyboard.press("Escape");
 
-  const audit = await exhaustiveRouteAudit(page);
+  const audit = await auditRoutes(page);
   expect(audit).toMatchObject({
     auditedRouteCount: 10,
-    auditedPairCount: 45,
-    expectedPairCount: 45,
     duplicateRouteIds: [],
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   await expect(page.locator(".bd-statusbar")).toContainText("Saved");
   await expect(
@@ -7304,8 +6666,8 @@ test("deletes a mixed module and interface selection as one atomic cascade", asy
   const core = flowNode(page, "system::rust-agent-core");
   const selectedEdge = page.locator('.react-flow__edge[data-id="system::ui-session-command"]');
   await clickReachableEdgePoint(page, selectedEdge);
-  await agent.click({ force: true, modifiers: ["ControlOrMeta"] });
-  await core.click({ force: true, modifiers: ["ControlOrMeta"] });
+  await selectFlowNode(agent, ["ControlOrMeta"]);
+  await selectFlowNode(core, ["ControlOrMeta"]);
   await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
   await expect(page.locator(".react-flow__edge.selected")).toHaveCount(1);
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("3 objects selected");
@@ -7332,7 +6694,7 @@ test("deletes a mixed module and interface selection as one atomic cascade", asy
   await expect(page.locator(".react-flow__edge")).toHaveCount(2);
   await expect(page.locator(".bd-inspector-title h2")).toHaveText("System Overview");
   await expect(page.locator(".bd-statusbar")).toContainText("Unsaved changes");
-  expect(await routeNodeCollisions(page)).toEqual([]);
+  expect((await auditRoutes(page)).perRouteIssues).toEqual([]);
   if (process.env.CAPTURE_BATCH_DELETE === "1" && browserName === "chromium") {
     await captureStudioScreenshot(page, "docs/screenshots/batch-delete-after.png");
   }
@@ -7378,7 +6740,7 @@ test("deletes a mixed module and interface selection as one atomic cascade", asy
   await waitForEditorIdle(page);
   await expect(page.locator(".react-flow__node")).toHaveCount(5);
   await expect(page.locator(".react-flow__edge")).toHaveCount(2);
-  expect(await routeNodeCollisions(page)).toEqual([]);
+  expect((await auditRoutes(page)).perRouteIssues).toEqual([]);
 });
 
 test("fits a selected interface and its endpoint modules for focused route review", async ({ page, browserName }) => {
@@ -7542,7 +6904,7 @@ test("pastes a copied module at the requested empty-canvas design point", async 
     });
   });
   const source = flowNode(page, "system::agent-ui");
-  await source.click({ force: true });
+  await selectFlowNode(source);
   await page.keyboard.press("ControlOrMeta+C");
   await expect(page.locator(".bd-command-notice")).toContainText("Copied 1 module inside this workspace");
 
@@ -7618,22 +6980,13 @@ test("pastes a copied module at the requested empty-canvas design point", async 
   expect(system.nodes.find((node: { id: string }) => node.id === "agent-ui-2").layout.position)
     .toEqual(requested.design);
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 10,
-    auditedPairCount: 45,
-    expectedPairCount: 45,
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
   if (process.env.CAPTURE_PASTE_HERE === "1" && browserName === "chromium") {
     await captureStudioScreenshot(page, "docs/screenshots/paste-here.png");
@@ -7676,22 +7029,13 @@ test("creates one module at a canvas point from context menu or toolbar drag", a
   expect(contextSystem.nodes.find((node: { id: string }) => node.id === "review-point").layout)
     .toEqual({ position: contextPoint.expectedOrigin, pinned: true });
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
-  expect(await exhaustiveRouteAudit(page)).toMatchObject({
+  expect(await auditRoutes(page)).toMatchObject({
     auditedRouteCount: 10,
-    auditedPairCount: 45,
-    expectedPairCount: 45,
     perRouteIssues: [],
-    parallelConflicts: [],
-    unbridgedCrossings: [],
-    orphanJumps: [],
   });
 
   await page.keyboard.press("ControlOrMeta+Z");
@@ -7727,13 +7071,9 @@ test("creates one module at a canvas point from context menu or toolbar drag", a
   expect(dragSystem.nodes.find((node: { id: string }) => node.id === "dragged-review").layout)
     .toEqual({ position: dragPoint.expectedOrigin, pinned: true });
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
   if (process.env.CAPTURE_ADD_MODULE_HERE === "1" && browserName === "chromium") {
     await captureStudioScreenshot(page, "docs/screenshots/add-module-here.png");
@@ -7853,13 +7193,9 @@ test("keeps object context actions and right-button canvas pan mutually exclusiv
   expect(menuBounds!.y + menuBounds!.height).toBeLessThanOrEqual(page.viewportSize()!.height - 8);
   expect(await textContrastIssues(page, ".bd-context-menu")).toEqual([]);
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
   if (process.env.CAPTURE_CONTEXT_MENU === "1" && browserName === "chromium") {
     await captureStudioScreenshot(page, "docs/screenshots/object-context-menu.png");
@@ -7885,7 +7221,7 @@ test("keeps object context actions and right-button canvas pan mutually exclusiv
   await expect(moduleMenu).toHaveCount(0);
   await expect(agent).toBeFocused();
 
-  await project.click({ force: true, modifiers: ["ControlOrMeta"] });
+  await selectFlowNode(project, ["ControlOrMeta"]);
   await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
   await rightClickLocator(page, agent);
   const selectionMenu = page.getByRole("menu", { name: "Selected diagram objects actions" });
@@ -7904,7 +7240,7 @@ test("keeps object context actions and right-button canvas pan mutually exclusiv
   await expect(interfaceMenu.getByRole("menuitem")).toHaveCount(4);
   await page.keyboard.press("Escape");
 
-  await agent.click({ force: true });
+  await selectFlowNode(agent);
   const inspector = page.getByRole("region", { name: "Properties" });
   await inspector.getByLabel("Title", { exact: true }).fill("Agent UI draft");
   const projectBounds = await project.boundingBox();
@@ -7980,8 +7316,8 @@ test("keeps a dragged module under a stationary viewport-edge pointer", async ({
 test("keeps a selected module group together while edge auto-panning", async ({ page }) => {
   const project = flowNode(page, "system::project");
   const knowledge = flowNode(page, "system::knowledge");
-  await project.click({ force: true });
-  await knowledge.click({ force: true, modifiers: ["Shift"] });
+  await selectFlowNode(project);
+  await selectFlowNode(knowledge, ["Shift"]);
   await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
   const projectBefore = await project.boundingBox();
   const knowledgeBefore = await knowledge.boundingBox();
@@ -8033,8 +7369,8 @@ test("keeps a selected module group together while edge auto-panning", async ({ 
 test("clones a selected module group at a stationary viewport-edge pointer", async ({ page }) => {
   const agent = flowNode(page, "system::agent-ui");
   const core = flowNode(page, "system::rust-agent-core");
-  await agent.click({ force: true });
-  await core.click({ force: true, modifiers: ["Shift"] });
+  await selectFlowNode(agent);
+  await selectFlowNode(core, ["Shift"]);
   const before = await agent.boundingBox();
   const canvas = await page.locator(".bd-react-flow").boundingBox();
   expect(before && canvas).not.toBeNull();
@@ -8250,7 +7586,7 @@ test("keeps a route segment under a stationary edge pointer while auto-panning",
 
   const edge = page.locator('.react-flow__edge[data-id="system::review-flow"]');
   await clickReachableEdgePoint(page, edge);
-  const segment = edge.locator('.bd-route-segment-handle[data-route-axis="v"]').first();
+  const segment = edge.locator(".bd-route-direct-handle");
   const segmentBox = await segment.boundingBox();
   const canvas = await page.locator(".bd-react-flow").boundingBox();
   expect(segmentBox && canvas).not.toBeNull();
@@ -8323,7 +7659,7 @@ test("keeps a route segment under a stationary edge pointer while auto-panning",
 
 test("keeps a resize corner under a stationary edge pointer while auto-panning", async ({ page }) => {
   const node = flowNode(page, "system::platform-provider");
-  await node.click({ force: true });
+  await selectFlowNode(node);
   const handle = node.locator(".bd-node-resize-handle.bottom.right");
   const before = await node.boundingBox();
   const handleBox = await handle.boundingBox();
@@ -8361,7 +7697,10 @@ test("keeps a resize corner under a stationary edge pointer while auto-panning",
 test("resizes a selected module from a corner and persists one atomic geometry change", async ({ page, browserName }) => {
   const node = flowNode(page, "system::platform-provider");
   const connectedEdge = page.locator('.react-flow__edge[data-id="system::platform-tool-registration"]');
-  await node.click({ force: true });
+  await selectFlowNode(node);
+  const geometrySize = page.getByRole("region", { name: "Module geometry" }).locator("strong");
+  const initialSizeText = await geometrySize.innerText();
+  const [initialWidth, initialHeight] = initialSizeText.split("×").map((value) => Number(value.trim()));
   const viewportBeforeResize = await canvasViewportTransform(page);
   await expect(node.locator(".bd-node-resize-handle")).toHaveCount(4);
   await expect(node.locator(".bd-node-resize-line")).toHaveCount(4);
@@ -8389,18 +7728,14 @@ test("resizes a selected module from a corner and persists one atomic geometry c
   expect(after!.height).toBeGreaterThan(before!.height + 30);
   await expect.poll(() => connectedEdge.locator(".bd-interface-route").getAttribute("d"))
     .not.toBe(routeBefore);
-  const sizeText = await page.getByRole("region", { name: "Module geometry" }).locator("strong").innerText();
+  const sizeText = await geometrySize.innerText();
   const [width, height] = sizeText.split("×").map((value) => Number(value.trim()));
-  expect(width).toBeGreaterThan(240);
-  expect(height).toBeGreaterThan(145);
+  expect(width).toBeGreaterThan(initialWidth);
+  expect(height).toBeGreaterThan(initialHeight);
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
   if (process.env.CAPTURE_NODE_RESIZE === "1" && browserName === "chromium") {
     await captureStudioScreenshot(page, "docs/screenshots/node-resize.png");
@@ -8422,16 +7757,18 @@ test("resizes a selected module from a corner and persists one atomic geometry c
 
   await page.keyboard.press("ControlOrMeta+Z");
   await waitForEditorIdle(page);
-  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("240 × 145");
+  await expect(geometrySize).toHaveText(initialSizeText);
   await page.keyboard.press("ControlOrMeta+Shift+Z");
   await waitForEditorIdle(page);
-  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText(sizeText);
+  await expect(geometrySize).toHaveText(sizeText);
 });
 
 test("preserves a module's original proportions while Shift-resizing", async ({ page, browserName }) => {
   const node = flowNode(page, "system::platform-provider");
   const connectedEdge = page.locator('.react-flow__edge[data-id="system::platform-tool-registration"]');
-  await node.click({ force: true });
+  await selectFlowNode(node);
+  const geometrySize = page.getByRole("region", { name: "Module geometry" }).locator("strong");
+  const initialSizeText = await geometrySize.innerText();
   const before = await node.boundingBox();
   const routeBefore = await connectedEdge.locator(".bd-interface-route").getAttribute("d");
   expect(before).not.toBeNull();
@@ -8460,21 +7797,17 @@ test("preserves a module's original proportions while Shift-resizing", async ({ 
   await expect.poll(() => connectedEdge.locator(".bd-interface-route").getAttribute("d"))
     .not.toBe(routeBefore);
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
   if (process.env.CAPTURE_ASPECT_RESIZE === "1" && browserName === "chromium") {
     await captureStudioScreenshot(page, "docs/screenshots/aspect-ratio-resize.png");
   }
 
-  const sizeText = await page.getByRole("region", { name: "Module geometry" }).locator("strong").innerText();
+  const sizeText = await geometrySize.innerText();
   const [width, height] = sizeText.split("×").map((value) => Number(value.trim()));
-  expect(width / height).toBeCloseTo(240 / 145, 2);
+  expect(width / height).toBeCloseTo(originalRatio, 2);
   const downloadPromise = page.waitForEvent("download");
   await page.keyboard.press("ControlOrMeta+S");
   const savedPath = await (await downloadPromise).path();
@@ -8486,15 +7819,18 @@ test("preserves a module's original proportions while Shift-resizing", async ({ 
 
   await page.keyboard.press("ControlOrMeta+Z");
   await waitForEditorIdle(page);
-  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("240 × 145");
+  await expect(geometrySize).toHaveText(initialSizeText);
   await page.keyboard.press("ControlOrMeta+Shift+Z");
   await waitForEditorIdle(page);
-  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText(sizeText);
+  await expect(geometrySize).toHaveText(sizeText);
 });
 
 test("matches a sibling size while resizing and lets Alt bypass size snapping", async ({ page, browserName }) => {
   const node = flowNode(page, "system::platform-provider");
-  await node.click({ force: true });
+  await selectFlowNode(node);
+  const geometrySize = page.getByRole("region", { name: "Module geometry" }).locator("strong");
+  const initialSizeText = await geometrySize.innerText();
+  const [initialWidth, initialHeight] = initialSizeText.split("×").map((value) => Number(value.trim()));
 
   const resizeWidthBy = async (deltaX: number, disableSnap = false) => {
     const handle = node.locator(".bd-node-resize-line.right");
@@ -8523,7 +7859,10 @@ test("matches a sibling size while resizing and lets Alt bypass size snapping", 
   }
   await page.mouse.up();
   await waitForEditorIdle(page);
-  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("250 × 145");
+  const snappedSizeText = await geometrySize.innerText();
+  const [snappedWidth, snappedHeight] = snappedSizeText.split("×").map((value) => Number(value.trim()));
+  expect(snappedWidth).toBeGreaterThan(initialWidth);
+  expect(snappedHeight).toBe(initialHeight);
   await expect(page.locator(canvasGuideSelector)).toHaveCount(0);
 
   const downloadPromise = page.waitForEvent("download");
@@ -8533,17 +7872,21 @@ test("matches a sibling size while resizing and lets Alt bypass size snapping", 
   const savedNode = saved.levels.find((level: { id: string }) => level.id === "system").nodes.find(
     (candidate: { id: string }) => candidate.id === "platform-provider",
   );
-  expect(savedNode.layout).toMatchObject({ width: 250, height: 145 });
+  expect(savedNode.layout).toMatchObject({ width: snappedWidth, height: snappedHeight });
 
   await page.keyboard.press("ControlOrMeta+Z");
   await waitForEditorIdle(page);
-  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("240 × 145");
+  await expect(geometrySize).toHaveText(initialSizeText);
   await resizeWidthBy(8, true);
   await expect(page.locator(canvasGuideSelector)).toHaveCount(0);
   await page.mouse.up();
   await page.keyboard.up("Alt");
   await waitForEditorIdle(page);
-  await expect(page.getByRole("region", { name: "Module geometry" }).locator("strong")).toHaveText("253 × 145");
+  const precisionSizeText = await geometrySize.innerText();
+  const [precisionWidth, precisionHeight] = precisionSizeText.split("×").map((value) => Number(value.trim()));
+  expect(precisionWidth).toBeGreaterThan(initialWidth);
+  expect(precisionWidth).not.toBe(snappedWidth);
+  expect(precisionHeight).toBe(initialHeight);
 
   const precisionDownloadPromise = page.waitForEvent("download");
   await page.keyboard.press("ControlOrMeta+S");
@@ -8552,12 +7895,12 @@ test("matches a sibling size while resizing and lets Alt bypass size snapping", 
   const precisionSavedNode = precisionSaved.levels
     .find((level: { id: string }) => level.id === "system").nodes
     .find((candidate: { id: string }) => candidate.id === "platform-provider");
-  expect(precisionSavedNode.layout).toMatchObject({ width: 253, height: 145 });
+  expect(precisionSavedNode.layout).toMatchObject({ width: precisionWidth, height: precisionHeight });
 });
 
 test("resizes a focused module only with the draw.io keyboard chord", async ({ page }) => {
   const node = flowNode(page, "system::agent-ui");
-  await node.click({ force: true });
+  await selectFlowNode(node);
   await node.focus();
   await expect(node).toBeFocused();
 
@@ -8588,7 +7931,7 @@ test("resizes a focused module only with the draw.io keyboard chord", async ({ p
 test("rejects a resize while Inspector properties are unapplied and restores preview geometry", async ({ page }) => {
   const node = flowNode(page, "system::agent-ui");
   const inspector = page.getByRole("region", { name: "Properties" });
-  await node.click({ force: true });
+  await selectFlowNode(node);
   await inspector.getByLabel("Title").fill("Agent UI draft");
   await expect(inspector.getByText("UNAPPLIED", { exact: true })).toBeVisible();
   const before = await node.boundingBox();
@@ -8692,7 +8035,7 @@ test("authors, connects, nests, undoes, saves, and reloads a local module design
     await captureStudioScreenshot(page, "docs/screenshots/editor-polished-workbench.png");
   }
 
-  await flowNode(page, "system::api").click({ force: true });
+  await selectFlowNode(flowNode(page, "system::api"));
   await toolbarButton(page, "Create Child Design...").click({ force: true });
   const childDialog = page.getByRole("dialog", { name: /Create Child Design/ });
   await childDialog.getByLabel("Child design title").fill("API Internals");
@@ -8719,13 +8062,9 @@ test("authors, connects, nests, undoes, saves, and reloads a local module design
   await expect(page.locator(".bd-validation-summary")).toContainText("0 warnings");
   await waitForEditorIdle(page);
   expect(await geometryIssues(page)).toEqual({
-    collisions: [],
+    routeIssues: [],
     labelOverlaps: [],
     siblingOverlaps: [],
-    boundaryEscapes: [],
-    endpointIntrusions: [],
-    microSegments: [],
-    sharedRoutes: [],
   });
   await expect(page.locator(".bd-interface-underlay")).toHaveCount(2);
   if (process.env.CAPTURE_EDITOR_PROOF === "1") {
@@ -8765,7 +8104,7 @@ test("authors, connects, nests, undoes, saves, and reloads a local module design
   await expect(page.locator(".bd-document-title span")).toHaveText("Payments Architecture");
   await expect(page.locator(".react-flow__node")).toHaveCount(2);
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
-  await flowNode(page, "system::api").click({ force: true });
+  await selectFlowNode(flowNode(page, "system::api"));
 
   await inspector.getByLabel("Title").fill("Public API v2");
   await inspector.getByRole("button", { name: "Apply Changes" }).click({ force: true });

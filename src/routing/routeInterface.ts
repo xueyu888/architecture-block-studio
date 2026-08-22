@@ -5,12 +5,6 @@ export interface RoutePoint {
   y: number;
 }
 
-export interface RouteJump {
-  segmentIndex: number;
-  point: RoutePoint;
-  radius: number;
-}
-
 const RENDERED_ENDPOINT_MEASUREMENT_TOLERANCE = 1;
 
 function stableRenderedEndpoint(planned: RoutePoint, rendered: RoutePoint): RoutePoint {
@@ -50,34 +44,15 @@ export function compactOrthogonalPoints(points: readonly RoutePoint[]): RoutePoi
   });
 }
 
-export function drawOrthogonalRoute(points: readonly RoutePoint[], jumps: readonly RouteJump[] = []): string {
-  const compact = compactOrthogonalPoints(points);
+/** Draws the route exactly as projected. Automatic routes contain two points;
+ * user-authored routes contain the persisted orthogonal waypoints. */
+export function drawRoute(points: readonly RoutePoint[]): string {
+  const compact = points.filter(
+    (point, index) => index === 0 || point.x !== points[index - 1].x || point.y !== points[index - 1].y,
+  );
   if (compact.length === 0) return "";
   const commands = [`M ${compact[0].x}, ${compact[0].y}`];
-  compact.slice(1).forEach((point, segmentIndex) => {
-    const previous = compact[segmentIndex];
-    const axis = previous.y === point.y ? "h" : "v";
-    const direction = axis === "h" ? Math.sign(point.x - previous.x) : Math.sign(point.y - previous.y);
-    const segmentJumps = jumps
-      .filter((jump) => jump.segmentIndex === segmentIndex)
-      .sort((left, right) => direction * (
-        axis === "h" ? left.point.x - right.point.x : left.point.y - right.point.y
-      ));
-    segmentJumps.forEach((jump) => {
-      if (axis === "h") {
-        commands.push(
-          `L ${jump.point.x - direction * jump.radius}, ${jump.point.y}`,
-          `Q ${jump.point.x}, ${jump.point.y - jump.radius * 2} ${jump.point.x + direction * jump.radius}, ${jump.point.y}`,
-        );
-      } else {
-        commands.push(
-          `L ${jump.point.x}, ${jump.point.y - direction * jump.radius}`,
-          `Q ${jump.point.x + jump.radius * 2}, ${jump.point.y} ${jump.point.x}, ${jump.point.y + direction * jump.radius}`,
-        );
-      }
-    });
-    commands.push(`L ${point.x}, ${point.y}`);
-  });
+  compact.slice(1).forEach((point) => commands.push(`L ${point.x}, ${point.y}`));
   return commands.join(" ");
 }
 
@@ -121,9 +96,10 @@ export function adaptRouteEndpoints(
   targetPosition: Position,
 ): RoutePoint[] {
   if (points.length < 2) return [...points];
-  const next = points.map((point) => ({ ...point }));
   const renderedSource = stableRenderedEndpoint(points[0], source);
   const renderedTarget = stableRenderedEndpoint(points[points.length - 1], target);
+  if (points.length === 2) return [renderedSource, renderedTarget];
+  const next = points.map((point) => ({ ...point }));
   next[0] = renderedSource;
   next[next.length - 1] = renderedTarget;
   if (next.length > 2) {

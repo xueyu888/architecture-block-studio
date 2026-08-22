@@ -2,9 +2,11 @@ import { useMemo, useRef, type KeyboardEvent, type PointerEvent as ReactPointerE
 import { BaseEdge, useReactFlow, useStoreApi, type EdgeProps } from "@xyflow/react";
 import {
   adaptRouteEndpoints,
-  drawOrthogonalRoute,
+  drawRoute,
   editableOrthogonalRoute,
   editableRouteBends,
+  manualRouteChannelAxis,
+  materializeManualRoute,
   moveRouteBend,
   moveRouteSegment,
   orthogonalizeRoutePoints,
@@ -43,6 +45,7 @@ type RouteDrag = {
 const ROUTE_GRID = 8;
 const ROUTE_HANDLE_TARGET_SIZE = 24;
 const ROUTE_BEND_TARGET_SIZE = 20;
+const MANUAL_ROUTE_INITIAL_OFFSET = 32;
 
 function snapRouteCoordinate(value: number): number {
   return Math.round(value / ROUTE_GRID) * ROUTE_GRID;
@@ -83,19 +86,42 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
     props.targetPosition,
   ) : undefined;
   if (!routePoints || routePoints.length < 2) return null;
-  const routeMatchesPlan = data.plannedRoute?.length === routePoints.length && data.plannedRoute.every(
-    (point, index) => point.x === routePoints[index].x && point.y === routePoints[index].y,
-  );
-  // Bridges belong to committed route geometry. During a live node gesture the
-  // endpoint legs are adapted locally, so stale bridge coordinates are hidden
-  // until the scene is solved again instead of creating a diagonal preview.
-  const renderedJumps = routeMatchesPlan ? data.routeJumps : undefined;
-  const routePath = drawOrthogonalRoute(routePoints, renderedJumps);
-  const plainRoutePath = drawOrthogonalRoute(routePoints);
+  const routePath = drawRoute(routePoints);
+  const plainRoutePath = routePath;
   const persistedPoints = data.connection.routing && !data.boundaryContinuation
     ? routePoints
     : undefined;
-  const editing = editableOrthogonalRoute(routePoints);
+  const directMidpoint = {
+    x: (routePoints[0].x + routePoints.at(-1)!.x) / 2,
+    y: (routePoints[0].y + routePoints.at(-1)!.y) / 2,
+  };
+  const directChannelAxis = manualRouteChannelAxis(
+    routePoints[0],
+    routePoints.at(-1)!,
+    props.sourcePosition,
+    props.targetPosition,
+  );
+  const directControl = directChannelAxis === "h"
+    ? { x: directMidpoint.x, y: directMidpoint.y + MANUAL_ROUTE_INITIAL_OFFSET }
+    : { x: directMidpoint.x + MANUAL_ROUTE_INITIAL_OFFSET, y: directMidpoint.y };
+  const directEditing = persistedPoints || data.boundaryContinuation
+    ? undefined
+    : editableOrthogonalRoute(
+        materializeManualRoute(
+          routePoints[0],
+          routePoints.at(-1)!,
+          props.sourcePosition,
+          props.targetPosition,
+          directControl,
+        ),
+      );
+  const directSegment = directEditing?.segments.reduce<EditableRouteSegment | undefined>((closest, segment) => {
+    if (!closest) return segment;
+    const distance = Math.hypot(segment.midpoint.x - directMidpoint.x, segment.midpoint.y - directMidpoint.y);
+    const closestDistance = Math.hypot(closest.midpoint.x - directMidpoint.x, closest.midpoint.y - directMidpoint.y);
+    return distance < closestDistance ? segment : closest;
+  }, undefined);
+  const editing = persistedPoints ? editableOrthogonalRoute(routePoints) : undefined;
   const bends = persistedPoints ? editableRouteBends(routePoints) : [];
   const endpointGrips = [
     endpointGripPosition({ x: props.sourceX, y: props.sourceY }, props.sourcePosition),
@@ -146,7 +172,7 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
           y: snapRouteCoordinate(position.y),
         });
     drag.current = { ...active, points: next };
-    active.preview.setAttribute("d", drawOrthogonalRoute(next));
+    active.preview.setAttribute("d", drawRoute(next));
     const handlePoint = active.kind === "bend"
       ? next[active.bendIndex]
       : {
@@ -157,14 +183,18 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
     active.liveHandle.setAttribute("cy", String(handlePoint.y));
   };
 
-  const beginSegmentDrag = (event: ReactPointerEvent<HTMLButtonElement>, segment: EditableRouteSegment) => {
+  const beginSegmentDrag = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    segment: EditableRouteSegment,
+    points: readonly RoutePoint[],
+  ) => {
     event.preventDefault();
     event.stopPropagation();
     const elements = dragElements(event);
     if (!elements) return;
     const { group, preview, liveHandle } = elements;
     group.classList.add("is-routing");
-    preview.setAttribute("d", plainRoutePath);
+    preview.setAttribute("d", drawRoute(points));
     const pointer = { clientX: event.clientX, clientY: event.clientY };
     const autoPan = viewportAutoPan.start(pointer, updateDragAtPointer);
     drag.current = {
@@ -172,14 +202,14 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
       pointerId: event.pointerId,
       segmentIndex: segment.index,
       axis: segment.axis,
-      points: editing.points.map((point) => ({ ...point })),
+      points: points.map((point) => ({ ...point })),
       group,
       preview,
       liveHandle,
       autoPan,
       initialCoordinate: segment.axis === "h"
-        ? editing.points[segment.index].y
-        : editing.points[segment.index].x,
+          ? points[segment.index].y
+          : points[segment.index].x,
     };
     listenForDrag();
   };
@@ -234,7 +264,11 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
     if (changed) commitPoints(active.points);
   };
 
-  const moveSegmentWithKeyboard = (event: KeyboardEvent<HTMLButtonElement>, segment: EditableRouteSegment) => {
+  const moveSegmentWithKeyboard = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    segment: EditableRouteSegment,
+    points: RoutePoint[],
+  ) => {
     const direction = segment.axis === "h"
       ? event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0
       : event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
@@ -242,14 +276,14 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
     event.preventDefault();
     event.stopPropagation();
     const current = segment.axis === "h"
-      ? editing.points[segment.index].y
-      : editing.points[segment.index].x;
+      ? points[segment.index].y
+      : points[segment.index].x;
     const coordinate = current + direction * ROUTE_GRID;
-    if (commitPoints(moveRouteSegment(editing.points, segment, coordinate))) {
+    if (commitPoints(moveRouteSegment(points, segment, coordinate))) {
       data.requestRouteHandleFocus?.({
         kind: "segment",
         axis: segment.axis,
-        coordinate,
+        coordinate: Math.round(coordinate),
         index: segment.index,
       });
     }
@@ -300,8 +334,6 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
       data-boundary-continuation={data.boundaryContinuation ? "true" : "false"}
       data-boundary-node-id={data.boundaryNodeId}
       data-route-points={JSON.stringify(routePoints)}
-      data-route-jumps={JSON.stringify(renderedJumps ?? [])}
-      data-route-jump-count={renderedJumps?.length ?? 0}
     >
       {(!data.simplifiedInteraction || props.selected) && (
         <path className="bd-interface-underlay" d={routePath} aria-hidden="true" />
@@ -329,7 +361,35 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
           aria-hidden="true"
         />
       ))}
-      {props.selected && data.canEditSelection?.() !== false && !data.boundaryContinuation && data.updateRouting && editing.segments.map((segment) => (
+      {props.selected && data.canEditSelection?.() !== false && !data.boundaryContinuation && data.updateRouting && directEditing && directSegment && !persistedPoints && (
+        <foreignObject
+          className="bd-route-handle-object bd-route-direct-handle-object nodrag nopan"
+          x={directMidpoint.x - ROUTE_HANDLE_TARGET_SIZE / 2}
+          y={directMidpoint.y - ROUTE_HANDLE_TARGET_SIZE / 2}
+          width={ROUTE_HANDLE_TARGET_SIZE}
+          height={ROUTE_HANDLE_TARGET_SIZE}
+        >
+          <button
+            type="button"
+            tabIndex={-1}
+            className="bd-route-handle bd-route-direct-handle nodrag nopan"
+            role="spinbutton"
+            data-route-handle-index={directSegment.index}
+            data-route-axis={directSegment.axis}
+            aria-label="Create an editable route by dragging this connection"
+            aria-valuenow={Math.round(directSegment.axis === "h" ? directSegment.midpoint.y : directSegment.midpoint.x)}
+            aria-valuetext={`${Math.round(directSegment.axis === "h" ? directSegment.midpoint.y : directSegment.midpoint.x)} design pixels`}
+            onPointerDown={(event) => beginSegmentDrag(event, directSegment, directEditing.points)}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onDragStart={(event) => event.preventDefault()}
+            onKeyDown={(event) => moveSegmentWithKeyboard(event, directSegment, directEditing.points)}
+          />
+        </foreignObject>
+      )}
+      {props.selected && data.canEditSelection?.() !== false && !data.boundaryContinuation && data.updateRouting && editing?.segments.map((segment) => (
         <foreignObject
           key={`segment:${segment.index}:${segment.axis}`}
           className="bd-route-handle-object bd-route-segment-handle-object nodrag nopan"
@@ -348,13 +408,13 @@ export function InterfaceEdgeComponent(props: EdgeProps<CanvasFlowEdge>) {
             aria-label={`Move ${segment.axis === "h" ? "horizontal route segment vertically" : "vertical route segment horizontally"}`}
             aria-valuenow={Math.round(segment.axis === "h" ? segment.midpoint.y : segment.midpoint.x)}
             aria-valuetext={`${Math.round(segment.axis === "h" ? segment.midpoint.y : segment.midpoint.x)} design pixels`}
-            onPointerDown={(event) => beginSegmentDrag(event, segment)}
+            onPointerDown={(event) => beginSegmentDrag(event, segment, editing.points)}
             onMouseDown={(event) => {
               event.preventDefault();
               event.stopPropagation();
             }}
             onDragStart={(event) => event.preventDefault()}
-            onKeyDown={(event) => moveSegmentWithKeyboard(event, segment)}
+            onKeyDown={(event) => moveSegmentWithKeyboard(event, segment, editing.points)}
           />
         </foreignObject>
       ))}

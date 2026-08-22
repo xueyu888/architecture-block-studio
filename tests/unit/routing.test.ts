@@ -2,59 +2,53 @@ import { describe, expect, test } from "vitest";
 import {
   adaptRouteEndpoints,
   compactOrthogonalPoints,
-  createConnectionPreviewSession,
-  createRoutingObstacleCatalog,
-  DEFAULT_ROUTING_POLICY,
-  drawOrthogonalRoute,
-  planRouteJumps,
+  drawRoute,
+  editableOrthogonalRoute,
+  manualRouteChannelAxis,
+  materializeManualRoute,
+  projectConnectionRoutes,
   restoreManualRoute,
-  solveConnectionPreview,
-  type PlannedRoute,
-  type RoutingPreviewEnvironment,
 } from "../../src/routing";
+import { layoutBlockDesign } from "../../src/layout";
+import { connectedDesign } from "./designFixture";
 
-describe("orthogonal route primitives", () => {
-  test("ignores browser measurement noise instead of creating endpoint micro-bends", () => {
+describe("connection route projection", () => {
+  test("draws an automatic diagonal as one direct segment", () => {
+    expect(drawRoute([{ x: 12, y: 28 }, { x: 160, y: 94 }]))
+      .toBe("M 12, 28 L 160, 94");
+  });
+
+  test("keeps an automatic route direct while rendered endpoints move", () => {
+    expect(adaptRouteEndpoints(
+      [{ x: 100, y: 50 }, { x: 300, y: 180 }],
+      { x: 112, y: 64 },
+      { x: 286, y: 172 },
+      "right",
+      "left",
+    )).toEqual([{ x: 112, y: 64 }, { x: 286, y: 172 }]);
+  });
+
+  test("adapts only endpoint legs of a user-authored orthogonal route", () => {
     expect(adaptRouteEndpoints(
       [
-        { x: 314, y: 328.625 },
-        { x: 326, y: 328.625 },
-        { x: 326, y: 300.375 },
-        { x: 446, y: 300.375 },
+        { x: 100, y: 50 },
+        { x: 180, y: 50 },
+        { x: 180, y: 180 },
+        { x: 300, y: 180 },
       ],
-      { x: 313.9998, y: 328.6562 },
-      { x: 445.9999, y: 300.3281 },
+      { x: 112, y: 64 },
+      { x: 286, y: 172 },
       "right",
       "left",
     )).toEqual([
-      { x: 314, y: 328.625 },
-      { x: 326, y: 328.625 },
-      { x: 326, y: 300.375 },
-      { x: 446, y: 300.375 },
+      { x: 112, y: 64 },
+      { x: 180, y: 64 },
+      { x: 180, y: 172 },
+      { x: 286, y: 172 },
     ]);
   });
 
-  test("moves adjacent endpoint legs during a real node gesture", () => {
-    expect(adaptRouteEndpoints(
-      [
-        { x: 314, y: 328 },
-        { x: 326, y: 328 },
-        { x: 326, y: 300 },
-        { x: 446, y: 300 },
-      ],
-      { x: 330, y: 344 },
-      { x: 446, y: 300 },
-      "right",
-      "left",
-    )).toEqual([
-      { x: 330, y: 344 },
-      { x: 326, y: 344 },
-      { x: 326, y: 300 },
-      { x: 446, y: 300 },
-    ]);
-  });
-
-  test("removes duplicate and collinear points", () => {
+  test("removes duplicate and forward-collinear manual points", () => {
     expect(compactOrthogonalPoints([
       { x: 0, y: 0 },
       { x: 0, y: 0 },
@@ -68,210 +62,52 @@ describe("orthogonal route primitives", () => {
     ]);
   });
 
-  test("preserves an orthogonal reversal for explicit locked routes", () => {
-    expect(compactOrthogonalPoints([
-      { x: 0, y: 0 },
-      { x: 40, y: 0 },
-      { x: 20, y: 0 },
-    ])).toEqual([
-      { x: 0, y: 0 },
-      { x: 40, y: 0 },
-      { x: 20, y: 0 },
+  test("materializes a direct horizontal connection with endpoint stubs and one editable channel", () => {
+    const source = { x: 100, y: 80 };
+    const target = { x: 400, y: 80 };
+    const control = { x: 250, y: 144 };
+    expect(manualRouteChannelAxis(source, target, "right", "left")).toBe("h");
+    const route = materializeManualRoute(source, target, "right", "left", control);
+    expect(route).toEqual([
+      source,
+      { x: 132, y: 80 },
+      { x: 132, y: 144 },
+      { x: 368, y: 144 },
+      { x: 368, y: 80 },
+      target,
+    ]);
+    expect(editableOrthogonalRoute(route).segments).toContainEqual({
+      index: 2,
+      axis: "h",
+      midpoint: { x: 250, y: 144 },
+      length: 236,
+    });
+  });
+
+  test("materializes a direct vertical connection with endpoint stubs and one editable channel", () => {
+    const source = { x: 160, y: 100 };
+    const target = { x: 160, y: 420 };
+    const control = { x: 224, y: 260 };
+    expect(manualRouteChannelAxis(source, target, "bottom", "top")).toBe("v");
+    expect(materializeManualRoute(source, target, "bottom", "top", control)).toEqual([
+      source,
+      { x: 160, y: 132 },
+      { x: 224, y: 132 },
+      { x: 224, y: 388 },
+      { x: 160, y: 388 },
+      target,
     ]);
   });
 
-  test("draws a compact orthogonal path", () => {
-    expect(drawOrthogonalRoute([
-      { x: 0, y: 0 },
-      { x: 40, y: 0 },
-      { x: 80, y: 0 },
-      { x: 80, y: 40 },
-    ])).toBe("M 0, 0 L 80, 0 L 80, 40");
-  });
-
-  test("routes an attached pointer preview around every scene obstacle", () => {
-    const environment: RoutingPreviewEnvironment = {
-      obstacles: [
-        { id: "source", kind: "module", bounds: { left: 0, right: 100, top: 0, bottom: 100 } },
-        { id: "blocker", kind: "module", bounds: { left: 150, right: 250, top: 0, bottom: 100 } },
-        { id: "target", kind: "module", bounds: { left: 300, right: 400, top: 0, bottom: 100 } },
-      ],
-      nodes: new Map([
-        ["source", {
-          id: "source",
-          ancestorObstacleIds: [],
-          endpoints: new Map([["out", { point: { x: 100, y: 50 }, outward: "right", physicalKey: "source::out" }]]),
-        }],
-        ["target", {
-          id: "target",
-          ancestorObstacleIds: [],
-          endpoints: new Map([["in", { point: { x: 300, y: 50 }, outward: "left", physicalKey: "target::in" }]]),
-        }],
-      ]),
-    };
-    const request = {
-      source: { nodeId: "source", handleId: "out" },
-      target: { kind: "attached" as const, nodeId: "target", handleId: "in" },
-    };
-
-    const first = solveConnectionPreview(environment, request, DEFAULT_ROUTING_POLICY);
-    const second = solveConnectionPreview(environment, request, DEFAULT_ROUTING_POLICY);
-
-    expect(first.status).toBe("routed");
-    expect(first.points).toEqual(second.points);
-    expect(first.points.at(1)?.y).toBe(50);
-    expect(first.points.at(-2)?.y).toBe(50);
-    expect(first.points.some((point) => point.y < -18 || point.y > 118)).toBe(true);
-    expect(first.obstacleCount).toBe(3);
-  });
-
-  test("does not fall back to a line through an unrelated obstacle", () => {
-    const environment: RoutingPreviewEnvironment = {
-      obstacles: [
-        { id: "source", kind: "module", bounds: { left: 0, right: 100, top: 0, bottom: 100 } },
-        { id: "blocker", kind: "module", bounds: { left: 150, right: 250, top: 0, bottom: 100 } },
-      ],
-      nodes: new Map([
-        ["source", {
-          id: "source",
-          ancestorObstacleIds: [],
-          endpoints: new Map([["out", { point: { x: 100, y: 50 }, outward: "right", physicalKey: "source::out" }]]),
-        }],
-      ]),
-    };
-
-    const preview = solveConnectionPreview(environment, {
-      source: { nodeId: "source", handleId: "out" },
-      target: { kind: "pointer", point: { x: 200, y: 50 } },
-    }, DEFAULT_ROUTING_POLICY);
-
-    expect(preview.status).toBe("unresolved");
-    expect(preview.points).toEqual([]);
-    expect(preview.diagnostics.length).toBeGreaterThan(0);
-  });
-
-  test("keeps one obstacle registration per gesture without delaying changed pointer intents", () => {
-    const environment: RoutingPreviewEnvironment = {
-      obstacles: [
-        { id: "source", kind: "module", bounds: { left: 0, right: 100, top: 0, bottom: 100 } },
-        { id: "far", kind: "module", bounds: { left: 900, right: 1000, top: 0, bottom: 100 } },
-      ],
-      nodes: new Map([
-        ["source", {
-          id: "source",
-          ancestorObstacleIds: [],
-          endpoints: new Map([["out", { point: { x: 100, y: 50 }, outward: "right", physicalKey: "source::out" }]]),
-        }],
-      ]),
-    };
-    const session = createConnectionPreviewSession(environment, DEFAULT_ROUTING_POLICY);
-    const request = (x: number) => ({
-      source: { nodeId: "source", handleId: "out" },
-      target: { kind: "pointer" as const, point: { x, y: 180 } },
-    });
-
-    expect(() => session.solve(request(260), Number.NaN)).toThrow("finite");
-    const first = session.solve(request(260), 100);
-    const duplicate = session.solve(request(260), 110);
-    const changed = session.solve(request(264), 111);
-    const expired = session.solve(request(264), 142);
-
-    expect(first.cacheHit).toBe(false);
-    expect(duplicate.cacheHit).toBe(true);
-    expect(duplicate.result).toBe(first.result);
-    expect(changed.cacheHit).toBe(false);
-    expect(changed.result.points.at(-1)).toEqual({ x: 264, y: 180 });
-    expect(expired.cacheHit).toBe(false);
-    expect(expired.stats).toEqual({
-      requestCount: 4,
-      solveCount: 3,
-      cacheHitCount: 1,
-      registeredObstacleCount: 2,
-      disposed: false,
-    });
-
-    session.dispose();
-    expect(session.stats()).toEqual({
-      requestCount: 4,
-      solveCount: 3,
-      cacheHitCount: 1,
-      registeredObstacleCount: 0,
-      disposed: true,
-    });
-    expect(() => session.solve(request(268), 143)).toThrow("disposed");
-  });
-
-  test("indexes relevant obstacles deterministically and rejects a foreign scene catalog", () => {
-    const obstacles = [
-      { id: "left", kind: "module" as const, bounds: { left: 0, right: 100, top: 0, bottom: 100 } },
-      { id: "middle", kind: "module" as const, bounds: { left: 500, right: 600, top: 0, bottom: 100 } },
-      { id: "right", kind: "module" as const, bounds: { left: 1000, right: 1100, top: 0, bottom: 100 } },
-    ];
-    const catalog = createRoutingObstacleCatalog(obstacles, DEFAULT_ROUTING_POLICY);
-
-    expect(catalog.query({ left: 450, right: 650, top: -50, bottom: 150 }).map((entry) => entry.id))
-      .toEqual(["middle"]);
-    expect(catalog.query(
-      { left: -50, right: 1150, top: -50, bottom: 150 },
-      new Set(["middle"]),
-    ).map((entry) => entry.id)).toEqual(["left", "right"]);
-    expect(() => solveConnectionPreview({
-      obstacles: [...obstacles],
-      nodes: new Map([["left", {
-        id: "left",
-        ancestorObstacleIds: [],
-        endpoints: new Map([["out", { point: { x: 100, y: 50 }, outward: "right", physicalKey: "left::out" }]]),
-      }]]),
-    }, {
-      source: { nodeId: "left", handleId: "out" },
-      target: { kind: "pointer", point: { x: 200, y: 50 } },
-    }, DEFAULT_ROUTING_POLICY, catalog)).toThrow("does not match");
-  });
-
-  test("renders a deterministic bridge for an unavoidable route crossing", () => {
-    const route = (
-      legId: string,
-      points: PlannedRoute["points"],
-    ): PlannedRoute => ({
-      legId,
-      commodityId: legId,
-      points,
-      sourceStub: points[0],
-      targetStub: points.at(-1)!,
-      locked: false,
-      baselineLength: 80,
-      length: 80,
-      bends: 0,
-    });
-    const horizontal = route("horizontal", [{ x: 0, y: 40 }, { x: 100, y: 40 }]);
-    const vertical = route("vertical", [{ x: 50, y: 0 }, { x: 50, y: 80 }]);
-    const jumps = planRouteJumps(new Map([
-      [horizontal.legId, horizontal],
-      [vertical.legId, vertical],
-    ]));
-
-    expect(jumps.get("horizontal")).toEqual([{
-      segmentIndex: 0,
-      point: { x: 50, y: 40 },
-      radius: 5,
-    }]);
-    expect(jumps.get("vertical")).toEqual([]);
-    expect(drawOrthogonalRoute(horizontal.points, jumps.get("horizontal"))).toBe(
-      "M 0, 40 L 45, 40 Q 50, 30 55, 40 L 100, 40",
-    );
-  });
-
-  test("restores local waypoints and aligns them to horizontal endpoint ports", () => {
-    const restored = restoreManualRoute({
+  test("restores local document waypoints as an orthogonal route", () => {
+    expect(restoreManualRoute({
       source: { x: 120, y: 140 },
       target: { x: 420, y: 260 },
       waypoints: [{ x: 40, y: 40 }, { x: 180, y: 40 }, { x: 180, y: 160 }],
       origin: { x: 100, y: 100 },
       sourcePosition: "right",
       targetPosition: "left",
-    });
-
-    expect(restored).toEqual([
+    })).toEqual([
       { x: 120, y: 140 },
       { x: 280, y: 140 },
       { x: 280, y: 260 },
@@ -279,25 +115,51 @@ describe("orthogonal route primitives", () => {
     ]);
   });
 
-  test("inserts an elbow when endpoint alignment would otherwise create a diagonal", () => {
-    const restored = restoreManualRoute({
-      source: { x: 314, y: 329 },
-      target: { x: -4, y: 72 },
-      waypoints: [
-        { x: 325, y: 329 },
-        { x: 325, y: 341 },
-        { x: 348, y: 341 },
-        { x: 348, y: 84 },
-        { x: -16, y: 84 },
-      ],
-      origin: { x: 0, y: 0 },
-      sourcePosition: "right",
-      targetPosition: "left",
+  test("uses exactly two projected points until the document owns manual waypoints", async () => {
+    const document = connectedDesign();
+    const level = document.levels[0];
+    level.nodes[0].layout = { pinned: true, position: { x: 0, y: 0 } };
+    level.nodes[1].layout = { pinned: true, position: { x: 420, y: 180 } };
+    const layout = await layoutBlockDesign(document, {
+      expandedLevelIds: new Set(),
+      placementMode: "authored",
     });
+    const edge = layout.edges[0];
+    const automatic = projectConnectionRoutes(layout.nodes, layout.edges).get(edge.id)!;
+    expect(automatic).toHaveLength(2);
+    expect(automatic[0]).not.toEqual(automatic[1]);
 
-    expect(restored.slice(1).every((point, index) =>
-      point.x === restored[index].x || point.y === restored[index].y
+    level.connections[0].routing = {
+      waypoints: [{ x: 300, y: 72 }, { x: 300, y: 220 }],
+    };
+    const manualLayout = await layoutBlockDesign(document, {
+      expandedLevelIds: new Set(),
+      placementMode: "authored",
+    });
+    const manual = projectConnectionRoutes(manualLayout.nodes, manualLayout.edges).get(manualLayout.edges[0].id)!;
+    expect(manual.length).toBeGreaterThan(2);
+    expect(manual.slice(1).every((point, index) =>
+      point.x === manual[index].x || point.y === manual[index].y
     )).toBe(true);
-    expect(restored.at(-2)).toEqual({ x: -16, y: 72 });
+  });
+
+  test("waits for both endpoint frames without inventing transient geometry", async () => {
+    const layout = await layoutBlockDesign(connectedDesign(), {
+      expandedLevelIds: new Set(),
+      placementMode: "authored",
+    });
+    const edge = layout.edges[0];
+    const sourceOnly = layout.nodes.filter((node) => node.id === edge.source);
+    expect(projectConnectionRoutes(sourceOnly, [edge]).has(edge.id)).toBe(false);
+  });
+
+  test("preserves route identity when a projection produces the same geometry", async () => {
+    const layout = await layoutBlockDesign(connectedDesign(), {
+      expandedLevelIds: new Set(),
+      placementMode: "authored",
+    });
+    const first = projectConnectionRoutes(layout.nodes, layout.edges);
+    const second = projectConnectionRoutes(layout.nodes, layout.edges, first);
+    expect(second.get(layout.edges[0].id)).toBe(first.get(layout.edges[0].id));
   });
 });

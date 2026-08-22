@@ -2,6 +2,14 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron, expect, test } from "@playwright/test";
+import type { Locator } from "@playwright/test";
+
+async function selectFlowNode(
+  node: Locator,
+  modifiers: Array<"Control" | "Meta" | "Shift"> = [],
+): Promise<void> {
+  await node.locator(".bd-block-identity").click({ force: true, modifiers });
+}
 
 async function canvasZoom(window: import("@playwright/test").Page): Promise<number> {
   return window.locator(".react-flow__viewport").evaluate((viewport) => {
@@ -45,7 +53,7 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     await expect(window.locator(".react-flow__node")).toHaveCount(7, { timeout: 30_000 });
     await expect(window.locator(".react-flow__edge")).toHaveCount(10, { timeout: 30_000 });
     await expect(window.locator(".bd-canvas-busy")).toHaveCount(0);
-    await expect(window.locator(".bd-react-flow")).toHaveAttribute("data-committed-routing-status", "ready");
+    await expect(window.locator(".bd-react-flow")).toHaveAttribute("data-routing-mode", "direct");
     await expect.poll(() => canvasZoom(window)).toBeLessThan(1);
     const initialZoom = await canvasZoom(window);
 
@@ -79,7 +87,7 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     });
     expect(await window.evaluate(
       () => window.architectureBlockStudioDesktop!.getUpdateState(),
-    )).toEqual({ status: "unsupported", currentVersion: "0.4.1" });
+    )).toEqual({ status: "unsupported", currentVersion: "0.5.0" });
     await expect(window.locator(".bd-desktop-update")).toHaveCount(0);
     expect(await window.evaluate(
       () => window.architectureBlockStudioDesktop!.listRecentDesigns(),
@@ -117,34 +125,39 @@ test("launches the isolated Windows desktop shell and renders the full workbench
       animations: "disabled",
     });
     const commandPort = agentUi.locator('.bd-port[data-port-id="session-command"]');
-    const commandPortGrip = commandPort.getByRole("button", { name: "Move port session.command" });
-    const portBounds = await commandPortGrip.boundingBox();
+    const commandPortLabel = agentUi.getByRole("button", { name: "Move port session.command" });
+    await expect(agentUi.locator(".bd-port-move-grip")).toHaveCount(0);
+    const portBounds = await commandPortLabel.boundingBox();
     const agentBounds = await agentUi.boundingBox();
     expect(portBounds).not.toBeNull();
     expect(agentBounds).not.toBeNull();
-    expect(portBounds!.width).toBeGreaterThanOrEqual(20);
-    expect(portBounds!.height).toBeGreaterThanOrEqual(20);
+    const portCenter = {
+      x: portBounds!.x + portBounds!.width / 2,
+      y: portBounds!.y + portBounds!.height / 2,
+    };
+    expect(await window.evaluate(({ x, y }) => [-12, 12].every((delta) =>
+      Boolean(document.elementFromPoint(x, y + delta)?.closest(".bd-port-label")),
+    ), portCenter)).toBe(true);
     const routeGeometryBeforePortMove = await window.locator(".bd-interface-route").evaluateAll(
       (paths) => paths.map((path) => path.getAttribute("d")),
     );
-    await window.mouse.move(portBounds!.x + portBounds!.width / 2, portBounds!.y + portBounds!.height / 2);
+    await window.mouse.move(portCenter.x, portCenter.y);
     await window.screenshot({
-      path: resolve(screenshotDirectory, "windows-port-move-grip.png"),
+      path: resolve(screenshotDirectory, "windows-port-label-drag.png"),
       animations: "disabled",
     });
     await window.mouse.down();
     await window.mouse.move(agentBounds!.x + agentBounds!.width * 0.36, agentBounds!.y + 2, { steps: 12 });
     await expect(window.locator(".bd-react-flow")).toHaveAttribute("data-port-move-active", "true");
-    await expect(window.locator(".bd-react-flow")).toHaveAttribute("data-routing-frame-gesture", "port-drag");
     await window.mouse.up();
     await expect(commandPort).toHaveClass(/bd-port-top/);
-    await expect(window.locator(".bd-react-flow")).toHaveAttribute("data-committed-routing-status", "ready");
+    await expect(window.locator(".bd-react-flow")).toHaveAttribute("data-routing-mode", "direct");
     await expect.poll(async () => window.locator(".bd-interface-route").evaluateAll(
       (paths) => paths.map((path) => path.getAttribute("d")),
     )).not.toEqual(routeGeometryBeforePortMove);
     const rustCore = window.locator('.react-flow__node[data-id="system::rust-agent-core"]');
-    await agentUi.click({ force: true });
-    await rustCore.click({ force: true, modifiers: ["Control"] });
+    await selectFlowNode(agentUi);
+    await selectFlowNode(rustCore, ["Control"]);
     await window.keyboard.press("Control+Shift+H");
     await expect.poll(() => canvasZoom(window)).toBeGreaterThan(initialZoom);
     const viewportAfterPortMove = await settledCanvasTransform(window);
@@ -161,7 +174,7 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     await expect.poll(() => canvasTransform(window)).toBe(viewportAfterPortMove);
     await expect(window.locator(".bd-statusbar")).toContainText("Saved");
 
-    await agentUi.click({ force: true });
+    await selectFlowNode(agentUi);
     await agentUi.focus();
     await window.keyboard.press("F2");
     const titleEditor = agentUi.getByRole("textbox", { name: "Rename Agent UI" });
@@ -180,7 +193,7 @@ test("launches the isolated Windows desktop shell and renders the full workbench
     await expect(window.locator(".bd-statusbar")).toContainText("Saved");
     await expect.poll(() => canvasZoom(window)).toBeLessThan(1);
 
-    await agentUi.click({ force: true });
+    await selectFlowNode(agentUi);
     await window.keyboard.press("Control+C");
     await expect.poll(() => canvasZoom(window)).toBeLessThan(1);
     const project = window.locator('.react-flow__node[data-id="system::project"]');

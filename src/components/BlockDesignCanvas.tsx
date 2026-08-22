@@ -2,7 +2,6 @@ import {
   memo,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -14,8 +13,6 @@ import {
 import { flushSync } from "react-dom";
 import { Box, Hand, Map as MapIcon, Minus, Plus, Scan } from "lucide-react";
 import {
-  Background,
-  BackgroundVariant,
   ConnectionMode,
   ControlButton,
   Controls,
@@ -78,23 +75,8 @@ import {
 } from "../layout";
 import type { NodeResizeDirection, NodeResizeRect } from "../layout";
 import {
-  applyCommittedRoutingFrameMapPatch,
-  committedRoutingFrameKey,
-  computeCommittedRoutingFrame,
-  computeCommittedRoutingProjectionFrame,
-  createRoutingLayoutProjectionFromLayout,
-  LIVE_ROUTING_EXACT_LEG_LIMIT,
-  planRouteJumps,
-  reconcileRouteJumpReferences,
-  reconcileRoutingRouteReferences,
-  routingPolicyForScene,
-  solveLiveRoutingPreview,
-  type CommittedRoutingComputationMode,
-  type LiveRoutingPreview,
-  type RoutingLayoutProjection,
-  type RoutingPolicy,
-  type RoutingResult,
-  type RouteJump,
+  projectConnectionRoutes,
+  type RoutePoint,
 } from "../routing";
 import {
   diagramSelectionKey,
@@ -110,7 +92,6 @@ import {
   ConnectionGestureFeedbackPanel,
   ConnectionGesturePanel,
   ConnectionGesturePreview,
-  ConnectionGesturePreviewProvider,
   type ActiveConnectionGesture,
   type ConnectionGestureFeedback,
 } from "./ConnectionGestureLayer";
@@ -142,9 +123,7 @@ import {
   type ModuleDropTargetCandidate,
 } from "./moduleDropTarget";
 import { Tooltip } from "./Tooltip";
-import { useCommittedRoutingWorker } from "./useCommittedRoutingWorker";
 import { ViewportAutoPanProvider } from "./ViewportAutoPanContext";
-import { useLiveRoutingPreviewWorker } from "./useLiveRoutingPreviewWorker";
 import {
   CANVAS_VIEWPORT_AUTO_PAN_POLICY,
   createViewportAutoPanController,
@@ -168,7 +147,6 @@ const CANVAS_VIEWPORT_OBSTRUCTION_SELECTOR = [
   ".react-flow__controls",
   ".react-flow__minimap",
   ".bd-canvas-detail-panel",
-  ".bd-routing-diagnostic",
   ".bd-canvas-pan-mode",
 ].join(", ");
 const CANVAS_VIEWPORT_OBSTRUCTION_GAP_PX = 16;
@@ -176,51 +154,6 @@ const FIT_VIEW_OPTIONS = { padding: FIT_PADDING };
 const REACT_FLOW_OPTIONS = { hideAttribution: true };
 const VIEWPORT_CULL_NODE_COUNT = 500;
 const VIEWPORT_CULL_EDGE_COUNT = 1000;
-interface RoutingCanvasProjection {
-  frameKey: string;
-  routeRevision: number;
-  layout: LayoutResult;
-  layoutProjection: RoutingLayoutProjection;
-  policy: RoutingPolicy;
-  result: RoutingResult;
-  mode: CommittedRoutingComputationMode;
-  affectedLegIds: readonly string[];
-  neighborhoodLegIds: readonly string[];
-  durationMs: number;
-  routeJumps: ReadonlyMap<string, readonly RouteJump[]>;
-  transportedRouteCount: number;
-  transportedRouteJumpCount: number;
-}
-
-type DirectManipulationKind = "node-drag" | "node-resize" | "selection-resize" | "port-drag";
-
-interface DirectManipulationPreview {
-  kind: DirectManipulationKind;
-  phase: "active" | "settling";
-}
-
-const EMPTY_LAYOUT: LayoutResult = { nodes: [], edges: [] };
-const EMPTY_ROUTING_COMPUTATION = computeCommittedRoutingFrame(EMPTY_LAYOUT);
-const EMPTY_ROUTING_PROJECTION: RoutingCanvasProjection = {
-  frameKey: "empty:0",
-  routeRevision: 0,
-  layout: EMPTY_LAYOUT,
-  durationMs: 0,
-  routeJumps: planRouteJumps(EMPTY_ROUTING_COMPUTATION.result.routes),
-  transportedRouteCount: 0,
-  transportedRouteJumpCount: 0,
-  ...EMPTY_ROUTING_COMPUTATION,
-};
-
-function routingNodeGeometrySignature(nodes: readonly LayoutFlowNode[]): string {
-  return nodes.map((node) => {
-    const size = layoutNodeRenderDimensions(node);
-    const ports = node.data.block.ports
-      .map((port) => `${port.id},${port.side},${port.offset}`)
-      .join(";");
-    return `${node.id}:${node.parentId ?? "root"}:${node.position.x},${node.position.y},${size.width},${size.height}:${ports}`;
-  }).join("|");
-}
 const ALIGNMENT_TOLERANCE_PX = 6;
 const ALIGNMENT_VIEWPORT_MARGIN_PX = 80;
 const EDGE_POINTER_TOLERANCE_PX = 14;
@@ -242,10 +175,6 @@ const toneColors: Record<string, string> = {
   plugin: "#7457a6",
   neutral: "#65716a",
 };
-
-const CANVAS_BACKGROUND = (
-  <Background variant={BackgroundVariant.Dots} gap={DESIGN_GRID_SIZE.x} size={1} color="var(--canvas-grid)" />
-);
 
 function CanvasViewportControls({
   onZoomIn,
@@ -357,7 +286,6 @@ interface CanvasInnerProps {
   fitSelectionRequest: number;
   viewportActionRequest: CanvasViewportActionRequest;
   revealSelectionRequest: number;
-  routeRevision: number;
   onSelect: (selection: SelectionRef) => boolean;
   onPreviewAddModuleAt: (levelId: string, point: ModuleDropPoint) => ModuleDropRect | undefined;
   onRequestAddModuleAt: (levelId: string, point: { x: number; y: number }) => boolean;
@@ -611,9 +539,9 @@ function flowElementIsComfortablyVisible(element: Element, root: HTMLElement): b
 }
 
 function focusRestorationWasSuperseded(previousElement: Element | undefined): boolean {
-  return Boolean(
-    previousElement?.isConnected && document.activeElement !== previousElement,
-  );
+  if (!previousElement) return false;
+  const active = document.activeElement;
+  return active !== previousElement && active !== document.body && active !== document.documentElement;
 }
 
 export interface BlockDesignCanvasProps extends Omit<CanvasInnerProps, "rootLevelId" | "rootLevelTitle"> {
@@ -631,7 +559,6 @@ const CanvasInner = memo(function CanvasInner({
   fitSelectionRequest,
   viewportActionRequest,
   revealSelectionRequest,
-  routeRevision,
   onSelect,
   onPreviewAddModuleAt,
   onRequestAddModuleAt,
@@ -755,128 +682,7 @@ const CanvasInner = memo(function CanvasInner({
     placement: PortPlacement,
   ) => boolean>(() => false);
   const cancelPortMoveCallbackRef = useRef<() => void>(() => undefined);
-  const [directManipulationPreview, setDirectManipulationPreview] = useState<DirectManipulationPreview>();
-  const beginDirectManipulation = useCallback((kind: DirectManipulationKind) => {
-    setDirectManipulationPreview({ kind, phase: "active" });
-  }, []);
-  const finishDirectManipulation = useCallback((accepted: boolean) => {
-    setDirectManipulationPreview((current) => accepted && current
-      ? { ...current, phase: "settling" }
-      : undefined);
-  }, []);
-  const desiredCommittedFrameKey = useMemo(
-    () => committedRoutingFrameKey(requestedLayout, routeRevision),
-    [requestedLayout, routeRevision],
-  );
-  const requestedRoutingProjection = useMemo(
-    () => createRoutingLayoutProjectionFromLayout(requestedLayout.nodes, requestedLayout.edges),
-    [requestedLayout],
-  );
-  const [acceptedCommittedFrame, setAcceptedCommittedFrame] = useState<RoutingCanvasProjection>();
-  const synchronousCommittedFrame = useMemo<RoutingCanvasProjection | undefined>(() => {
-    if (requestedLayout.edges.length > LIVE_ROUTING_EXACT_LEG_LIMIT ||
-      acceptedCommittedFrame?.frameKey === desiredCommittedFrameKey) return undefined;
-    const startedAt = performance.now();
-    const forceFull = Boolean(
-      acceptedCommittedFrame && acceptedCommittedFrame.routeRevision !== routeRevision,
-    );
-    const computation = computeCommittedRoutingProjectionFrame(
-      requestedRoutingProjection,
-      acceptedCommittedFrame ? {
-        scene: acceptedCommittedFrame.layoutProjection.scene,
-        policy: acceptedCommittedFrame.policy,
-        result: acceptedCommittedFrame.result,
-      } : undefined,
-      forceFull,
-    );
-    return {
-      frameKey: desiredCommittedFrameKey,
-      routeRevision,
-      layout: requestedLayout,
-      durationMs: performance.now() - startedAt,
-      routeJumps: planRouteJumps(computation.result.routes),
-      transportedRouteCount: computation.result.routes.size,
-      transportedRouteJumpCount: computation.result.routes.size,
-      ...computation,
-    };
-  }, [
-    acceptedCommittedFrame,
-    desiredCommittedFrameKey,
-    requestedLayout,
-    requestedRoutingProjection,
-    routeRevision,
-  ]);
-  const committedRoutingWorkerInput = useMemo(() => {
-    if (requestedLayout.edges.length <= LIVE_ROUTING_EXACT_LEG_LIMIT ||
-      acceptedCommittedFrame?.frameKey === desiredCommittedFrameKey) return undefined;
-    const previousFrameKey = acceptedCommittedFrame?.frameKey;
-    return {
-      frameKey: desiredCommittedFrameKey,
-      scene: requestedRoutingProjection.scene,
-      previousFrameKey,
-      forceFull: !previousFrameKey ||
-        acceptedCommittedFrame?.routeRevision !== routeRevision ||
-        (acceptedCommittedFrame.layout.edges.length === 0 && requestedLayout.edges.length > 0),
-    };
-  }, [
-    acceptedCommittedFrame,
-    desiredCommittedFrameKey,
-    requestedLayout,
-    requestedRoutingProjection,
-    routeRevision,
-  ]);
-  const committedRoutingWorker = useCommittedRoutingWorker(committedRoutingWorkerInput);
-  const newlyReadyCommittedFrame = useMemo<RoutingCanvasProjection | undefined>(() => {
-    if (acceptedCommittedFrame?.frameKey === desiredCommittedFrameKey) return undefined;
-    if (synchronousCommittedFrame) return synchronousCommittedFrame;
-    const response = committedRoutingWorker.response;
-    if (!response || response.frameKey !== desiredCommittedFrameKey) return undefined;
-    const routes = applyCommittedRoutingFrameMapPatch(
-      response.routePatch,
-      acceptedCommittedFrame?.frameKey,
-      acceptedCommittedFrame?.result.routes,
-    );
-    const routeJumps = applyCommittedRoutingFrameMapPatch(
-      response.routeJumpPatch,
-      acceptedCommittedFrame?.frameKey,
-      acceptedCommittedFrame?.routeJumps,
-    );
-    if (!routes || !routeJumps) return undefined;
-    return {
-      frameKey: response.frameKey,
-      routeRevision,
-      layout: requestedLayout,
-      layoutProjection: requestedRoutingProjection,
-      policy: response.policy,
-      result: { ...response.result, routes },
-      routeJumps,
-      mode: response.mode,
-      affectedLegIds: response.affectedLegIds,
-      neighborhoodLegIds: response.neighborhoodLegIds,
-      durationMs: response.durationMs,
-      transportedRouteCount: response.routePatch.upserted.size,
-      transportedRouteJumpCount: response.routeJumpPatch.upserted.size,
-    };
-  }, [
-    acceptedCommittedFrame,
-    committedRoutingWorker.response,
-    desiredCommittedFrameKey,
-    requestedLayout,
-    requestedRoutingProjection,
-    routeRevision,
-    synchronousCommittedFrame,
-  ]);
-  useLayoutEffect(() => {
-    if (!newlyReadyCommittedFrame) return;
-    setAcceptedCommittedFrame(newlyReadyCommittedFrame);
-  }, [newlyReadyCommittedFrame]);
-  const acceptedOrEmptyCommittedFrame = newlyReadyCommittedFrame ?? acceptedCommittedFrame ?? EMPTY_ROUTING_PROJECTION;
-  const layout = acceptedOrEmptyCommittedFrame.layout;
-  const committedRoutingStatus = acceptedOrEmptyCommittedFrame.frameKey === desiredCommittedFrameKey
-    ? "ready"
-    : committedRoutingWorker.status === "failed"
-      ? "failed"
-      : "pending";
+  const layout = requestedLayout;
   const connectionGestureRef = useRef<ActiveConnectionGesture | undefined>(connectionGesture);
   const pendingReconnectGestureRef = useRef(false);
   const connectionGestureCommitRef = useRef<ConnectionGestureCommitResult | undefined>(undefined);
@@ -1241,7 +1047,6 @@ const CanvasInner = memo(function CanvasInner({
           beginPortMove: (portId: string) => {
             if (boxSelectionGestureRef.current || selectionRef.current.kind === "multiple") return false;
             portMovePreviewRef.current = { flowNodeId: node.id, portId };
-            beginDirectManipulation("port-drag");
             const root = store.getState().domNode;
             if (root) {
               root.dataset.portMoveActive = "true";
@@ -1261,7 +1066,6 @@ const CanvasInner = memo(function CanvasInner({
           cancelPortMove: () => cancelPortMoveCallbackRef.current(),
           beginResize: node.data.positionEditable && !node.data.expanded
               ? () => {
-                beginDirectManipulation("node-resize");
                 beginAlignmentGestureCallbackRef.current(node.id);
               }
             : undefined,
@@ -1283,7 +1087,6 @@ const CanvasInner = memo(function CanvasInner({
                   },
                   snapped.size,
                 );
-                finishDirectManipulation(accepted);
                 if (!accepted) setResizeRestoreRevision((revision) => revision + 1);
                 return accepted;
               }
@@ -1298,9 +1101,9 @@ const CanvasInner = memo(function CanvasInner({
       });
       return projectedNode;
     });
-    if (projectedNodeChangeCountRef.current.frameKey !== acceptedOrEmptyCommittedFrame.frameKey || changedCount > 0) {
+    if (changedCount > 0) {
       projectedNodeChangeCountRef.current = {
-        frameKey: acceptedOrEmptyCommittedFrame.frameKey,
+        frameKey: "direct",
         count: changedCount,
       };
     }
@@ -1312,9 +1115,6 @@ const CanvasInner = memo(function CanvasInner({
     previousBaseNodesRef.current = stable;
     return stable;
   }, [
-    acceptedOrEmptyCommittedFrame.frameKey,
-    beginDirectManipulation,
-    finishDirectManipulation,
     layout.nodes,
     resizeRestoreRevision,
     titleEditRequest,
@@ -1378,7 +1178,6 @@ const CanvasInner = memo(function CanvasInner({
       delete root.dataset.portMoveActive;
       delete root.dataset.portMovePortId;
     }
-    finishDirectManipulation(accepted);
     if (!accepted) {
       setNodes((current) => current.map((node) => {
         const baseline = baseNodeById.get(node.id);
@@ -1390,130 +1189,25 @@ const CanvasInner = memo(function CanvasInner({
   };
   cancelPortMoveCallbackRef.current = () => {
     restorePortMovePreview();
-    finishDirectManipulation(false);
   };
   const displayNodes = useMemo(
     () => projectCompoundNodeGrowth(nodes, baseNodes),
     [baseNodes, nodes],
   );
-  const committedGeometrySignature = routingNodeGeometrySignature(baseNodes);
-  const liveGeometrySignature = routingNodeGeometrySignature(displayNodes);
-  const routingProjection = useMemo(() => {
-    if (!directManipulationPreview || liveGeometrySignature === committedGeometrySignature) {
-      return acceptedOrEmptyCommittedFrame.layoutProjection;
-    }
-    return createRoutingLayoutProjectionFromLayout(displayNodes, layout.edges);
-  }, [
-    acceptedOrEmptyCommittedFrame,
-    committedGeometrySignature,
-    directManipulationPreview,
-    displayNodes,
-    layout.edges,
-    liveGeometrySignature,
-  ]);
-  const routingPolicy = useMemo(
-    () => routingProjection === acceptedOrEmptyCommittedFrame.layoutProjection
-      ? acceptedOrEmptyCommittedFrame.policy
-      : routingPolicyForScene(routingProjection.scene),
-    [acceptedOrEmptyCommittedFrame, routingProjection],
-  );
-  const liveRoutingWorkerInput = useMemo(() => {
-    if (routingProjection === acceptedOrEmptyCommittedFrame.layoutProjection ||
-      routingProjection.scene.legs.length <= LIVE_ROUTING_EXACT_LEG_LIMIT) return undefined;
-    return {
-      geometrySignature: `${acceptedOrEmptyCommittedFrame.frameKey}->${liveGeometrySignature}`,
-      committedScene: acceptedOrEmptyCommittedFrame.layoutProjection.scene,
-      liveScene: routingProjection.scene,
-      committedResult: acceptedOrEmptyCommittedFrame.result,
-      policy: routingPolicy,
-    };
-  }, [
-    acceptedOrEmptyCommittedFrame,
-    liveGeometrySignature,
-    routingPolicy,
-    routingProjection,
-  ]);
-  const liveRoutingWorker = useLiveRoutingPreviewWorker(liveRoutingWorkerInput);
-  const routingFrame = useMemo<LiveRoutingPreview>(() => {
-    if (routingProjection === acceptedOrEmptyCommittedFrame.layoutProjection) {
-      return {
-        mode: "retained",
-        status: acceptedOrEmptyCommittedFrame.result.status,
-        routes: acceptedOrEmptyCommittedFrame.result.routes,
-        affectedLegIds: [],
-        neighborhoodLegIds: [],
-      };
-    }
-    if (routingProjection.scene.legs.length <= LIVE_ROUTING_EXACT_LEG_LIMIT) {
-      return solveLiveRoutingPreview(
-        acceptedOrEmptyCommittedFrame.layoutProjection.scene,
-        routingProjection.scene,
-        acceptedOrEmptyCommittedFrame.result,
-        routingPolicy,
-      );
-    }
-    const response = liveRoutingWorker.response;
-    if (response && response.geometrySignature === liveRoutingWorkerInput?.geometrySignature) {
-      return {
-        ...response.preview,
-        routes: reconcileRoutingRouteReferences(
-          acceptedOrEmptyCommittedFrame.result.routes,
-          response.preview.routes,
-        ),
-      };
-    }
-    return {
-      mode: "retained",
-      status: acceptedOrEmptyCommittedFrame.result.status,
-      routes: acceptedOrEmptyCommittedFrame.result.routes,
-      affectedLegIds: [],
-      neighborhoodLegIds: [],
-    };
-  }, [
-    acceptedOrEmptyCommittedFrame,
-    liveRoutingWorker.response,
-    liveRoutingWorkerInput,
-    routingPolicy,
-    routingProjection,
-  ]);
-  const routingResult = acceptedOrEmptyCommittedFrame.result;
-  const unresolvedDetail = routingResult.certificate.objective.unrouted > 0
-    ? `${routingResult.certificate.objective.unrouted} connection${routingResult.certificate.objective.unrouted === 1 ? "" : "s"} could not be routed.`
-    : routingResult.certificate.objective.capacityViolations > 0
-      ? `${routingResult.certificate.objective.capacityViolations} route spacing conflict${routingResult.certificate.objective.capacityViolations === 1 ? "" : "s"} remain.`
-      : `${routingResult.diagnostics.length} route verification issue${routingResult.diagnostics.length === 1 ? "" : "s"} remain.`;
-  const routingFailure = routingResult.status === "Optimal" || routingResult.status === "Feasible"
-    ? undefined
-    : {
-        title: `Routing ${routingResult.status}`,
-        detail: routingResult.status === "InvalidInput"
-          ? `${routingResult.diagnostics.length} locked or scene geometry issue${routingResult.diagnostics.length === 1 ? "" : "s"}; manual geometry was preserved.`
-          : `${unresolvedDetail} Move modules apart or add manual waypoints.`,
-      };
-  const routeJumps = useMemo(() => {
-    if (routingProjection === acceptedOrEmptyCommittedFrame.layoutProjection) {
-      return acceptedOrEmptyCommittedFrame.routeJumps;
-    }
-    const response = liveRoutingWorker.response;
-    if (response && response.geometrySignature === liveRoutingWorkerInput?.geometrySignature) {
-      return reconcileRouteJumpReferences(
-        acceptedOrEmptyCommittedFrame.routeJumps,
-        response.routeJumps,
-      );
-    }
-    return planRouteJumps(routingFrame.routes);
-  }, [
-    acceptedOrEmptyCommittedFrame,
-    liveRoutingWorker.response,
-    liveRoutingWorkerInput,
-    routingFrame.routes,
-    routingProjection,
-  ]);
+  const connectionRouteProjectionRef = useRef<ReadonlyMap<string, readonly RoutePoint[]>>(new Map());
+  const connectionRoutes = useMemo(() => {
+    const projected = projectConnectionRoutes(
+      displayNodes,
+      layout.edges,
+      connectionRouteProjectionRef.current,
+    );
+    connectionRouteProjectionRef.current = projected;
+    return projected;
+  }, [displayNodes, layout.edges]);
   const simplifiedEdgeInteraction = layout.nodes.length >= 120 || layout.edges.length >= 240;
   const baseEdgeProjectionCacheRef = useRef(new Map<string, {
     source: LayoutResult["edges"][number];
-    plannedRoute: RoutingResult["routes"] extends ReadonlyMap<string, infer T> ? T | undefined : never;
-    routeJumps: readonly RouteJump[] | undefined;
+    plannedRoute: readonly RoutePoint[] | undefined;
     simplifiedInteraction: boolean;
     edge: CanvasFlowEdge;
   }>());
@@ -1525,11 +1219,9 @@ const CanvasInner = memo(function CanvasInner({
     const projected = layout.edges.map<CanvasFlowEdge>((edge) => {
         const data = edge.data;
         if (!data) throw new Error(`Layout edge ${edge.id} is missing interface data.`);
-        const plannedRoute = routingFrame.routes.get(edge.id);
-        const edgeRouteJumps = routeJumps.get(edge.id);
+        const plannedRoute = connectionRoutes.get(edge.id);
         const cached = baseEdgeProjectionCacheRef.current.get(edge.id);
         if (cached?.source === edge && cached.plannedRoute === plannedRoute &&
-          cached.routeJumps === edgeRouteJumps &&
           cached.simplifiedInteraction === simplifiedEdgeInteraction) {
           nextCache.set(edge.id, cached);
           return cached.edge;
@@ -1547,8 +1239,7 @@ const CanvasInner = memo(function CanvasInner({
           data: {
             ...data,
             canEditSelection: () => selectionRef.current.kind !== "multiple",
-            plannedRoute: plannedRoute?.points,
-            routeJumps: edgeRouteJumps,
+            plannedRoute,
             simplifiedInteraction: simplifiedEdgeInteraction,
             updateRouting: data.boundaryContinuation
               ? undefined
@@ -1561,15 +1252,14 @@ const CanvasInner = memo(function CanvasInner({
         nextCache.set(edge.id, {
           source: edge,
           plannedRoute,
-          routeJumps: edgeRouteJumps,
           simplifiedInteraction: simplifiedEdgeInteraction,
           edge: projectedEdge,
         });
         return projectedEdge;
       });
-    if (projectedEdgeChangeCountRef.current.frameKey !== acceptedOrEmptyCommittedFrame.frameKey || changedCount > 0) {
+    if (changedCount > 0) {
       projectedEdgeChangeCountRef.current = {
-        frameKey: acceptedOrEmptyCommittedFrame.frameKey,
+        frameKey: "direct",
         count: changedCount,
       };
     }
@@ -1581,10 +1271,8 @@ const CanvasInner = memo(function CanvasInner({
     previousBaseEdgesRef.current = stable;
     return stable;
   }, [
-    acceptedOrEmptyCommittedFrame.frameKey,
+    connectionRoutes,
     layout.edges,
-    routeJumps,
-    routingFrame.routes,
     simplifiedEdgeInteraction,
   ]);
   const onCanvasNodesChange = useCallback((changes: NodeChange<CanvasFlowNode>[]) => {
@@ -1874,14 +1562,13 @@ const CanvasInner = memo(function CanvasInner({
       }] : [];
     });
     const accepted = commit && resizes.length === gesture.context.items.length && onResizeNodes(resizes);
-    finishDirectManipulation(Boolean(accepted));
     if (accepted) {
       setCanvasAnnouncement(`Resized ${resizes.length} selected modules.`);
       return;
     }
     setNodes(reconcileCanvasSelection(baseNodes, selectedNodeIdsRef.current));
     if (commit) setResizeRestoreRevision((revision) => revision + 1);
-  }, [baseNodes, finishDirectManipulation, onResizeNodes, setNodes, store]);
+  }, [baseNodes, onResizeNodes, setNodes, store]);
 
   const onSelectionResizePointerDown = useCallback((
     event: ReactPointerEvent<HTMLButtonElement>,
@@ -1911,13 +1598,12 @@ const CanvasInner = memo(function CanvasInner({
     };
     selectionResizeGestureRef.current?.autoPan?.stop();
     selectionResizeGestureRef.current = gesture;
-    beginDirectManipulation("selection-resize");
     applySelectionResizePreview(gesture.context, preview);
     gesture.autoPan = viewportAutoPan.start(
       { clientX: event.clientX, clientY: event.clientY },
       (pointer) => updateSelectionResizePointerRef.current?.(pointer),
     );
-  }, [applySelectionResizePreview, beginDirectManipulation, screenToFlowPosition, selectionResizeContext, store, viewportAutoPan]);
+  }, [applySelectionResizePreview, screenToFlowPosition, selectionResizeContext, store, viewportAutoPan]);
 
   useEffect(() => {
     const onPointerMove = (event: PointerEvent) => {
@@ -2100,12 +1786,6 @@ const CanvasInner = memo(function CanvasInner({
   }, [baseNodes, setNodes]);
 
   useEffect(() => {
-    if (directManipulationPreview?.phase !== "settling" ||
-      liveGeometrySignature !== committedGeometrySignature) return;
-    setDirectManipulationPreview(undefined);
-  }, [committedGeometrySignature, directManipulationPreview, liveGeometrySignature]);
-
-  useEffect(() => {
     setEdges(reconcileCanvasSelection(routedEdges, selectedEdgeIdsRef.current));
   }, [routedEdges]);
 
@@ -2273,11 +1953,11 @@ const CanvasInner = memo(function CanvasInner({
         }
       }
       attempts += 1;
-      if (attempts < 12) frame = window.requestAnimationFrame(restoreFocus);
+      if (attempts < 36) frame = window.requestAnimationFrame(restoreFocus);
     };
     frame = window.requestAnimationFrame(restoreFocus);
     return () => window.cancelAnimationFrame(frame);
-  }, [edges, routeHandleFocusRequest, store]);
+  }, [routeHandleFocusRequest, store]);
 
   useEffect(() => {
     if (fitRequest <= handledFitRequest.current || baseNodes.length === 0) return;
@@ -2316,7 +1996,7 @@ const CanvasInner = memo(function CanvasInner({
       }];
     });
     const paths = selectedEdges.flatMap((edge) => {
-      const route = routingResult.routes.get(edge.id)?.points;
+      const route = connectionRoutes.get(edge.id);
       return route ? [route] : [];
     });
     const bounds = canvasGeometryBounds(rectangles, paths);
@@ -2337,7 +2017,7 @@ const CanvasInner = memo(function CanvasInner({
     navigationInterpolation,
     nodes,
     routedEdges,
-    routingResult.routes,
+    connectionRoutes,
     runViewportNavigation,
     selectedDiagramItems.length,
     store,
@@ -2394,16 +2074,13 @@ const CanvasInner = memo(function CanvasInner({
       return element ? flowElementIsComfortablyVisible(element, root!) : false;
     });
     if (alreadyVisible) return;
-    const timer = window.setTimeout(() => {
-      navigateViewport({
-        nodes: [...targetNodeIds].map((id) => ({ id })),
-        padding: 0.55,
-        maxZoom: 1.05,
-        duration: navigationDuration,
-        interpolate: navigationInterpolation,
-      });
-    }, 60);
-    return () => window.clearTimeout(timer);
+    navigateViewport({
+      nodes: [...targetNodeIds].map((id) => ({ id })),
+      padding: 0.55,
+      maxZoom: 1.05,
+      duration: navigationDuration,
+      interpolate: navigationInterpolation,
+    });
   }, [
     baseNodes,
     flowEdgeIdsBySelection,
@@ -3305,7 +2982,6 @@ const CanvasInner = memo(function CanvasInner({
     });
   }, []);
   const onNodeDragStart = useCallback<OnNodeDrag<CanvasFlowNode>>((event, node, draggedNodes) => {
-    beginDirectManipulation("node-drag");
     beginAlignmentGesture(node.id, new Set([node.id, ...draggedNodes.map((candidate) => candidate.id)]));
     nodeDragModifiersRef.current = {
       altKey: event.altKey,
@@ -3318,7 +2994,7 @@ const CanvasInner = memo(function CanvasInner({
       { clientX: event.clientX, clientY: event.clientY },
       replayNodeDragPointer,
     );
-  }, [beginAlignmentGesture, beginDirectManipulation, replayNodeDragPointer, viewportAutoPan]);
+  }, [beginAlignmentGesture, replayNodeDragPointer, viewportAutoPan]);
   const onNodeDrag = useCallback<OnNodeDrag<CanvasFlowNode>>((event, node, draggedNodes) => {
     nodeDragModifiersRef.current = {
       altKey: event.altKey,
@@ -3355,7 +3031,6 @@ const CanvasInner = memo(function CanvasInner({
     if (!original) {
       alignmentGestureRef.current = undefined;
       setAlignmentGuides([]);
-      finishDirectManipulation(false);
       return;
     }
     const snapped = snapMovingNode(node, event.altKey);
@@ -3388,18 +3063,16 @@ const CanvasInner = memo(function CanvasInner({
     if ((event.ctrlKey || event.metaKey) && moves.size > 0) {
       const cloned = onCloneNodes([...moves.values()]);
       restoreSourceNodes();
-      finishDirectManipulation(cloned);
       if (cloned) setCanvasAnnouncement(moves.size > 1 ? `Cloned ${moves.size} modules.` : `Cloned ${node.data.block.title}.`);
       return;
     }
     const accepted = moves.size > 0 && onMoveNodes([...moves.values()]);
-    finishDirectManipulation(Boolean(accepted));
     if (accepted) {
       setCanvasAnnouncement(moves.size > 1 ? `Moved ${moves.size} modules.` : `Moved ${node.data.block.title}.`);
       return;
     }
     restoreSourceNodes();
-  }, [baseNodes, finishDirectManipulation, onCloneNodes, onMoveNodes, setNodes, snapMovingNode]);
+  }, [baseNodes, onCloneNodes, onMoveNodes, setNodes, snapMovingNode]);
   const onConnect = useCallback((connection: Connection) => {
     if (connectionGestureCancelledRef.current) return;
     const normalized = normalizedConnection(connection);
@@ -3455,12 +3128,7 @@ const CanvasInner = memo(function CanvasInner({
   return (
     <>
       <ViewportAutoPanProvider controller={viewportAutoPan}>
-        <ConnectionGesturePreviewProvider
-          environment={routingProjection.previewEnvironment}
-          policy={routingPolicy}
-          gesture={connectionGesture}
-        >
-          <ReactFlow<CanvasFlowNode, CanvasFlowEdge>
+        <ReactFlow<CanvasFlowNode, CanvasFlowEdge>
           nodes={displayNodes}
           edges={edges}
           nodeTypes={nodeTypes}
@@ -3520,25 +3188,11 @@ const CanvasInner = memo(function CanvasInner({
           className="bd-react-flow"
           data-auto-pan-edge-threshold={CANVAS_VIEWPORT_AUTO_PAN_POLICY.edgeThresholdPx}
           data-auto-pan-maximum-frame-distance={CANVAS_VIEWPORT_AUTO_PAN_POLICY.maximumFrameDistancePx}
-          data-routing-frame-mode={directManipulationPreview ? routingFrame.mode : "committed"}
-          data-routing-frame-gesture={directManipulationPreview?.kind ?? "none"}
-          data-routing-frame-phase={directManipulationPreview?.phase ?? "idle"}
-          data-routing-frame-affected={routingFrame.affectedLegIds.length}
-          data-routing-frame-neighborhood={routingFrame.neighborhoodLegIds.length}
-          data-routing-frame-worker={liveRoutingWorkerInput ? liveRoutingWorker.status : "inline"}
-          data-routing-frame-duration-ms={liveRoutingWorker.response?.durationMs.toFixed(2) ?? "0"}
-          data-routing-status={routingFrame.status}
-          data-committed-routing-status={committedRoutingStatus}
-          data-committed-routing-mode={acceptedOrEmptyCommittedFrame.mode}
-          data-committed-routing-affected={acceptedOrEmptyCommittedFrame.affectedLegIds.length}
-          data-committed-routing-neighborhood={acceptedOrEmptyCommittedFrame.neighborhoodLegIds.length}
-          data-committed-routing-duration-ms={acceptedOrEmptyCommittedFrame.durationMs.toFixed(2)}
-          data-committed-routing-route-upserts={acceptedOrEmptyCommittedFrame.transportedRouteCount}
-          data-committed-routing-jump-upserts={acceptedOrEmptyCommittedFrame.transportedRouteJumpCount}
+          data-routing-mode="direct"
+          data-routing-route-count={connectionRoutes.size}
           data-projected-node-changes={projectedNodeChangeCountRef.current.count}
           data-projected-edge-changes={projectedEdgeChangeCountRef.current.count}
           >
-          {CANVAS_BACKGROUND}
           {spacePanActive ? (
             <Panel className="bd-canvas-pan-mode nokey" position="top-right" aria-live="polite">
               <Hand size={13} aria-hidden="true" />
@@ -3567,21 +3221,6 @@ const CanvasInner = memo(function CanvasInner({
             </ViewportPortal>
           ) : null}
           <AlignmentGuideLayer guides={alignmentGuides} />
-          {committedRoutingStatus === "failed" ? (
-            <div className="bd-routing-diagnostic nokey" role="alert">
-              <strong>Routing worker failed</strong>
-              <span>The last verified frame is preserved. Reload the design to retry this projection.</span>
-            </div>
-          ) : routingFailure ? (
-            <div
-              className="bd-routing-diagnostic nokey"
-              role="status"
-              title={routingResult.diagnostics.map((diagnostic) => diagnostic.message).join("\n")}
-            >
-              <strong>{routingFailure.title}</strong>
-              <span>{routingFailure.detail}</span>
-            </div>
-          ) : null}
           <CanvasViewportControls
             onZoomIn={zoomInViewport}
             onZoomOut={zoomOutViewport}
@@ -3633,12 +3272,8 @@ const CanvasInner = memo(function CanvasInner({
               </div>
             </>
           ) : null}
-          </ReactFlow>
-        </ConnectionGesturePreviewProvider>
+        </ReactFlow>
       </ViewportAutoPanProvider>
-      {committedRoutingStatus === "pending" ? (
-        <div className="bd-canvas-busy" role="status">Finalizing verified routes...</div>
-      ) : null}
       <div className="bd-visually-hidden bd-canvas-announcement" role="status" aria-live="polite" aria-atomic="true">
         {canvasAnnouncement}
       </div>
@@ -3661,7 +3296,6 @@ export function BlockDesignCanvas(props: BlockDesignCanvasProps) {
         fitSelectionRequest={props.fitSelectionRequest}
         viewportActionRequest={props.viewportActionRequest}
         revealSelectionRequest={props.revealSelectionRequest}
-        routeRevision={props.routeRevision}
         onSelect={props.onSelect}
         onPreviewAddModuleAt={props.onPreviewAddModuleAt}
         onRequestAddModuleAt={props.onRequestAddModuleAt}

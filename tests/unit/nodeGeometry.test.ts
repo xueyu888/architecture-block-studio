@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   BLOCK_NODE_GEOMETRY,
+  balancedPortClearance,
   baseNodeDimensions,
+  horizontalPortRailDepth,
   minimumNodeDimensions,
   portAnchorOffset,
   portLabelWidth,
@@ -42,7 +44,7 @@ describe("block node geometry", () => {
     });
   });
 
-  it("derives one safe horizontal rail from port labels and clamps undersized authored geometry", () => {
+  it("uses fixed chip-pin slots across the edge and reserves label depth inward", () => {
     const node = createBlock({ id: "module", title: "Module" });
     node.layout.width = 120;
     node.layout.height = 80;
@@ -62,15 +64,20 @@ describe("block node geometry", () => {
 
     const ports = portsForSide(node.ports, "top");
     const dimensions = baseNodeDimensions(node);
-    const widths = ports.map((port) => portLabelWidth(port.label));
     const centers = ports.map((_, index) => dimensions.width * portRailOffset(ports, index) / 100);
+    const slotRadius = BLOCK_NODE_GEOMETRY.horizontalPortSlotWidth / 2;
 
-    expect(dimensions).toEqual({ width: 536, height: 114 });
-    expect(centers[0] - widths[0] / 2).toBeGreaterThanOrEqual(BLOCK_NODE_GEOMETRY.horizontalRailPadding);
+    expect(dimensions).toEqual({ width: 180, height: 358 });
+    expect(horizontalPortRailDepth(ports)).toBe(134);
+    expect(balancedPortClearance(node.ports)).toEqual({
+      horizontalRailDepth: 134,
+      verticalLabelWidth: 0,
+    });
+    expect(centers[0] - slotRadius).toBeGreaterThanOrEqual(BLOCK_NODE_GEOMETRY.horizontalRailPadding);
     expect(centers[1] - centers[0]).toBeGreaterThanOrEqual(
-      (widths[0] + widths[1]) / 2 + BLOCK_NODE_GEOMETRY.horizontalPortGap,
+      BLOCK_NODE_GEOMETRY.horizontalPortSlotWidth + BLOCK_NODE_GEOMETRY.horizontalPortGap,
     );
-    expect(dimensions.width - (centers[2] + widths[2] / 2))
+    expect(dimensions.width - (centers[2] + slotRadius))
       .toBeGreaterThanOrEqual(BLOCK_NODE_GEOMETRY.horizontalRailPadding);
   });
 

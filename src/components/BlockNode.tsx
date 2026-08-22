@@ -1,8 +1,9 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
-import { Box, GripHorizontal, GripVertical, Minus, Pin, Plus } from "lucide-react";
+import { Box, Minus, Pin, Plus } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   BLOCK_NODE_GEOMETRY,
+  balancedPortClearance,
   bindingPortId,
   innerPortId,
   minimumNodeDimensions,
@@ -85,16 +86,12 @@ function Port({
   levelId,
   nodeId,
   inspect,
-  move,
-  dragging,
   expanded,
 }: {
   port: BlockPort;
   levelId: string;
   nodeId: string;
   inspect?: (nodeId: string, port: BlockPort) => void;
-  move?: (event: ReactPointerEvent<HTMLButtonElement>, port: BlockPort) => void;
-  dragging: boolean;
   expanded: boolean;
 }) {
   const { t } = useStudioLocale();
@@ -121,22 +118,6 @@ function Port({
           inspect?.(nodeId, port);
         }}
       />
-      <button
-        type="button"
-        tabIndex={-1}
-        className={`bd-port-move-grip bd-port-move-grip-${port.side} nodrag nopan${dragging ? " is-dragging" : ""}`}
-        title={t("port.moveHint")}
-        aria-label={t("port.move", { label: port.label })}
-        onPointerDown={(event) => move?.(event, port)}
-        onClick={(event) => {
-          event.stopPropagation();
-          inspect?.(nodeId, port);
-        }}
-      >
-        {vertical
-          ? <GripVertical size={11} aria-hidden="true" />
-          : <GripHorizontal size={11} aria-hidden="true" />}
-      </button>
       <Handle
         id={bindingPortId(port.id)}
         type={handleType(port) === "source" ? "target" : "source"}
@@ -172,6 +153,7 @@ function PortLabel({
   move?: (event: ReactPointerEvent<HTMLButtonElement>, port: BlockPort) => void;
   dragging: boolean;
 }) {
+  const { t } = useStudioLocale();
   const vertical = port.side === "left" || port.side === "right";
   const offset = vertical
     ? port.offset * 100
@@ -185,7 +167,8 @@ function PortLabel({
         ...(vertical ? { top: `${offset}%` } : { left: `${offset}%` }),
         "--port-label-width": `${portLabelWidth(port.label)}px`,
       } as GeometryStyle}
-      title={`${port.label} · ${port.direction}${port.dataType ? ` · ${port.dataType}` : ""}`}
+      title={`${port.label} · ${port.direction}${port.dataType ? ` · ${port.dataType}` : ""} · ${t("port.moveHint")}`}
+      aria-label={t("port.move", { label: port.label })}
       onPointerDown={(event) => move?.(event, port)}
       onClick={(event) => {
         event.stopPropagation();
@@ -227,8 +210,6 @@ function PortRail({
           levelId={levelId}
           nodeId={nodeId}
           inspect={inspect}
-          move={move}
-          dragging={draggingPortId === port.id}
           expanded={expanded}
         />
       ))}
@@ -279,19 +260,19 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
     (["left", "right", "top", "bottom"] as PortSide[])
       .map((side) => [side, portsForSide(block.ports, side)] as const),
   ) as Record<PortSide, BlockPort[]>;
-  const widestLabel = (side: PortSide) => portsBySide[side]
-    .reduce((width, port) => Math.max(width, portLabelWidth(port.label)), 0);
+  const portClearance = balancedPortClearance(block.ports);
   const geometryStyle = {
-    "--block-header-height": `${BLOCK_NODE_GEOMETRY.headerHeight}px`,
+    "--block-identity-height": `${BLOCK_NODE_GEOMETRY.identityHeight}px`,
     "--block-owner-band-height": `${BLOCK_NODE_GEOMETRY.ownerBandHeight}px`,
-    "--port-top-rail-height": `${portsBySide.top.length > 0 ? BLOCK_NODE_GEOMETRY.horizontalRailHeight : 0}px`,
-    "--port-bottom-rail-height": `${portsBySide.bottom.length > 0 ? BLOCK_NODE_GEOMETRY.horizontalRailHeight : 0}px`,
-    "--port-left-label-width": `${widestLabel("left")}px`,
-    "--port-right-label-width": `${widestLabel("right")}px`,
+    "--port-horizontal-rail-depth": `${portClearance.horizontalRailDepth}px`,
+    "--port-vertical-label-width": `${portClearance.verticalLabelWidth}px`,
     "--block-border-width": `${data.expanded
       ? BLOCK_NODE_GEOMETRY.expandedBorderWidth
       : BLOCK_NODE_GEOMETRY.borderWidth}px`,
     "--port-handle-size": `${BLOCK_NODE_GEOMETRY.portHandleSize}px`,
+    "--port-horizontal-chip-width": `${BLOCK_NODE_GEOMETRY.horizontalPortChipWidth}px`,
+    "--port-side-label-height": `${BLOCK_NODE_GEOMETRY.sidePortLabelHeight}px`,
+    "--port-side-label-inset": `${BLOCK_NODE_GEOMETRY.sidePortLabelInset}px`,
   } as GeometryStyle;
   const minimumSize = minimumNodeDimensions(block);
   const resizeVisible = selected && !data.expanded && Boolean(data.resizeNode) && data.canEditSelection?.() !== false;
@@ -520,71 +501,75 @@ export function BlockNodeComponent({ id, data, selected }: NodeProps<CanvasFlowN
           }, resizeAltKey(event) || resizeShiftKey(event));
         }}
       />
-      <header className="bd-block-header">
-        {hierarchy ? (
-          <button
-            type="button"
-            tabIndex={-1}
-            className="bd-hierarchy-button nodrag nopan"
-            title={data.expanded ? t("block.collapseHint") : t("block.expandHint")}
-            aria-label={t(data.expanded ? "block.collapse" : "block.expand", { title: block.title })}
-            onClick={(event) => {
+      <div className="bd-block-content">
+        <header className="bd-block-identity">
+          {hierarchy ? (
+            <button
+              type="button"
+              tabIndex={-1}
+              className="bd-hierarchy-button nodrag nopan"
+              title={data.expanded ? t("block.collapseHint") : t("block.expandHint")}
+              aria-label={t(data.expanded ? "block.collapse" : "block.expand", { title: block.title })}
+              onClick={(event) => {
+                event.stopPropagation();
+                data.toggleHierarchy?.(hierarchy.childLevelId);
+              }}
+            >
+              {data.expanded ? <Minus size={12} aria-hidden="true" /> : <Plus size={12} aria-hidden="true" />}
+            </button>
+          ) : <Box className="bd-block-symbol" size={13} aria-hidden="true" />}
+          <div
+            className="bd-block-heading"
+            onDoubleClick={(event) => {
+              event.preventDefault();
               event.stopPropagation();
-              data.toggleHierarchy?.(hierarchy.childLevelId);
+              beginTitleEdit();
             }}
           >
-            {data.expanded ? <Minus size={12} aria-hidden="true" /> : <Plus size={12} aria-hidden="true" />}
-          </button>
-        ) : <Box className="bd-block-symbol" size={13} aria-hidden="true" />}
-        <div
-          className="bd-block-heading"
-          onDoubleClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            beginTitleEdit();
-          }}
-        >
-          {titleDraft === undefined ? <h3>{block.title}</h3> : (
-            <input
-              ref={titleInputRef}
-              className="bd-block-title-editor nodrag nopan"
-              aria-label={t("block.rename", { title: block.title })}
-              value={titleDraft}
-              required
-              onChange={(event) => {
-                event.currentTarget.setCustomValidity("");
-                setTitleDraft(event.target.value);
-              }}
-              onKeyDown={onTitleKeyDown}
-              onBlur={() => {
-                if (suppressTitleBlurCommitRef.current) {
-                  suppressTitleBlurCommitRef.current = false;
-                  return;
-                }
-                finishTitleEdit(true);
-              }}
-              onPointerDown={(event) => event.stopPropagation()}
-              onDoubleClick={(event) => event.stopPropagation()}
-            />
-          )}
-          <span>{block.process ?? block.kind}</span>
-        </div>
-        {block.layout.pinned && <Pin className="bd-pin-indicator" size={11} aria-label={t("block.authored")} />}
-      </header>
-      {!data.expanded && (
-        <>
+            {titleDraft === undefined ? <h3>{block.title}</h3> : (
+              <input
+                ref={titleInputRef}
+                className="bd-block-title-editor nodrag nopan"
+                aria-label={t("block.rename", { title: block.title })}
+                value={titleDraft}
+                required
+                onChange={(event) => {
+                  event.currentTarget.setCustomValidity("");
+                  setTitleDraft(event.target.value);
+                }}
+                onKeyDown={onTitleKeyDown}
+                onBlur={() => {
+                  if (suppressTitleBlurCommitRef.current) {
+                    suppressTitleBlurCommitRef.current = false;
+                    return;
+                  }
+                  finishTitleEdit(true);
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+                onDoubleClick={(event) => event.stopPropagation()}
+              />
+            )}
+            <span>{block.process ?? block.kind}</span>
+          </div>
+          <span className="bd-block-identity-end">
+            {block.layout.pinned && <Pin className="bd-pin-indicator" size={11} aria-label={t("block.authored")} />}
+          </span>
+        </header>
+        {!data.expanded && (
+          <>
           <div className="bd-block-body">
             {block.summary && <p>{block.summary}</p>}
           </div>
           <footer className="bd-block-owner">{block.owner ?? t("block.unassigned")}</footer>
-        </>
-      )}
-      {data.expanded && (
-        <div className="bd-hierarchy-watermark" aria-hidden="true">
-          <strong>{hierarchy?.childLevelId}</strong>
-          <span>{t("block.expanded")}</span>
-        </div>
-      )}
+          </>
+        )}
+        {data.expanded && (
+          <div className="bd-hierarchy-watermark" aria-hidden="true">
+            <strong>{hierarchy?.childLevelId}</strong>
+            <span>{t("block.expanded")}</span>
+          </div>
+        )}
+      </div>
 
       {(["left", "right", "top", "bottom"] as PortSide[]).map((side) => (
         <PortRail

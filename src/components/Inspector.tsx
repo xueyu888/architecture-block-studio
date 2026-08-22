@@ -16,6 +16,7 @@ import type {
 } from "../model";
 import type { StudioCommand } from "../studio/commands";
 import { useStudioLocale } from "../i18n/StudioLocale";
+import { baseNodeDimensions } from "../layout/nodeGeometry";
 import { selectionKey, type SelectionRef } from "../studio/selection";
 
 interface ResolvedInspection {
@@ -376,6 +377,7 @@ function NodeEditor({ document, level, node, onOperation, onDelete, onDraftChang
   const [summary, setSummary] = useState(node.summary ?? "");
   const [owner, setOwner] = useState(node.owner ?? "");
   const [inspector, setInspector] = useState(node.inspector);
+  const canvasSize = baseNodeDimensions(node);
   const dirty = title !== node.title ||
     kind !== node.kind ||
     tone !== node.tone ||
@@ -415,9 +417,7 @@ function NodeEditor({ document, level, node, onOperation, onDelete, onDraftChang
       <section className="bd-node-geometry" aria-label="Module geometry">
         <div>
           <span>Canvas size</span>
-          <strong>{node.layout.width && node.layout.height
-            ? `${node.layout.width} × ${node.layout.height}`
-            : "Automatic"}</strong>
+          <strong>{`${canvasSize.width} × ${canvasSize.height}`}</strong>
         </div>
         <p>Drag an edge or corner handle to resize; hold Shift to preserve the original proportions, taking priority over sibling-size snapping. Movement and resize use the visible 16-pixel design grid, while nearby alignment and equal-size guides take priority on their matching axis. Start the direct gesture, then hold Alt for unrestricted precision placement without grid or guide snapping. Alt held before pointerdown forces a selection box; Alt-click without dragging cycles through overlapping objects. On the Canvas, Tab / Shift + Tab traverses visible diagram objects, Alt + Tab selects the visible parent, Enter enters this module's controls, and Escape returns to the module. With the module focused, Ctrl/Cmd + Shift + Arrow changes width or height by 16 design pixels. Apply current property changes first.</p>
       </section>

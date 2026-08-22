@@ -526,9 +526,9 @@ async function composeLevel(
           },
           dropBounds: {
             x: BLOCK_NODE_GEOMETRY.expandedBorderWidth,
-            y: BLOCK_NODE_GEOMETRY.headerHeight,
+            y: BLOCK_NODE_GEOMETRY.identityHeight,
             width: item.width - BLOCK_NODE_GEOMETRY.expandedBorderWidth * 2,
-            height: item.height - BLOCK_NODE_GEOMETRY.headerHeight - BLOCK_NODE_GEOMETRY.expandedBorderWidth,
+            height: item.height - BLOCK_NODE_GEOMETRY.identityHeight - BLOCK_NODE_GEOMETRY.expandedBorderWidth,
           },
         }
       : undefined;

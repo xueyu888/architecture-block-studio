@@ -2,7 +2,7 @@
   "schemaVersion": "2.2",
   "id": "architecture-block-studio.source-architecture.v1",
   "title": "Architecture Block Studio — Source Architecture",
-  "summary": "Generated from 89 managed source files and 29 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
+  "summary": "Generated from 70 managed source files and 30 verified cross-module dependencies; five hierarchy depths preserve product, runtime, composition, architecture, and module context.",
   "entryLevelId": "product-boundary",
   "sourceRef": {
     "label": "architecture-block-studio",
@@ -42,7 +42,7 @@
         "label": "src/components · canvas surface",
         "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/components/AlignmentGuideLayer.tsx"
       },
-      "code": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/moduleDropTarget.ts\nsrc/components/latestWorkerRequestQueue.ts\nsrc/components/routingFrameWorkerClient.ts\nsrc/components/useCommittedRoutingWorker.ts\nsrc/components/useLiveRoutingPreviewWorker.ts\nsrc/components/viewportAutoPan.ts",
+      "code": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/moduleDropTarget.ts\nsrc/components/viewportAutoPan.ts",
       "codeLanguage": "text",
       "attributes": {
         "architectureModuleId": "canvas",
@@ -151,11 +151,11 @@
     },
     "source-import.routing": {
       "kind": "internal",
-      "title": "Routing Engine public import surface",
+      "title": "Connection Geometry public import surface",
       "protocol": "ES module dependency",
       "owner": "src/routing",
-      "principle": "Consumers depend on the public exports owned by Routing Engine.",
-      "purpose": "Make compile-time use of Routing Engine explicit and source-verifiable.",
+      "principle": "Consumers depend on the public exports owned by Connection Geometry.",
+      "purpose": "Make compile-time use of Connection Geometry explicit and source-verifiable.",
       "boundary": "The edge proves a resolved relative source import, not runtime ownership or data mutation.",
       "failure": "An unresolved, undeclared, fabricated, or cyclic module dependency fails the architecture gate.",
       "sourceRef": {
@@ -504,7 +504,7 @@
             },
             {
               "id": "used-by-routing",
-              "label": "Routing",
+              "label": "Connections",
               "side": "right",
               "direction": "input",
               "dataType": "1 import declarations",
@@ -746,16 +746,16 @@
               "direction": "input",
               "dataType": "6 import declarations",
               "required": true,
-              "offset": 0.25
+              "offset": 0.2
             },
             {
               "id": "used-by-routing",
-              "label": "Routing",
+              "label": "Connections",
               "side": "right",
               "direction": "input",
-              "dataType": "2 import declarations",
+              "dataType": "1 import declarations",
               "required": true,
-              "offset": 0.5
+              "offset": 0.4
             },
             {
               "id": "used-by-studio",
@@ -764,7 +764,16 @@
               "direction": "input",
               "dataType": "2 import declarations",
               "required": true,
-              "offset": 0.75
+              "offset": 0.6
+            },
+            {
+              "id": "used-by-workbench",
+              "label": "Workbench",
+              "side": "right",
+              "direction": "input",
+              "dataType": "1 import declarations",
+              "required": true,
+              "offset": 0.8
             },
             {
               "id": "depends-model",
@@ -802,17 +811,17 @@
               "y": 350
             },
             "width": 286,
-            "height": 197,
+            "height": 224,
             "pinned": true
           }
         },
         {
           "id": "routing",
-          "title": "Routing Engine",
+          "title": "Connection Geometry",
           "kind": "projection",
           "tone": "green",
           "process": "GEOMETRY PROJECTION",
-          "summary": "Produce readable obstacle-aware routes and disposable connection previews.",
+          "summary": "Keep connection geometry immediate, predictable, and manually editable without hidden routing state.",
           "owner": "src/routing",
           "ports": [
             {
@@ -820,7 +829,7 @@
               "label": "Canvas",
               "side": "right",
               "direction": "input",
-              "dataType": "8 import declarations",
+              "dataType": "3 import declarations",
               "required": true,
               "offset": 0.5
             },
@@ -829,7 +838,7 @@
               "label": "Layout",
               "side": "left",
               "direction": "output",
-              "dataType": "2 import declarations",
+              "dataType": "1 import declarations",
               "required": true,
               "offset": 0.3333333333333333
             },
@@ -844,10 +853,10 @@
             }
           ],
           "inspector": {
-            "principle": "Own scene adaptation, deterministic orthogonal solving, route editing, and independent verification.",
-            "purpose": "Produce readable obstacle-aware routes and disposable connection previews.",
-            "boundary": "Does not move modules, own gestures, or write automatic routes into JSON.",
-            "failure": "Return an explicit unresolved result instead of using a second hidden router.",
+            "principle": "Project automatic interfaces as direct segments and restore only user-authored waypoints.",
+            "purpose": "Keep connection geometry immediate, predictable, and manually editable without hidden routing state.",
+            "boundary": "Does not move modules, own gestures, avoid crossings, or persist automatic geometry.",
+            "failure": "Reject incomplete endpoint geometry instead of inventing a fallback route.",
             "sourceRef": {
               "label": "src/routing",
               "href": "https://github.com/xueyu888/architecture-block-studio/tree/main/src/routing"
@@ -860,7 +869,7 @@
               "architectureGroupId": "geometry",
               "hierarchyDepth": "5",
               "sourcePaths": "src/routing/",
-              "sourceFileCount": "19"
+              "sourceFileCount": "4"
             }
           },
           "layout": {
@@ -992,7 +1001,7 @@
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
-              "offset": 0.2
+              "offset": 0.16666666666666666
             },
             {
               "id": "depends-io",
@@ -1001,7 +1010,16 @@
               "direction": "output",
               "dataType": "1 import declarations",
               "required": true,
-              "offset": 0.4
+              "offset": 0.3333333333333333
+            },
+            {
+              "id": "depends-layout",
+              "label": "Layout",
+              "side": "left",
+              "direction": "output",
+              "dataType": "1 import declarations",
+              "required": true,
+              "offset": 0.5
             },
             {
               "id": "depends-model",
@@ -1010,7 +1028,7 @@
               "direction": "output",
               "dataType": "8 import declarations",
               "required": true,
-              "offset": 0.6
+              "offset": 0.6666666666666666
             },
             {
               "id": "depends-protocols",
@@ -1019,13 +1037,13 @@
               "direction": "output",
               "dataType": "21 import declarations",
               "required": true,
-              "offset": 0.8
+              "offset": 0.8333333333333334
             }
           ],
           "inspector": {
             "principle": "Own accessible menus, dialogs, docks, navigation trees, Inspector, and review surfaces.",
             "purpose": "Project current commands, selection, document, and issues into discoverable controls.",
-            "boundary": "Does not duplicate eligibility, selection, schema, editing, or route-solving rules.",
+            "boundary": "Does not duplicate eligibility, selection, schema, editing, or connection-geometry rules.",
             "failure": "Preserve focus and drafts, expose disabled reasons, and send rejected actions back visibly.",
             "sourceRef": {
               "label": "src/components · workbench surfaces",
@@ -1048,7 +1066,7 @@
               "y": 720
             },
             "width": 286,
-            "height": 224,
+            "height": 251,
             "pinned": true
           }
         },
@@ -1108,10 +1126,10 @@
             },
             {
               "id": "depends-routing",
-              "label": "Routing",
+              "label": "Connections",
               "side": "left",
               "direction": "output",
-              "dataType": "8 import declarations",
+              "dataType": "3 import declarations",
               "required": true,
               "offset": 0.7142857142857143
             },
@@ -1134,15 +1152,15 @@
               "label": "src/components · canvas surface",
               "href": "https://github.com/xueyu888/architecture-block-studio/blob/main/src/components/AlignmentGuideLayer.tsx"
             },
-            "code": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/moduleDropTarget.ts\nsrc/components/latestWorkerRequestQueue.ts\nsrc/components/routingFrameWorkerClient.ts\nsrc/components/useCommittedRoutingWorker.ts\nsrc/components/useLiveRoutingPreviewWorker.ts\nsrc/components/viewportAutoPan.ts",
+            "code": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/moduleDropTarget.ts\nsrc/components/viewportAutoPan.ts",
             "codeLanguage": "text",
             "attributes": {
               "architectureRole": "source-module",
               "architectureModuleId": "canvas",
               "architectureGroupId": "interaction",
               "hierarchyDepth": "5",
-              "sourcePaths": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/moduleDropTarget.ts\nsrc/components/latestWorkerRequestQueue.ts\nsrc/components/routingFrameWorkerClient.ts\nsrc/components/useCommittedRoutingWorker.ts\nsrc/components/useLiveRoutingPreviewWorker.ts\nsrc/components/viewportAutoPan.ts",
-              "sourceFileCount": "15"
+              "sourcePaths": "src/components/AlignmentGuideLayer.tsx\nsrc/components/BlockDesignCanvas.tsx\nsrc/components/BlockNode.tsx\nsrc/components/ConnectionGestureLayer.tsx\nsrc/components/InterfaceEdge.tsx\nsrc/components/ViewportAutoPanContext.tsx\nsrc/components/canvasDetail.ts\nsrc/components/canvasSelection.ts\nsrc/components/canvasTypes.ts\nsrc/components/moduleDropTarget.ts\nsrc/components/viewportAutoPan.ts",
+              "sourceFileCount": "11"
             }
           },
           "layout": {
@@ -1161,7 +1179,7 @@
           "kind": "orchestrator",
           "tone": "red",
           "process": "STUDIO COMPOSITION",
-          "summary": "Coordinate selection, draft protection, commands, layout, routing, dialogs, and feedback.",
+          "summary": "Coordinate selection, draft protection, commands, layout, connection projection, dialogs, and feedback.",
           "owner": "src/studio · composition",
           "ports": [
             {
@@ -1239,7 +1257,7 @@
           ],
           "inspector": {
             "principle": "Compose public module contracts into the complete editing, review, and file workflow.",
-            "purpose": "Coordinate selection, draft protection, commands, layout, routing, dialogs, and feedback.",
+            "purpose": "Coordinate selection, draft protection, commands, layout, connection projection, dialogs, and feedback.",
             "boundary": "Does not redefine any owned model, editor, file, geometry, protocol, or component rule.",
             "failure": "Reject unsafe transitions visibly and keep document, history, selection, and focus recoverable.",
             "sourceRef": {
@@ -1572,7 +1590,7 @@
         {
           "id": "import-canvas-to-routing",
           "interfaceId": "source-import.routing",
-          "label": "Canvas Interaction → Routing Engine · 8 import declarations",
+          "label": "Canvas Interaction → Connection Geometry · 3 import declarations",
           "source": {
             "nodeId": "canvas",
             "portId": "depends-routing"
@@ -1663,7 +1681,7 @@
         {
           "id": "import-routing-to-layout",
           "interfaceId": "source-import.layout",
-          "label": "Routing Engine → Layout Projection · 2 import declarations",
+          "label": "Connection Geometry → Layout Projection · 1 import declaration",
           "source": {
             "nodeId": "routing",
             "portId": "depends-layout"
@@ -1676,7 +1694,7 @@
         {
           "id": "import-routing-to-model",
           "interfaceId": "source-import.model",
-          "label": "Routing Engine → Model Contract · 1 import declaration",
+          "label": "Connection Geometry → Model Contract · 1 import declaration",
           "source": {
             "nodeId": "routing",
             "portId": "depends-model"
@@ -1800,6 +1818,19 @@
           },
           "target": {
             "nodeId": "io",
+            "portId": "used-by-workbench"
+          }
+        },
+        {
+          "id": "import-workbench-to-layout",
+          "interfaceId": "source-import.layout",
+          "label": "Workbench Components → Layout Projection · 1 import declaration",
+          "source": {
+            "nodeId": "workbench",
+            "portId": "depends-layout"
+          },
+          "target": {
+            "nodeId": "layout",
             "portId": "used-by-workbench"
           }
         },

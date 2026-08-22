@@ -420,14 +420,14 @@
             ]
           },
           "ports": [
-            { "id": "session-command", "label": "session.command", "side": "left", "direction": "input", "dataType": "JSON-RPC", "offset": 0.3333333333333333 },
-            { "id": "session-notification", "label": "session.notification", "side": "left", "direction": "output", "dataType": "DTO stream", "offset": 0.6666666666666666 },
-            { "id": "project-lifecycle", "label": "project.lifecycle", "side": "bottom", "direction": "input", "dataType": "Integration RPC", "offset": 0.3333333333333333 },
-            { "id": "knowledge-lifecycle", "label": "knowledge.lifecycle", "side": "bottom", "direction": "input", "dataType": "Integration RPC", "offset": 0.6666666666666666 },
-            { "id": "tool-catalog", "label": "tool.catalog", "side": "right", "direction": "output", "dataType": "Port", "offset": 0.2 },
-            { "id": "tool-snapshot", "label": "tool.snapshot", "side": "right", "direction": "input", "dataType": "DTO", "offset": 0.4 },
-            { "id": "tool-invoke", "label": "tool.invoke", "side": "right", "direction": "output", "dataType": "Port", "offset": 0.6 },
-            { "id": "tool-outcome", "label": "tool.outcome", "side": "right", "direction": "input", "dataType": "DTO", "offset": 0.8 }
+            { "id": "session-command", "label": "session.command", "side": "left", "direction": "input", "dataType": "JSON-RPC", "offset": 0.32 },
+            { "id": "session-notification", "label": "session.notification", "side": "left", "direction": "output", "dataType": "DTO stream", "offset": 0.56 },
+            { "id": "project-lifecycle", "label": "project.lifecycle", "side": "bottom", "direction": "input", "dataType": "Integration RPC", "offset": 0.42 },
+            { "id": "knowledge-lifecycle", "label": "knowledge.lifecycle", "side": "bottom", "direction": "input", "dataType": "Integration RPC", "offset": 0.7 },
+            { "id": "tool-catalog", "label": "tool.catalog", "side": "right", "direction": "output", "dataType": "Port", "offset": 0.16 },
+            { "id": "tool-snapshot", "label": "tool.snapshot", "side": "right", "direction": "input", "dataType": "DTO", "offset": 0.3 },
+            { "id": "tool-invoke", "label": "tool.invoke", "side": "right", "direction": "output", "dataType": "Port", "offset": 0.44 },
+            { "id": "tool-outcome", "label": "tool.outcome", "side": "right", "direction": "input", "dataType": "DTO", "offset": 0.58 }
           ],
           "inspector": {
             "principle": "会话事实与在线执行循环的唯一 Owner",
@@ -457,12 +457,12 @@
             ]
           },
           "ports": [
-            { "id": "tool-catalog", "label": "tool.catalog", "side": "left", "direction": "input", "dataType": "Port", "offset": 0.2 },
-            { "id": "tool-snapshot", "label": "tool.snapshot", "side": "left", "direction": "output", "dataType": "DTO", "offset": 0.4 },
-            { "id": "tool-invoke", "label": "tool.invoke", "side": "left", "direction": "input", "dataType": "Port", "offset": 0.6 },
-            { "id": "tool-outcome", "label": "tool.outcome", "side": "left", "direction": "output", "dataType": "DTO", "offset": 0.8 },
-            { "id": "plugin-registration", "label": "plugin.registration", "side": "bottom", "direction": "input", "dataType": "ToolDefinition", "offset": 0.3333333333333333 },
-            { "id": "platform-registration", "label": "platform.registration", "side": "bottom", "direction": "input", "dataType": "ToolDefinition", "offset": 0.6666666666666666 }
+            { "id": "tool-catalog", "label": "tool.catalog", "side": "left", "direction": "input", "dataType": "Port", "offset": 0.16 },
+            { "id": "tool-snapshot", "label": "tool.snapshot", "side": "left", "direction": "output", "dataType": "DTO", "offset": 0.3 },
+            { "id": "tool-invoke", "label": "tool.invoke", "side": "left", "direction": "input", "dataType": "Port", "offset": 0.44 },
+            { "id": "tool-outcome", "label": "tool.outcome", "side": "left", "direction": "output", "dataType": "DTO", "offset": 0.58 },
+            { "id": "plugin-registration", "label": "plugin.registration", "side": "bottom", "direction": "input", "dataType": "ToolDefinition", "offset": 0.4 },
+            { "id": "platform-registration", "label": "platform.registration", "side": "bottom", "direction": "input", "dataType": "ToolDefinition", "offset": 0.7 }
           ],
           "inspector": {
             "principle": "Tool 定义和一次执行的唯一 Owner",

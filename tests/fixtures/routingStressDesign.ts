@@ -103,7 +103,7 @@ export function routingStressDesignDocument(): BlockDesignDocument {
         kind: "dto",
         title: "Stress Flow",
         protocol: "Routing Stress v1",
-        owner: "Routing Engine",
+        owner: "Connection Geometry",
         principle: "One visible typed connection.",
         purpose: "Exercise deterministic high-degree routing.",
         boundary: "No hidden shared state or implicit endpoint.",
@@ -122,7 +122,7 @@ export function routingStressDesignDocument(): BlockDesignDocument {
         title: "Routing Hub",
         kind: "module",
         tone: "core",
-        owner: "Routing Engine",
+        owner: "Connection Geometry",
         ports,
         inspector: {
           principle: "Own one high-degree integration boundary.",

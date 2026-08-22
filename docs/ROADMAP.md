@@ -2,7 +2,7 @@
 
 ## 当前成熟度
 
-当前版本为 **0.4.1 Windows 桌面版**：核心本地编辑闭环、层级聚焦、依赖审查、专业图形操作、DRC、Schema 迁移、canonical JSON 文件流、大图路由门禁与压力观测已经成立。Iteration 102 新增安全 Electron 壳、原生文件闭环、Windows x64 NSIS 安装包和 tag 发布流水线；Iteration 103–108 完成标题直编、位置化粘贴 / 新建、五层 drop target、预览 / JSON / 最终几何同构和层级坐标不变量；Iteration 109–111 将 live / committed routing、几何编辑、Layout 和 Worker 传输收敛为精确变化集；Iteration 112 补齐五语界面、左右栏折叠、低缩放端口直接拖动和最近设计；Iteration 113 将 Dock 收敛为可恢复的固定工作台，消除属性面板浮在画布中央且无法复位的问题。renderer 的 89 个受管源码文件继续生成五层架构 JSON，并双向闭合 29 条 import。崩溃恢复、历史容量策略、固定 CI 性能预算、商业代码签名与更高阶审查工作流仍未达到生产级。
+当前版本为 **0.5.0 Windows 桌面版**：核心本地编辑闭环、层级聚焦、依赖审查、专业图形操作、DRC、Schema 迁移、canonical JSON 文件流与压力观测已经成立。Iteration 102–113 完成安全 Electron 壳、原生文件、更新、最近设计、五语界面、固定 Dock、标题直编、位置化粘贴 / 新建和五层直接操作；Iteration 114 删除复杂自动避障、Worker、线桥和路由证书，把自动连线收敛为两点直线，并保留用户 waypoint 的正交手动编辑。renderer 的 70 个受管源码文件继续生成五层架构 JSON，并双向闭合 30 条 import。崩溃恢复、历史容量策略、固定 CI 性能预算、商业代码签名与更高阶审查工作流仍未达到生产级。
 
 路线图记录真实完成的迭代，不用计划数量冒充执行数量。长期目标可以拆成 100 个小步，但每一行都必须对应实际代码、验证或文档证据。
 
@@ -38,17 +38,17 @@ P0 未收敛前不扩展协作或服务端事实源。源码分析作为适配�
 | P1 | 已完成 | 端点方向与端口文字 | Iteration 63 让每条真实连接只在 JSON target 显示一个语义箭头并把 Port Handle 改为中性连接点；Iteration 64 将稳定 Handle 与四侧标签轨道拆开，端口名、Header、Owner 和线路端点不再争用同一几何空间 |
 | P1 | 已完成 | 模块尺寸直接编辑 | Iteration 66 以 `node.layout.position / width / height` 为唯一持久几何，提供单模块四边 / 四角 pointer resize、内容安全下限、Ctrl/Cmd + Shift + Arrow 精调、路由跟随、Undo / Redo、保存和草稿拒绝恢复；Iteration 98 用同一几何事实补齐同父级多模块统一八向 resize 与一次 `nodes/resize` |
 | P1 | 已完成 | 模块标题直接编辑 | Iteration 103 对照 draw.io 的 `startEditingAtCell` 动作边界，让选中模块通过 F2 或双击 Header 标题进入局部输入；临时字符串只属于当前输入会话，提交仍由 Editor 的一次具名 `node/rename` 写入唯一文档事实，Escape、空值和 Inspector 草稿冲突不会写入 |
-| P2 | 已完成 | 连线可读性与手动路由 | Iteration 7–52 建立基础正交避障与手动 route；Iteration 65 完成虚拟线段点、真实折点、端点重连和小型抓手；Iteration 71 以独立场景级多连接策略替换哈希 lane、模块对 channel、逐线 smart-edge 和事后偏移，加入层级 commodity / Gate、确定性联合目标、绕行上限、证明等级与独立验证 |
+| P2 | 已完成 | 连线可读性与手动路由 | Iteration 114 以可解释的两点直线替换复杂自动避障、Worker、lane、线桥和证书；选中线高亮并可用鼠标 / 键盘物化为保存 waypoints 的正交手动路线。端口名称成为唯一移动入口，命中区保持约 30 CSS px，顶 / 底端口使用垂直 chip |
 | P2 | 进行中 | 图形直接操作 | 单线段 / 折点 / 端点编辑、模块与组 resize、框选、多选、吸附、对齐、分布、位置化 Add Module Here / toolbar drag、子图 Copy / Cut / Paste / Paste Here / Duplicate、右键菜单、层级 Enter / Exit / Home 与依赖邻域审查已沿同一文档 / Editor / Selection 合同成立；仍需继续用真实复杂架构场景对照 draw.io，不能把局部能力数量冒充同等级整体体验 |
 | P2 | 已完成 | 多尺度总览可读性 | Iteration 41 从 viewport 唯一派生 detail level；低缩放只隐藏不可读的次级文字，保留模块标题、端口名、把手和线路，放大自动恢复完整细节 |
 | P2 | 已完成 | 高频命令效率 | Iteration 55 已建立菜单字符定位，Iteration 59 已统一命令 Tooltip；Iteration 61 用 `Ctrl/⌘ K` 建立可搜索命令面板，名称、快捷键、可用性、禁用原因和执行仍只来自 `StudioCommands`，高频动作不再依赖记忆菜单分类或跨工作区 Tab |
-| P2 | 进行中 | 大设计性能 | Iteration 16 建立 200 / 400 全量几何基线；Iteration 28 建立 1000 / 2000 heap 与连续编辑基线并消除无关编辑整图重排；Iteration 29、31、32、34–36 收敛列表、Flow 投影、视口裁剪和跨图定位；Iteration 109–110 将 live / committed routing 移入 latest-only 共享 Worker；Iteration 111 让平面几何提交结构共享文档与 Layout，并用 Worker-owned 认证帧和精确 base-key patch 只传变化 route / jump。1000 / 2000 的 affected / neighborhood 为 6 / 27，Worker 265.9 ms、真实提交就绪 1133 ms、只回传 6 routes / 0 jumps、只重投影 2 nodes / 6 edges，完整组选区 resize 1948 ms；固定 CI 数值预算尚未建立 |
+| P2 | 进行中 | 大设计性能 | 200 / 400 与 1000 / 2000 的布局、选择、视口裁剪、搜索、保存和连续编辑基线继续保留；Iteration 114 删除自动路线求解与 Worker 传输后，连接只做端点投影。下一步只测真实 React Flow / DOM 提交和 Windows production 交互，不再维护已删除求解器的 telemetry |
 | P3 | 进行中 | 样式事实源 | Iteration 18 已删除旧三栏工作区与当前 Dock 工作台之间确定无效的覆盖声明和旧 DOM 样式；Iteration 42 收敛高频 surface、border、row text、control size 与 motion token 并删除四个死 token；Iteration 58–59 完成工作台视觉重塑和统一命令 Tooltip；Iteration 62 将常驻 Toolbar 收敛为 12 个直接工作流动作；其余低频状态色仍按独立语义保留 |
 | P3 | 进行中 | Windows 桌面交付 | Iteration 102 已建立 Electron 启动、sandbox / context isolation、原生文件端到端与 Windows x64 NSIS tag 构建；商业代码签名、SmartScreen 信誉和真实安装 / 卸载人工矩阵仍待补齐 |
 | P3 | 已完成 | 工作台语言与侧栏 | Iteration 112 以一个五语消息目录派生菜单、工具栏、Dock、Inspector、Messages 与对话框文案；本机偏好不进入设计。Iteration 113 进一步以默认布局作为唯一面板拓扑，关闭 Dock 拖放与浮动入口；左右栏仍可调宽、折叠并从窄边栏恢复，旧异常布局会自动迁回固定位置 |
 | P3 | 进行中 | 可访问性 | 已有 dialog focus trap、WCAG A / AA 结构与文本对比度门禁、桌面菜单，以及 Chromium / Firefox 连续无鼠标核心旅程；Iteration 48 为被接受的模块键盘移动补齐位置 live 公告，Iteration 55 补齐字符定位，Iteration 56 为禁用命令补齐可见原因与 accessible name，Iteration 61 补齐可搜索 listbox、焦点恢复与下游 Dialog / Messages 交接；读屏人工验证与 WebKit 自动化仍缺 |
 | P4 | 待完善 | 高级审查工作流 | 设计 Diff、传递影响范围、源码定位与评审状态尚未建立；不能用临时高亮伪装这些事实 |
-| P4 | 已有参考实现 | 源码可视化适配 | renderer 运行时不扫描代码；仓库内 TypeScript AST 适配器将当前 89 个源码文件、12 个责任模块与 29 条跨模块 import 生成五层 `BlockDesignDocument`，build 双向检查源码与示例漂移；其他语言继续通过公开契约接入 |
+| P4 | 已有参考实现 | 源码可视化适配 | renderer 运行时不扫描代码；仓库内 TypeScript AST 适配器将当前 70 个源码文件、12 个责任模块与 30 条跨模块 import 生成五层 `BlockDesignDocument`，build 双向检查源码与示例漂移；其他语言继续通过公开契约接入 |
 | P4 | 待评估 | 仓库与协作 | 单人文件模型稳定后再决定 Git diff、评论、协作和服务端边界 |
 
 ## 阶段路线
@@ -239,8 +239,10 @@ Iteration 63–72 的实现顺序只会因 P0 或上一轮证据揭示的新根�
 | Iteration 112 | Windows 日常使用仍缺最近文件、界面语言和侧栏收纳；端口标签虽可拖动，但低缩放下命中困难，连接 Handle 与移动动作容易混淆。若把这些偏好写进设计或让 renderer 持有完整路径，会污染架构事实与桌面安全边界 | `StudioLocaleProvider` 唯一拥有五语目录和本机偏好，所有核心工作台文案从消息 key 派生；Dock 显隐继续只写 workspace layout。端口外侧新增 inverse-zoom 的 22 CSS px 独立移动抓手，标签可继续拖动，圆形 Handle 只负责连接；同一 `side + offset` 预览最终只提交一个 `port/move`。`RecentDesignService` 在 Electron main 的 `userData` 中只保存最多 10 个文件引用，renderer 只用 opaque id 重开，成功 Open / Save 后才更新 | 233 / 233 unit（35 files）；1921-module build；Chromium 92 / 92 + Firefox 91 / 91 = 183 / 183；Electron 1 / 1。低缩放真实鼠标拖端口验证命中区、跨边、实时路线、dirty 与 Undo；最近文件覆盖重载持久化、去重、顺序、并发首次写入、失效清理和无 JSON 副本；源码 29 routes / 406 pairs、Hub 100 / 4,950、五层与 1000 / 2000 全量复验；两张 Windows 截图人工复核 | 设计 JSON 仍唯一拥有模块、端口和接口；语言、Dock、最近路径、gesture、路线预览与测试证据各留在自己的边界。用户内容和技术 ID 不翻译。未增加移动端；商业签名、崩溃恢复和固定 CI 性能预算仍是明确保留项 |
 | Iteration 113 | Dock 的通用浮动能力与本产品固定工作台目标冲突：Properties 可以漂到画布中央，原右栏留下空槽，且没有可靠拖回或关闭路径；只补一个关闭按钮会继续保留错误状态机 | `createDefaultLayout` 生成唯一 canonical panel topology；保存布局只保留该拓扑内的尺寸、折叠和激活状态。恢复时统一提取 center / 四边 / floating / popout 的 panel placement 与 canonical topology 比较，异常就恢复并重写默认布局；Dockview 禁止 DnD，删除 Float 命令和五语死文案 | 233 / 233 unit（35 files）；1921-module build；Chromium 93 / 93 + Firefox 92 / 92 = 185 / 185；Electron 1 / 1。自动化构造旧版 floating Properties，刷新后断言中央无浮动 panel、Properties 回到右侧、持久布局已清除 floating group；Windows 截图人工复核 | 固定 topology 只由代码默认布局拥有，localStorage 不是第二拓扑事实源；迁移与显隐都不触碰设计 JSON、History、dirty、selection 或画布路线。窗口仍支持尺寸、折叠、恢复和最大化，但不再提供无产品价值的任意 Dock 编排 |
 
+| Iteration 114 | 自动避障体系代码量大、测试慢，仍会生成绕线、回钩和遮挡；端口额外抓手也让界面更乱。用户需要可预测的直接线路，并能亲自决定具体走向 | 删除 scene router、routing scene、verifier、line jumps、obstacle catalog、live / committed Worker 和 Optimize Routing；`projectConnectionRoutes` 成为唯一自动几何 Owner：无 waypoint 恰好两点，有 waypoint 恢复正交折线。端口文字以 inverse zoom 保持 30 CSS px 命中区，顶 / 底端口使用垂直 chip。布局首帧缺端点时暂不投影，不伪造坐标或崩溃；Inspector 通过同一 `baseNodeDimensions` 显示实际画布尺寸 | 207 / 207 unit 与 production build 通过；完整 Chromium 91 / 93 后暴露并修复派生尺寸显示问题，相关 3 / 3 focused 回归通过；200 / 400 场景首次可交互 1220 ms，缩放提交只投影 2 个节点与 6 条受影响线路；Electron 1 / 1。默认双展开、五层 20 线、偏斜 Hub 100 线、端口低缩放拖动、直线选中、键盘物化手动路线、预览 / 提交和最终截图均复核 | `BlockDesignDocument` 仍唯一拥有端点、作者尺寸和用户 waypoints；布局从作者尺寸与端口可读性下限派生实际几何，连接投影不持有状态，Canvas 只显示和发出编辑意图。历史迭代的避障记录保留为演进证据，但不再描述当前合同；本轮随四边中心卡片升级发布 v0.5.0 |
+
 ## 本目标收尾后的保留项
 
-**如后续继续迭代：缩短 Windows production 中认证帧 → 可见 DOM 的剩余长尾。**
+**如后续继续迭代：测量 Windows production 中 React Flow / DOM 的真实交互长尾。**
 
-Iteration 111 已把文档 / History、平面 Layout、Worker request / response transport 与 Canvas traversal 的可避免全量工作收敛为变化集；1000 / 2000 完整组选区 resize 已从约 3.2 秒降到约 1.95 秒，但真正认证帧可见仍约 1.13 秒，其中 Worker 的全量 2000-route / 1,999,000-pair certificate 约 266 ms，剩余主要位于 React Flow store、视口裁剪对象和浏览器 DOM commit。Iteration 112 完成 Windows 日常工作台的五语、侧栏、端口直接操控与最近文件闭环，Iteration 113 修复旧 Dock 浮动状态并收敛固定工作台；两轮都继续使用同一五层、非均匀 1～100+ 连接度、双浏览器、Windows 与 1000 / 2000 门禁收尾。若后续重启，应先在 Windows production Electron 中采集 interaction-to-next-paint / long-task / DOM mutation 轨迹，区分开发态 React 检查开销与真实安装包开销，再只优化 Flow / DOM 协调 Owner。不得跳过 verifier、抽样线路、提前释放 settling、删减隐藏设计事实或让 Worker cache 成为正确性前提。
+自动连接已不再经过求解器、认证帧或 Worker。后续性能工作应直接采集 interaction-to-next-paint、long task、React Flow store 和 DOM mutation，区分开发态 React 检查开销与真实安装包开销；不得恢复隐藏自动路线状态，也不得用少挂载线路或少验证文档事实换取表面速度。
